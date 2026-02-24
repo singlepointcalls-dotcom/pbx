@@ -155,6 +155,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE TRIGGER contacts_updated_at
+    BEFORE UPDATE ON contacts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 CREATE OR REPLACE TRIGGER operators_updated_at
     BEFORE UPDATE ON operators
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

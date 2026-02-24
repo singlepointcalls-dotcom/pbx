@@ -1,0 +1,47 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: answering_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      JWT_SECRET: change_this_in_production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: answering_service
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      ARI_HOST: host.docker.internal
+      ARI_PORT: 8088
+      ARI_USER: asterisk
+      ARI_PASSWORD: ""
+      ARI_APP: answering-service
+      SMTP_HOST: ""
+      SMTP_PORT: 587
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: ""
+    # Override individual values via a local .env file:
+    # env_file: .env
+
+volumes:
+  pgdata:

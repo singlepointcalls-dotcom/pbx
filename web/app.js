@@ -533,11 +533,11 @@ const Admin = (() => {
     showSection('clients');
   }
 
-  function showSection(name) {
+  function showSection(name, evt) {
     document.querySelectorAll('.admin-section').forEach((s) => s.style.display = 'none');
     document.querySelectorAll('.admin-nav-item').forEach((b) => b.classList.remove('active'));
     el(`admin-${name}`).style.display = 'block';
-    event.target.classList.add('active');
+    if (evt && evt.target) evt.target.classList.add('active');
 
     if (name === 'clients') loadClients();
     else if (name === 'operators') loadOperators();
@@ -705,16 +705,28 @@ const Admin = (() => {
     `).join('');
   }
 
-  function openContactModal(contactId) {
+  async function openContactModal(contactId) {
     editingContactId = contactId || null;
     el('contact-modal-title').textContent = contactId ? 'Edit Contact' : 'Add Contact';
     el('contact-form').reset();
     el('ctf-priority').value = 1;
     el('ctf-notify-email').checked = true;
 
-    if (contactId) {
-      // We'd need to fetch the contact — simplest: find from existing tbody data
-      // For now, just open empty and user re-fills (editing is infrequent)
+    if (contactId && editingClientId) {
+      try {
+        const data = await api('GET', `/clients/${editingClientId}/contacts`);
+        const contact = data.contacts.find((c) => c.id === contactId);
+        if (contact) {
+          el('ctf-name').value = contact.name || '';
+          el('ctf-title').value = contact.title || '';
+          el('ctf-phone').value = contact.phone || '';
+          el('ctf-email').value = contact.email || '';
+          el('ctf-priority').value = contact.priority || 1;
+          el('ctf-notify-email').checked = !!contact.notify_email;
+        }
+      } catch (err) {
+        toast(`Failed to load contact: ${err.message}`, 'danger');
+      }
     }
 
     el('contact-modal').style.display = 'flex';

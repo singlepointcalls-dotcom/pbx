@@ -96,8 +96,11 @@ async function deliverMessage(messageId) {
   deliveryResults.push({ channel: 'inapp', status: 'sent' });
 
   // Update message status
-  const anyFailed = deliveryResults.some((r) => r.status === 'failed');
-  const allFailed = deliveryResults.filter((r) => r.channel !== 'inapp').every((r) => r.status === 'failed');
+  // Only consider external channels (email/webhook) when deciding failed vs delivered.
+  // [].every() returns true (vacuous truth), so guard with a length check to avoid
+  // marking in-app-only deliveries as failed.
+  const externalResults = deliveryResults.filter((r) => r.channel !== 'inapp');
+  const allFailed = externalResults.length > 0 && externalResults.every((r) => r.status === 'failed');
   const newStatus = allFailed ? 'failed' : 'delivered';
 
   await pool.query('UPDATE messages SET status = $1 WHERE id = $2', [newStatus, messageId]);
