@@ -37,20 +37,28 @@ router.get('/', async (req, res, next) => {
       query += ` AND cl.call_start <= $${params.length}`;
     }
 
-    // CSV export
+    // CSV export (admin/supervisor only, capped at 50k rows)
     if (req.query.format === 'csv') {
-      const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC', params);
+      if (!['admin', 'supervisor'].includes(req.operator?.role)) {
+        return res.status(403).json({ error: 'CSV export requires admin or supervisor role' });
+      }
+      const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC LIMIT 50000', params);
       const cols = ['id','client_name','caller_id_num','caller_id_name','did','call_start','call_answered','call_end','duration_seconds','disposition','operator_name'];
       const header = cols.join(',');
-      const rows = csvResult.rows.map((r) =>
-        cols.map((c) => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',')
-      );
-      res.setHeader('Content-Type', 'text/csv');
+      // Prefix cells that start with formula chars to prevent CSV injection
+      const sanitizeCsv = (v) => {
+        const s = String(v ?? '').replace(/"/g, '""');
+        return /^[=+\-@\t\r]/.test(s) ? `"'${s}"` : `"${s}"`;
+      };
+      const rows = csvResult.rows.map((r) => cols.map((c) => sanitizeCsv(r[c])).join(','));
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="calls.csv"');
       return res.send([header, ...rows].join('\r\n'));
     }
 
-    params.push(parseInt(limit), parseInt(offset));
+    const safeLimit  = Math.min(Math.max(1, parseInt(limit)  || 50), 500);
+    const safeOffset = Math.max(0, parseInt(offset) || 0);
+    params.push(safeLimit, safeOffset);
     query += ` ORDER BY cl.call_start DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const result = await pool.query(query, params);

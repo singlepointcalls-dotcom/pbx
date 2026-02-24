@@ -31,7 +31,27 @@ const ackRoutes        = require('./api/routes/ack');
 
 const app = express();
 
-// CORS — restrict to configured origins (default: same-origin only)
+// ── Security headers (lightweight alternative to helmet) ──────────────────
+app.use((_req, res, next) => {
+  // Prevent MIME-type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Deny framing to prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Force HTTPS for 1 year (only effective in production behind TLS)
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Referrer policy
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Disable FLoC / interest cohort tracking
+  res.setHeader('Permissions-Policy', 'interest-cohort=()');
+  // Minimal CSP for API responses — full CSP for HTML set below
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; " +
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  next();
+});
+
+// ── CORS — restrict to configured origins (default: same-origin only) ─────
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
   : [];
@@ -47,7 +67,8 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('combined'));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: false, limit: '256kb' }));
 
 // Serve operator console static files
 app.use(express.static(path.join(__dirname, '..', 'web')));

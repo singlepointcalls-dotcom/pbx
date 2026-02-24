@@ -41,20 +41,28 @@ router.get('/', async (req, res, next) => {
       'SELECT COUNT(*)'
     );
 
-    // CSV export
+    // CSV export (admin/supervisor only, capped at 50k rows)
     if (req.query.format === 'csv') {
-      const csvResult = await pool.query(query + ' ORDER BY m.created_at DESC', params);
+      if (!['admin', 'supervisor'].includes(req.operator?.role)) {
+        return res.status(403).json({ error: 'CSV export requires admin or supervisor role' });
+      }
+      const csvResult = await pool.query(query + ' ORDER BY m.created_at DESC LIMIT 50000', params);
       const cols = ['id','client_name','operator_name','caller_name','caller_phone','caller_company','subject','body','urgency','status','created_at'];
       const header = cols.join(',');
-      const rows = csvResult.rows.map((r) =>
-        cols.map((c) => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',')
-      );
-      res.setHeader('Content-Type', 'text/csv');
+      // Prefix cells that start with formula chars to prevent CSV injection
+      const sanitizeCsv = (v) => {
+        const s = String(v ?? '').replace(/"/g, '""');
+        return /^[=+\-@\t\r]/.test(s) ? `"'${s}"` : `"${s}"`;
+      };
+      const rows = csvResult.rows.map((r) => cols.map((c) => sanitizeCsv(r[c])).join(','));
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="messages.csv"');
       return res.send([header, ...rows].join('\r\n'));
     }
 
-    params.push(parseInt(limit), parseInt(offset));
+    const safeLimit  = Math.min(Math.max(1, parseInt(limit)  || 50), 500);
+    const safeOffset = Math.max(0, parseInt(offset) || 0);
+    params.push(safeLimit, safeOffset);
     query += ` ORDER BY m.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const [result, countResult] = await Promise.all([
@@ -150,9 +158,11 @@ router.post('/', async (req, res, next) => {
 });
 
 // PUT /api/messages/:id — update message fields
+// Admins/supervisors may edit any message; operators may only edit their own.
 router.put('/:id', async (req, res, next) => {
   try {
     const { caller_name, caller_phone, caller_company, subject, body, urgency, status } = req.body;
+    const isPrivileged = ['admin', 'supervisor'].includes(req.operator?.role);
     const result = await pool.query(
       `UPDATE messages SET
          caller_name = COALESCE($1, caller_name),
@@ -163,8 +173,10 @@ router.put('/:id', async (req, res, next) => {
          urgency = COALESCE($6, urgency),
          status = COALESCE($7, status)
        WHERE id = $8
+         AND ($9 OR operator_id = $10)
        RETURNING *`,
-      [caller_name, caller_phone, caller_company, subject, body, urgency, status, req.params.id]
+      [caller_name, caller_phone, caller_company, subject, body, urgency, status,
+       req.params.id, isPrivileged, req.operator.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Message not found' });
     res.json({ message: result.rows[0] });

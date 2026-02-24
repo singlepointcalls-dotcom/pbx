@@ -15,6 +15,37 @@ function validatePassword(password) {
   return null;
 }
 
+/* ---- Simple rate limiter for portal login (mirrors operator auth limiter) ---- */
+const portalLoginAttempts = new Map();
+const PORTAL_RATE_WINDOW_MS = 15 * 60 * 1000;
+const PORTAL_MAX_ATTEMPTS = 10;
+
+function rateLimitPortal(req, res, next) {
+  const key = req.ip + ':' + (req.body?.username || '');
+  const now = Date.now();
+  const entry = portalLoginAttempts.get(key);
+  if (entry) {
+    if (now - entry.firstAttempt > PORTAL_RATE_WINDOW_MS) {
+      portalLoginAttempts.set(key, { count: 1, firstAttempt: now });
+      return next();
+    }
+    if (entry.count >= PORTAL_MAX_ATTEMPTS) {
+      const retryAfter = Math.ceil((entry.firstAttempt + PORTAL_RATE_WINDOW_MS - now) / 1000);
+      res.setHeader('Retry-After', retryAfter);
+      return res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
+    }
+    entry.count++;
+  } else {
+    portalLoginAttempts.set(key, { count: 1, firstAttempt: now });
+  }
+  if (portalLoginAttempts.size > 500) {
+    for (const [k, v] of portalLoginAttempts) {
+      if (now - v.firstAttempt > PORTAL_RATE_WINDOW_MS) portalLoginAttempts.delete(k);
+    }
+  }
+  next();
+}
+
 /* ---- Portal auth middleware ---- */
 function requirePortalAuth(req, res, next) {
   const auth = req.headers.authorization;
@@ -32,7 +63,7 @@ function requirePortalAuth(req, res, next) {
 }
 
 // POST /api/portal/login
-router.post('/login', async (req, res, next) => {
+router.post('/login', rateLimitPortal, async (req, res, next) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {

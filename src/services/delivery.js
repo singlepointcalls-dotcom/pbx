@@ -79,20 +79,32 @@ function renderTemplate(tmpl, vars) {
   return tmpl.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] !== undefined ? vars[key] : '');
 }
 
+// HTML-escape to prevent injection into email templates
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 function buildEmailVars(message) {
   const dateStr = new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' });
+  const subjectEsc = escHtml(message.subject || '');
   return {
-    client_name:    message.client_name || '',
-    caller_name:    message.caller_name || 'Unknown',
-    caller_phone:   message.caller_phone ? `<${message.caller_phone}>` : '',
-    caller_company: message.caller_company ? `— ${message.caller_company}` : '',
-    subject:        message.subject || '',
-    body:           message.body || '',
-    urgency:        (message.urgency || 'normal').toUpperCase(),
-    date:           dateStr,
-    operator_name:  message.operator_name || '',
+    client_name:    escHtml(message.client_name || ''),
+    caller_name:    escHtml(message.caller_name || 'Unknown'),
+    caller_phone:   message.caller_phone ? escHtml(message.caller_phone) : '',
+    caller_company: message.caller_company ? `— ${escHtml(message.caller_company)}` : '',
+    subject:        subjectEsc,
+    body:           escHtml(message.body || ''),
+    urgency:        escHtml((message.urgency || 'normal').toUpperCase()),
+    date:           escHtml(dateStr),
+    operator_name:  escHtml(message.operator_name || ''),
     subject_row:    message.subject
-      ? `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Subject</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">${message.subject}</td></tr>`
+      ? `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Subject</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">${subjectEsc}</td></tr>`
       : '',
   };
 }
@@ -101,11 +113,8 @@ function buildEmailVars(message) {
 async function ensureAckToken(messageId) {
   const existing = await pool.query('SELECT ack_token FROM messages WHERE id = $1', [messageId]);
   if (existing.rows[0]?.ack_token) return existing.rows[0].ack_token;
-  const { v4: uuidv4 } = require('crypto');
-  // Use crypto.randomUUID if available (Node 14.17+), else fallback
-  const token = (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : require('crypto').randomBytes(16).toString('hex');
+  const crypto = require('crypto');
+  const token = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
   await pool.query('UPDATE messages SET ack_token = $1 WHERE id = $2', [token, messageId]);
   return token;
 }
@@ -419,31 +428,68 @@ async function sendQuickNotify(contact, channel, subject, body) {
 
 /**
  * Validate that a URL does not point to private/internal networks (SSRF protection).
+ * Blocks: localhost, private IPv4 ranges, IPv6 private/link-local, cloud metadata,
+ * non-http(s) schemes, and obfuscated IP representations.
  */
 function isPrivateUrl(urlStr) {
   try {
     const parsed = new URL(urlStr);
-    const hostname = parsed.hostname;
-    // Block localhost variants
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') return true;
-    // Block private IPv4 ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x (link-local)
-    const ipv4Match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-    if (ipv4Match) {
-      const [, a, b] = ipv4Match.map(Number);
-      if (a === 10) return true;
-      if (a === 172 && b >= 16 && b <= 31) return true;
-      if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true;
-      if (a === 0) return true;
-    }
-    // Block file:// and other non-http(s) schemes
+    // Only allow http/https
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
-    // Block internal metadata endpoints (cloud providers)
-    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') return true;
+
+    let hostname = parsed.hostname;
+    // Strip IPv6 brackets
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1);
+    }
+
+    // Block exact localhost and cloud metadata hostnames
+    const blockedHostnames = [
+      'localhost', '0.0.0.0', 'metadata.google.internal',
+      'instance-data', 'metadata.internal',
+    ];
+    if (blockedHostnames.includes(hostname.toLowerCase())) return true;
+
+    // Block IPv6 loopback and private ranges
+    if (hostname === '::1' || hostname === '::' || hostname.toLowerCase() === '::ffff:127.0.0.1') return true;
+    // IPv6 link-local (fe80::/10), unique-local (fc00::/7)
+    if (/^fe[89ab][0-9a-f]:/i.test(hostname)) return true;  // fe80-febf
+    if (/^fc[0-9a-f][0-9a-f]:/i.test(hostname) || /^fd[0-9a-f][0-9a-f]:/i.test(hostname)) return true;
+    // IPv4-mapped IPv6: ::ffff:192.168.x.x etc
+    if (/^::ffff:/i.test(hostname)) {
+      const v4part = hostname.replace(/^::ffff:/i, '');
+      if (isPrivateIpv4(v4part)) return true;
+    }
+
+    // Parse as IPv4 (including decimal/octal/hex obfuscation via standard URL parsing)
+    if (/^[\d.]+$/.test(hostname)) {
+      if (isPrivateIpv4(hostname)) return true;
+    }
+
     return false;
   } catch {
     return true; // Invalid URL — block
   }
+}
+
+function isPrivateIpv4(hostname) {
+  // Block cloud metadata IP
+  if (hostname === '169.254.169.254') return true;
+  const parts = hostname.split('.');
+  if (parts.length !== 4) return false;
+  const nums = parts.map(Number);
+  if (nums.some((n) => isNaN(n) || n < 0 || n > 255)) return false;
+  const [a, b] = nums;
+  if (a === 127) return true;           // 127.0.0.0/8 loopback
+  if (a === 10) return true;            // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true;           // 192.168.0.0/16
+  if (a === 169 && b === 254) return true;           // 169.254.0.0/16 link-local
+  if (a === 0) return true;             // 0.0.0.0/8
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 shared address space
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmarking
+  if (a === 203 && b === 0 && nums[2] === 113) return true; // 203.0.113.0/24 TEST-NET-3
+  return false;
 }
 
 async function sendWebhook(webhook, message) {

@@ -27,8 +27,14 @@ let io = null;
 const connectedOperators = new Map();
 
 function initSocketIO(httpServer) {
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+    : [];
   io = new Server(httpServer, {
-    cors: { origin: '*' },
+    cors: {
+      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+      credentials: true,
+    },
   });
 
   // Authenticate socket connections using JWT
