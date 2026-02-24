@@ -37,10 +37,13 @@ router.get('/', async (req, res, next) => {
       query += ` AND cl.call_start <= $${params.length}`;
     }
 
-    // CSV export (admin/supervisor only, capped at 50k rows)
+    // CSV export (admin/supervisor only, client_id required for data isolation)
     if (req.query.format === 'csv') {
       if (!['admin', 'supervisor'].includes(req.operator?.role)) {
         return res.status(403).json({ error: 'CSV export requires admin or supervisor role' });
+      }
+      if (!client_id) {
+        return res.status(400).json({ error: 'client_id is required for CSV export' });
       }
       const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC LIMIT 50000', params);
       const cols = ['id','client_name','caller_id_num','caller_id_name','did','call_start','call_answered','call_end','duration_seconds','disposition','operator_name'];
@@ -128,27 +131,33 @@ router.get('/follow-ups/pending', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /api/calls/history/:callerNumber — call history for a specific caller
+// GET /api/calls/history/:callerNumber?client_id=... — call history for a specific caller
+// client_id is required: history is scoped to one client to prevent cross-client data exposure
 router.get('/history/:callerNumber', async (req, res, next) => {
   try {
+    const { client_id } = req.query;
+    if (!client_id) {
+      return res.status(400).json({ error: 'client_id is required for caller history lookup' });
+    }
+
     const result = await pool.query(
       `SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
        FROM call_logs cl
        LEFT JOIN clients c ON cl.client_id = c.id
        LEFT JOIN operators o ON cl.operator_id = o.id
-       WHERE cl.caller_id_num = $1
+       WHERE cl.caller_id_num = $1 AND cl.client_id = $2
        ORDER BY cl.call_start DESC
        LIMIT 50`,
-      [req.params.callerNumber]
+      [req.params.callerNumber, client_id]
     );
     const messages = await pool.query(
       `SELECT m.*, c.name AS client_name
        FROM messages m
        LEFT JOIN clients c ON m.client_id = c.id
-       WHERE m.caller_phone = $1
+       WHERE m.caller_phone = $1 AND m.client_id = $2
        ORDER BY m.created_at DESC
        LIMIT 50`,
-      [req.params.callerNumber]
+      [req.params.callerNumber, client_id]
     );
     res.json({ calls: result.rows, messages: messages.rows });
   } catch (err) { next(err); }

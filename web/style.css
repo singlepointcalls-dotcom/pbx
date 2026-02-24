@@ -1660,3 +1660,287 @@ kbd {
 .canned-item:hover, .canned-item.active { background: var(--accent-light); }
 .canned-item-code { font-weight: 700; color: var(--accent); font-size: 0.78rem; min-width: 60px; }
 .canned-item-title { font-size: 0.82rem; color: var(--text-muted); }
+
+/* ============================================================
+   MANDATORY MESSAGE BANNER (shown after call ends without message)
+   ============================================================ */
+.msg-mandatory-banner {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--danger-light);
+  border-bottom: 2px solid var(--danger);
+  font-size: 0.82rem;
+  color: var(--danger);
+  font-weight: 600;
+  animation: pulse 1.2s ease-in-out 3;
+}
+
+/* ============================================================
+   CALLER ID HINT (inbound number ≠ typed number)
+   ============================================================ */
+.caller-id-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 6px 10px;
+  background: var(--warning-light);
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--warning);
+  font-weight: 600;
+}
+.caller-id-hint.hidden { display: none; }
+.caller-id-hint button {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--warning);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.caller-id-hint button:hover { opacity: 0.85; }
+
+/* ============================================================
+   PUSH NOTIFICATION PROMPT BANNER
+   ============================================================ */
+.push-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent);
+  font-size: 0.82rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.push-prompt.hidden { display: none; }
+.push-prompt p { flex: 1; }
+.push-prompt-icon { font-size: 1.1rem; }
+
+/* ============================================================
+   MOBILE NAVIGATION TOGGLE (hamburger)
+   ============================================================ */
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  color: var(--text);
+  line-height: 1;
+}
+
+/* ============================================================
+   RESPONSIVE — TABLET (≤ 1100px)
+   Collapse right sidebar behind a toggle button
+   ============================================================ */
+@media (max-width: 1100px) {
+  .main-layout { grid-template-columns: 240px 1fr; }
+
+  .right-sidebar {
+    position: fixed;
+    right: 0; top: 54px; bottom: 0;
+    width: 300px;
+    z-index: 400;
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+  }
+  .right-sidebar.open { transform: translateX(0); }
+
+  /* Overlay when right sidebar is open */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 54px 0 0 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 399;
+  }
+  .sidebar-overlay.active { display: block; }
+
+  /* Toggle button shown on tablet+ */
+  #right-sidebar-toggle {
+    display: inline-flex;
+  }
+
+  /* Compact topbar buttons */
+  .operator-name { display: none; }
+  .topbar-left .logo span:not(.logo-icon) { display: none; }
+}
+
+/* ============================================================
+   RESPONSIVE — MOBILE (≤ 768px)
+   Single-column layout with bottom tab bar
+   ============================================================ */
+@media (max-width: 768px) {
+  body { overflow: hidden; }
+
+  .topbar {
+    padding: 0 12px;
+    height: 50px;
+    position: sticky;
+    top: 0;
+    z-index: 500;
+  }
+
+  /* Hide most topbar-right items on mobile — keep only critical ones */
+  .topbar-right {
+    gap: 4px;
+  }
+  .topbar-right .btn-sm:not(#mobile-more-btn):not(#break-status-btn):not(.btn-logout) {
+    display: none;
+  }
+  .topbar-right #chat-btn,
+  .topbar-right #demo-btn,
+  .topbar-right #dark-mode-btn,
+  .topbar-right #portal-link-btn { display: none; }
+
+  .mobile-menu-btn { display: inline-flex; }
+  .topbar-nav { display: none; }
+
+  /* Mobile overflow menu */
+  .mobile-nav-drawer {
+    position: fixed;
+    top: 50px; right: 0;
+    width: 240px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 0 0 0 var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    z-index: 600;
+    padding: 8px 0;
+    transform: translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .mobile-nav-drawer.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mobile-nav-drawer button {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 10px 18px;
+    background: none; border: none; border-bottom: 1px solid var(--border);
+    font-size: 0.85rem; font-weight: 600; color: var(--text); cursor: pointer;
+    text-align: left;
+  }
+  .mobile-nav-drawer button:last-child { border-bottom: none; }
+  .mobile-nav-drawer button:hover { background: var(--bg); }
+
+  /* Main layout becomes 1 column — panels slide in/out */
+  .main-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    position: relative;
+  }
+
+  /* Bottom tab bar for switching panels on mobile */
+  .mobile-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 54px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    z-index: 500;
+    box-shadow: 0 -1px 6px rgba(30,35,64,0.1);
+  }
+  .mobile-tab-bar button {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    background: none; border: none; cursor: pointer;
+    font-size: 0.58rem; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 6px 0;
+    transition: color 0.15s;
+  }
+  .mobile-tab-bar button .tab-icon { font-size: 1.1rem; }
+  .mobile-tab-bar button.active { color: var(--accent); }
+
+  /* Each panel fills the full screen; hidden by default */
+  .sidebar, .content, .right-sidebar {
+    position: absolute;
+    inset: 0;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    overflow-y: auto;
+    width: 100%;
+    border: none;
+  }
+  .sidebar, .content, .right-sidebar { opacity: 0; pointer-events: none; }
+  .sidebar.mobile-active,
+  .content.mobile-active,
+  .right-sidebar.mobile-active {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Body padding for bottom tab bar */
+  .main-layout { padding-bottom: 54px; }
+
+  /* Forms shouldn't be clipped on mobile */
+  .message-form-wrap { padding: 12px; }
+
+  /* Compact the message form */
+  .form-row { flex-direction: column; }
+  .form-row .field { min-width: unset; }
+
+  /* Right sidebar becomes slide-in from bottom on mobile */
+  .right-sidebar {
+    top: auto;
+    bottom: 54px;
+    height: 70vh;
+    transform: translateY(100%);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-top: 2px solid var(--accent);
+    box-shadow: 0 -8px 32px rgba(30,35,64,0.18);
+  }
+  .right-sidebar.mobile-active {
+    transform: translateY(0);
+  }
+
+  /* Hide 3-col layout toggle */
+  #right-sidebar-toggle { display: none; }
+
+  .login-box { width: calc(100% - 32px); padding: 32px 20px; }
+}
+
+/* ============================================================
+   RESPONSIVE — SMALL MOBILE (≤ 420px)
+   ============================================================ */
+@media (max-width: 420px) {
+  .topbar { padding: 0 8px; }
+  .logo .logo-icon { font-size: 1rem; }
+  .status-badge { display: none; }
+  .mobile-tab-bar button { font-size: 0.52rem; }
+  .mobile-tab-bar button .tab-icon { font-size: 0.95rem; }
+}
+
+/* ============================================================
+   HIDE MOBILE-ONLY ELEMENTS ON DESKTOP
+   ============================================================ */
+.mobile-tab-bar      { display: none; }
+.mobile-nav-drawer   { display: none; }
+#right-sidebar-toggle { display: none; }
+@media (max-width: 768px) {
+  .mobile-tab-bar    { display: flex; }
+  .mobile-nav-drawer { display: block; }
+}
+@media (min-width: 769px) {
+  .sidebar-overlay   { display: none !important; }
+}

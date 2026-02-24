@@ -1,5 +1,7 @@
 'use strict';
 
+const { sendClientPortalPush, broadcastOperatorPush } = require('./push');
+
 /**
  * Message Delivery Service
  *
@@ -265,6 +267,21 @@ async function deliverMessage(messageId) {
   const inappDeliveryId = await createDeliveryRecord(messageId, null, 'inapp', null);
   await updateDelivery(inappDeliveryId, 'sent');
   deliveryResults.push({ channel: 'inapp', status: 'sent' });
+
+  // Web Push — notify portal users of this client and all online operators
+  const pushBody = message.caller_name
+    ? `${message.caller_name}${message.caller_phone ? ` (${message.caller_phone})` : ''}: ${(message.body || '').substring(0, 100)}`
+    : (message.body || '').substring(0, 120);
+  const pushPayload = {
+    title: `New message — ${message.client_name || 'Client'}`,
+    body:  pushBody,
+    url:   '/portal',
+    tag:   `msg-${messageId}`,
+    requireInteraction: message.urgency === 'high',
+  };
+  // Fire-and-forget — push failures must not affect message delivery status
+  sendClientPortalPush(message.client_id, { ...pushPayload, url: '/portal' }).catch(() => {});
+  broadcastOperatorPush({ ...pushPayload, url: '/' }).catch(() => {});
 
   // Update message status — only external channels (email/sms/webhook) count towards failure
   const externalResults = deliveryResults.filter((r) => ['email', 'sms', 'webhook'].includes(r.channel));

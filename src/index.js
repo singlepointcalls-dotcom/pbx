@@ -7,6 +7,8 @@ const app = require('./app');
 const { initSocketIO } = require('./services/realtime');
 const { connectARI } = require('./asterisk/ari');
 const { startEscalationService } = require('./services/escalation');
+const { startRetentionService }  = require('./services/retention');
+const pushService                = require('./services/push');
 
 const PORT = parseInt(process.env.PORT || '3000');
 
@@ -28,6 +30,12 @@ connectARI().catch((err) => {
 
 // Start escalation background service
 startEscalationService();
+
+// Initialise Web Push (VAPID keys from env — non-fatal if not configured)
+pushService.init();
+
+// Start GDPR data retention purge service
+startRetentionService();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

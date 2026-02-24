@@ -97,6 +97,7 @@ const Portal = (() => {
     el('p-username-display').textContent = currentUser.username;
     el('p-company-name').textContent = currentUser.client_name || 'Client Portal';
     nav('dashboard');
+    initPush();
   }
 
   /* ---- Navigation ---- */
@@ -107,6 +108,8 @@ const Portal = (() => {
     if (sEl) sEl.classList.add('active');
     const btn = document.querySelector(`.p-nav-btn[onclick="Portal.nav('${section}')"]`);
     if (btn) btn.classList.add('active');
+    // Close mobile nav drawer if open
+    closeMobileNav();
 
     if (section === 'dashboard') loadDashboard();
     else if (section === 'messages') { msgOffset = 0; loadMessages(); }
@@ -114,6 +117,26 @@ const Portal = (() => {
     else if (section === 'billing') loadBilling();
     else if (section === 'availability') loadAvailability();
   }
+
+  /* ---- Mobile nav toggle ---- */
+  function toggleMobileNav() {
+    const nav = el('p-topbar-nav');
+    if (nav) nav.classList.toggle('open');
+  }
+
+  function closeMobileNav() {
+    const nav = el('p-topbar-nav');
+    if (nav) nav.classList.remove('open');
+  }
+
+  // Close mobile nav on outside tap
+  document.addEventListener('click', (e) => {
+    const nav  = el('p-topbar-nav');
+    const btn  = el('p-hamburger');
+    if (nav && nav.classList.contains('open') && !nav.contains(e.target) && e.target !== btn) {
+      nav.classList.remove('open');
+    }
+  }, true);
 
   /* ---- Dashboard ---- */
   async function loadDashboard() {
@@ -223,11 +246,11 @@ const Portal = (() => {
       el('p-calls-tbody').innerHTML = data.recent.length
         ? data.recent.map((c) => `
           <tr>
-            <td>${formatDate(c.call_start)}</td>
-            <td>${escHtml(c.caller_id_name || c.caller_id_num || '—')}<br/><small style="color:#999">${escHtml(c.caller_id_num || '')}</small></td>
-            <td>${c.duration_seconds ? fmtMins(c.duration_seconds) : '—'}</td>
-            <td>${escHtml(c.operator_name || '—')}</td>
-            <td><span class="p-pill p-pill-${c.disposition === 'answered' ? 'green' : 'red'}">${c.disposition || '—'}</span></td>
+            <td data-label="Date / Time">${formatDate(c.call_start)}</td>
+            <td data-label="Caller">${escHtml(c.caller_id_name || c.caller_id_num || '—')}<br/><small style="color:#999">${escHtml(c.caller_id_num || '')}</small></td>
+            <td data-label="Duration">${c.duration_seconds ? fmtMins(c.duration_seconds) : '—'}</td>
+            <td data-label="Answered By">${escHtml(c.operator_name || '—')}</td>
+            <td data-label="Status"><span class="p-pill p-pill-${c.disposition === 'answered' ? 'green' : 'red'}">${c.disposition || '—'}</span></td>
           </tr>
         `).join('')
         : '<tr><td colspan="5" class="p-empty">No calls in this period</td></tr>';
@@ -257,12 +280,12 @@ const Portal = (() => {
       el('p-billing-tbody').innerHTML = data.reports.length
         ? data.reports.map((r) => `
           <tr>
-            <td><strong>${months[r.month-1]} ${r.year}</strong></td>
-            <td>${r.total_calls} <small style="color:#999">(${r.answered_calls} ans, ${r.missed_calls} missed)</small></td>
-            <td>${r.total_minutes}m</td>
-            <td>${r.total_messages}</td>
-            <td><strong>${plan?.currency || 'GBP'} ${parseFloat(r.amount_due).toFixed(2)}</strong></td>
-            <td><button class="p-btn p-btn-sm" onclick="Portal.downloadReport('${r.id}')">&#11015; View</button></td>
+            <td data-label="Period"><strong>${months[r.month-1]} ${r.year}</strong></td>
+            <td data-label="Calls">${r.total_calls} <small style="color:#999">(${r.answered_calls} ans, ${r.missed_calls} missed)</small></td>
+            <td data-label="Minutes">${r.total_minutes}m</td>
+            <td data-label="Messages">${r.total_messages}</td>
+            <td data-label="Amount Due"><strong>${plan?.currency || 'GBP'} ${parseFloat(r.amount_due).toFixed(2)}</strong></td>
+            <td data-label="Report"><button class="p-btn p-btn-sm" onclick="Portal.downloadReport('${r.id}')">&#11015; View</button></td>
           </tr>
         `).join('')
         : '<tr><td colspan="6" class="p-empty">No reports yet</td></tr>';
@@ -308,7 +331,89 @@ const Portal = (() => {
     } catch (err) { alert(`Failed: ${err.message}`); }
   }
 
+  /* ---- Web Push notifications ---- */
+  async function initPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    // Register service worker
+    try {
+      await navigator.serviceWorker.register('/sw.js');
+    } catch { return; }
+
+    // Don't prompt if already granted or blocked
+    if (Notification.permission === 'granted') {
+      await subscribePush(false); // silent re-subscribe in case subscription expired
+      return;
+    }
+    if (Notification.permission === 'denied') return;
+
+    // Show banner only if user hasn't dismissed it in this session
+    if (!sessionStorage.getItem('push_banner_dismissed')) {
+      const banner = el('p-push-banner');
+      if (banner) banner.classList.remove('hidden');
+    }
+  }
+
+  async function enablePush() {
+    el('p-push-banner')?.classList.add('hidden');
+    await subscribePush(true);
+  }
+
+  function dismissPushBanner() {
+    el('p-push-banner')?.classList.add('hidden');
+    sessionStorage.setItem('push_banner_dismissed', '1');
+  }
+
+  async function subscribePush(requestPermission) {
+    try {
+      if (requestPermission) {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return;
+      }
+
+      const reg = await navigator.serviceWorker.ready;
+
+      // Get VAPID public key
+      const keyResp = await fetch('/api/push/vapid-public-key');
+      if (!keyResp.ok) return;
+      const { publicKey } = await keyResp.json();
+      if (!publicKey) return;
+
+      const existing = await reg.pushManager.getSubscription();
+      const subscription = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+
+      // Register with server
+      await api('POST', '/push/subscribe', {
+        subscription: subscription.toJSON(),
+        userAgent: getBrowserHint(),
+      });
+    } catch (err) {
+      console.warn('[Portal] Push subscription failed:', err.message);
+    }
+  }
+
+  function getBrowserHint() {
+    const ua = navigator.userAgent;
+    if (/Chrome\/(\d+)/.test(ua)) return `Chrome ${RegExp.$1}`;
+    if (/Firefox\/(\d+)/.test(ua)) return `Firefox ${RegExp.$1}`;
+    if (/Safari\/(\d+)/.test(ua) && !/Chrome/.test(ua)) return 'Safari';
+    return 'Unknown';
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw     = atob(base64);
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
-  return { nav, logout, loadMessages, msgPage, loadCalls, loadBilling, loadAvailability, setAvailability, saveAvailNote, downloadReport };
+  return {
+    nav, logout, loadMessages, msgPage, loadCalls, loadBilling, loadAvailability,
+    setAvailability, saveAvailNote, downloadReport,
+    toggleMobileNav, enablePush, dismissPushBanner,
+  };
 })();

@@ -72,9 +72,35 @@
       <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
       <span id="operator-name" class="operator-name"></span>
       <button class="btn btn-sm btn-secondary" onclick="App.showMyProfile()">&#128100;</button>
-      <button class="btn btn-sm" onclick="App.logout()">Sign Out</button>
+      <button class="btn btn-sm btn-logout" onclick="App.logout()">Sign Out</button>
+      <!-- Hamburger menu — visible on mobile only -->
+      <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="App.toggleMobileMenu()" aria-label="Menu">&#9776;</button>
+    </div>
+
+    <!-- Mobile overflow nav drawer -->
+    <div class="mobile-nav-drawer" id="mobile-nav-drawer">
+      <button onclick="App.switchView('console');App.closeMobileMenu()">&#128196; Console</button>
+      <button id="mob-wallboard-btn" style="display:none" onclick="App.switchView('wallboard');App.closeMobileMenu()">&#128202; Wallboard</button>
+      <button id="mob-admin-btn" style="display:none" onclick="App.switchView('admin');App.closeMobileMenu()">&#128736; Admin</button>
+      <button onclick="App.openClientBrowser();App.closeMobileMenu()">&#128193; Client Browser</button>
+      <button onclick="App.openOutbound();App.closeMobileMenu()">&#128222; Outbound Call</button>
+      <button onclick="App.toggleChat();App.closeMobileMenu()">&#128172; Team Chat</button>
+      <button onclick="App.toggleDarkMode();App.closeMobileMenu()">&#127769; Dark Mode</button>
+      <button id="mob-push-btn" onclick="App.togglePushNotifications();App.closeMobileMenu()" style="display:none">&#128276; Enable Notifications</button>
+      <button onclick="App.showMyProfile();App.closeMobileMenu()">&#128100; My Profile</button>
+      <button onclick="App.logout()">&#128274; Sign Out</button>
+    </div>
+
+    <!-- Push notification consent banner -->
+    <div class="push-prompt hidden" id="push-prompt">
+      <span class="push-prompt-icon">&#128276;</span>
+      <p>Enable push notifications to be alerted of new calls and messages even when this tab is in the background.</p>
+      <button class="btn btn-sm btn-primary" onclick="App.enablePushNotifications()">Enable</button>
+      <button class="btn btn-sm" onclick="App.dismissPushPrompt()">Later</button>
     </div>
   </header>
+
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="App.closeSidebars()"></div>
 
   <div class="main-layout" id="view-console">
 
@@ -285,7 +311,10 @@
             </div>
             <div class="field">
               <label>Caller Phone</label>
-              <input type="tel" id="msg-caller-phone" placeholder="+44 7700 900000" />
+              <input type="tel" id="msg-caller-phone" placeholder="+44 7700 900000"
+                     oninput="App.onCallerPhoneChanged()" />
+              <!-- Shown when inbound caller ID differs from the typed number -->
+              <div id="msg-caller-id-hint" class="caller-id-hint hidden"></div>
             </div>
             <div class="field">
               <label>Company</label>
@@ -341,6 +370,19 @@
     </aside>
 
   </div><!-- /main-layout -->
+
+  <!-- Mobile bottom tab bar (visible on mobile only) -->
+  <nav class="mobile-tab-bar" id="mobile-tab-bar">
+    <button onclick="App.mobileSwitchPanel('sidebar')" id="mob-tab-queue" class="active">
+      <span class="tab-icon">&#128222;</span>Queue
+    </button>
+    <button onclick="App.mobileSwitchPanel('content')" id="mob-tab-form">
+      <span class="tab-icon">&#128221;</span>Message
+    </button>
+    <button onclick="App.mobileSwitchPanel('right-sidebar')" id="mob-tab-recent">
+      <span class="tab-icon">&#128195;</span>Recent
+    </button>
+  </nav>
 
   <!-- ===== Wallboard View ===== -->
   <div id="view-wallboard" class="wb-view" style="display:none">

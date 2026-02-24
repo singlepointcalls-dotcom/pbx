@@ -21,6 +21,12 @@ const App = (() => {
   let timerInterval = null;
   let callOnHold = false;
 
+  // Post-call mandatory message tracking
+  // Set when a call ends so the form can reference the correct call_log
+  let _pendingMsgCallLogId   = null;
+  let _pendingMsgClientId    = null;
+  let _pendingMsgMessageDone = false;
+
   /* ---- DOM Helpers ---- */
   const el = (id) => document.getElementById(id);
   const show = (id) => { const e = el(id); if (e) e.style.display = ''; };
@@ -195,6 +201,12 @@ const App = (() => {
 
     // Load canned responses for autocomplete
     loadCannedResponsesForAutocomplete();
+
+    // Mobile: initialise panel state and show sidebar by default
+    mobileSwitchPanel('sidebar');
+
+    // Push notifications: show prompt if not yet decided
+    initPushPrompt();
   }
 
   /* ---- Demo Mode ---- */
@@ -431,11 +443,28 @@ const App = (() => {
     callQueue.delete(data.channelId);
     renderCallQueue();
     if (activeCall?.channelId === data.channelId) {
-      // Show disposition modal if we had an active call with a call log
-      const callLogId = activeCall.callLogId;
+      // Save call context before clearing — message form must reference it
+      const callLogId  = activeCall.callLogId;
+      const clientId   = activeCall.client?.id || null;
+      const callerNum  = activeCall.callerIdNum || '';
+      const callerName = activeCall.callerIdName || '';
       clearActiveCall();
-      if (callLogId) showDispositionModal(callLogId);
-      else toast('Call ended', 'info');
+      if (callLogId) {
+        // Pre-fill message form with call context so it's ready immediately
+        _pendingMsgCallLogId  = callLogId;
+        _pendingMsgClientId   = clientId;
+        _pendingMsgMessageDone = false;
+        if (clientId) { el('msg-client').value = clientId; onClientChange(); }
+        el('msg-caller-phone').value = callerNum;
+        el('msg-caller-name').value  = callerName;
+        showCallerIdHint(callerNum);
+        _showMandatoryMessageBanner();
+        showDispositionModal(callLogId);
+        // On mobile: switch to message form
+        if (window.innerWidth <= 768) mobileSwitchPanel('content');
+      } else {
+        toast('Call ended', 'info');
+      }
     }
     if (callQueue.size === 0) {
       el('status-badge').className = 'status-badge ready';
@@ -488,6 +517,8 @@ const App = (() => {
         showActiveCallPanel(call);
         viewScript(channelId);
         prefillMessageForm(call);
+        // On mobile: auto-switch to message form panel when call is answered
+        mobileAutoSwitchOnCall();
         // Load client availability
         if (call.client) loadCallAvailability(call.client.id);
       })
@@ -954,6 +985,54 @@ const App = (() => {
     }
     el('msg-caller-phone').value = call.callerIdNum || '';
     el('msg-caller-name').value = call.callerIdName || '';
+    // Show caller ID hint so operator confirms this is the best contact number
+    showCallerIdHint(call.callerIdNum || '');
+  }
+
+  /* ---- Caller ID hint — prompts operator to confirm inbound number ---- */
+  let _inboundCallerNum = '';
+
+  function showCallerIdHint(inboundNum) {
+    _inboundCallerNum = inboundNum;
+    updateCallerIdHint();
+  }
+
+  function updateCallerIdHint() {
+    const hint   = el('msg-caller-id-hint');
+    const field  = el('msg-caller-phone');
+    if (!hint || !field) return;
+    const typed  = field.value.trim();
+    if (!_inboundCallerNum) { hint.classList.add('hidden'); return; }
+
+    if (!typed || typed === _inboundCallerNum) {
+      // Number matches or field is empty — show confirmation prompt
+      hint.innerHTML = `&#128222; Inbound number: <strong>${escHtml(_inboundCallerNum)}</strong>
+        &nbsp;— Is this the best contact number for the caller?
+        <button onclick="App.confirmCallerPhone()">&#10003; Confirm</button>`;
+      hint.classList.remove('hidden');
+    } else {
+      // Operator has typed a different number — acknowledge
+      hint.innerHTML = `&#128222; Inbound: <strong>${escHtml(_inboundCallerNum)}</strong>
+        &ensp;&#x2192;&ensp;Using: <strong>${escHtml(typed)}</strong>`;
+      hint.classList.remove('hidden');
+    }
+  }
+
+  function confirmCallerPhone() {
+    // Ensure the inbound number is set and the hint indicates confirmed
+    const field = el('msg-caller-phone');
+    if (field && _inboundCallerNum) field.value = _inboundCallerNum;
+    const hint = el('msg-caller-id-hint');
+    if (hint) {
+      hint.innerHTML = `&#10003; Contact number confirmed: <strong>${escHtml(_inboundCallerNum)}</strong>`;
+      hint.style.background = 'var(--success-light)';
+      hint.style.borderColor = '#86efac';
+      hint.style.color = 'var(--success)';
+    }
+  }
+
+  function onCallerPhoneChanged() {
+    updateCallerIdHint();
   }
 
   /* ---- Clients ---- */
@@ -1171,7 +1250,8 @@ const App = (() => {
 
     const payload = {
       client_id: clientId,
-      call_log_id: activeCall?.callLogId || null,
+      // Use pending call log ID (post-call) or active call ID (mid-call)
+      call_log_id: _pendingMsgCallLogId || activeCall?.callLogId || null,
       caller_name: el('msg-caller-name').value.trim() || null,
       caller_phone: el('msg-caller-phone').value.trim() || null,
       caller_company: el('msg-caller-company').value.trim() || null,
@@ -1188,6 +1268,7 @@ const App = (() => {
       await api('POST', '/messages', payload);
       feedback.className = 'feedback success';
       feedback.textContent = andDeliver ? 'Message saved and delivered.' : 'Message saved.';
+      _clearMandatoryMessageBanner();
       clearMessageForm();
       loadMessages();
     } catch (err) {
@@ -1200,11 +1281,39 @@ const App = (() => {
 
   function saveMessageOnly() { submitMessage(false); }
 
+  /* ---- Mandatory message banner (shown after call ends) ---- */
+  function _showMandatoryMessageBanner() {
+    let banner = el('msg-mandatory-banner');
+    if (!banner) {
+      // Inject banner above the form header if it doesn't exist in HTML yet
+      const header = document.querySelector('#view-console .panel-header h2');
+      if (!header) return;
+      banner = document.createElement('div');
+      banner.id = 'msg-mandatory-banner';
+      banner.className = 'msg-mandatory-banner';
+      header.closest('.panel-header').after(banner);
+    }
+    banner.innerHTML = `&#9888; <strong>Message required</strong> — please complete a message or select a call type for this call before taking another.`;
+    banner.style.display = 'flex';
+  }
+
+  function _clearMandatoryMessageBanner() {
+    _pendingMsgCallLogId   = null;
+    _pendingMsgClientId    = null;
+    _pendingMsgMessageDone = true;
+    const banner = el('msg-mandatory-banner');
+    if (banner) banner.style.display = 'none';
+  }
+
   function clearMessageForm() {
     el('msg-client').value = '';
     el('msg-caller-name').value = '';
     el('msg-caller-phone').value = '';
     el('msg-caller-company').value = '';
+    // Clear caller ID hint
+    _inboundCallerNum = '';
+    const hint = el('msg-caller-id-hint');
+    if (hint) { hint.classList.add('hidden'); hint.style.cssText = ''; }
     el('msg-subject').value = '';
     el('msg-body').value = '';
     el('msg-urgency').value = 'normal';
@@ -1977,6 +2086,140 @@ const App = (() => {
   }
 
   /* ---- Bootstrap ---- */
+  /* ============================================================
+     MOBILE NAVIGATION
+     ============================================================ */
+  let _activeMobilePanel = 'sidebar';
+
+  function mobileSwitchPanel(panel) {
+    // Only applies at mobile breakpoint
+    if (window.innerWidth > 768) return;
+    _activeMobilePanel = panel;
+    ['sidebar', 'content', 'right-sidebar'].forEach((p) => {
+      const el2 = document.querySelector(`.${p}`);
+      if (el2) el2.classList.toggle('mobile-active', p === panel);
+    });
+    // Update tab bar active state
+    const map = { 'sidebar': 'mob-tab-queue', 'content': 'mob-tab-form', 'right-sidebar': 'mob-tab-recent' };
+    document.querySelectorAll('.mobile-tab-bar button').forEach((b) => b.classList.remove('active'));
+    const activeTab = el(map[panel]);
+    if (activeTab) activeTab.classList.add('active');
+  }
+
+  function toggleMobileMenu() {
+    const drawer = el('mobile-nav-drawer');
+    if (drawer) drawer.classList.toggle('open');
+  }
+
+  function closeMobileMenu() {
+    const drawer = el('mobile-nav-drawer');
+    if (drawer) drawer.classList.remove('open');
+  }
+
+  function closeSidebars() {
+    const overlay = el('sidebar-overlay');
+    const rs      = document.querySelector('.right-sidebar');
+    if (rs)      rs.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+  }
+
+  // Close mobile menu on outside click
+  document.addEventListener('click', (e) => {
+    const drawer = el('mobile-nav-drawer');
+    const btn    = el('mobile-menu-btn');
+    if (drawer && drawer.classList.contains('open') &&
+        !drawer.contains(e.target) && e.target !== btn) {
+      drawer.classList.remove('open');
+    }
+  }, true);
+
+  // On mobile: when a call is answered switch to form panel automatically
+  function mobileAutoSwitchOnCall() {
+    if (window.innerWidth <= 768) mobileSwitchPanel('content');
+  }
+
+  /* ============================================================
+     WEB PUSH NOTIFICATIONS (operator console)
+     ============================================================ */
+  async function initPushPrompt() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try { await navigator.serviceWorker.register('/sw.js'); } catch { return; }
+    if (Notification.permission === 'granted') {
+      await _operatorSubscribePush(false); return;
+    }
+    if (Notification.permission === 'denied') return;
+    // Show banner once per session
+    if (!sessionStorage.getItem('op_push_dismissed')) {
+      const banner = el('push-prompt');
+      if (banner) banner.classList.remove('hidden');
+      // Also show button in mobile drawer
+      const mobBtn = el('mob-push-btn');
+      if (mobBtn) mobBtn.style.display = '';
+    }
+  }
+
+  async function enablePushNotifications() {
+    el('push-prompt')?.classList.add('hidden');
+    await _operatorSubscribePush(true);
+  }
+
+  function dismissPushPrompt() {
+    el('push-prompt')?.classList.add('hidden');
+    sessionStorage.setItem('op_push_dismissed', '1');
+  }
+
+  async function togglePushNotifications() {
+    if (Notification.permission === 'granted') {
+      // Already granted — ensure subscribed
+      await _operatorSubscribePush(true);
+      toast('Push notifications enabled', 'success');
+    } else {
+      await enablePushNotifications();
+    }
+  }
+
+  async function _operatorSubscribePush(requestPermission) {
+    try {
+      if (requestPermission) {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') { toast('Permission denied for notifications', 'warning'); return; }
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const keyResp = await fetch('/api/push/vapid-public-key');
+      if (!keyResp.ok) return;
+      const { publicKey } = await keyResp.json();
+      if (!publicKey) return;
+
+      const existing     = await reg.pushManager.getSubscription();
+      const subscription = existing || await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlBase64ToUint8Array(publicKey),
+      });
+      await api('POST', '/push/subscribe', {
+        subscription: subscription.toJSON(),
+        userAgent: _getBrowserHint(),
+      });
+      toast('Push notifications active', 'success', 2000);
+    } catch (err) {
+      console.warn('[App] Push subscribe failed:', err.message);
+    }
+  }
+
+  function _getBrowserHint() {
+    const ua = navigator.userAgent;
+    if (/Chrome\/(\d+)/.test(ua)) return `Chrome ${RegExp.$1}`;
+    if (/Firefox\/(\d+)/.test(ua)) return `Firefox ${RegExp.$1}`;
+    if (/Safari\/(\d+)/.test(ua) && !/Chrome/.test(ua)) return 'Safari';
+    return 'Unknown';
+  }
+
+  function _urlBase64ToUint8Array(b64) {
+    const padding = '='.repeat((4 - b64.length % 4) % 4);
+    const base64  = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw     = atob(base64);
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
   /* ---- Public interface ---- */
@@ -2011,6 +2254,12 @@ const App = (() => {
     loadWallboard,
     // QA
     openQA, closeQA, submitQA,
+    // Mobile nav
+    mobileSwitchPanel, toggleMobileMenu, closeMobileMenu, closeSidebars, mobileAutoSwitchOnCall,
+    // Push notifications
+    enablePushNotifications, dismissPushPrompt, togglePushNotifications,
+    // Caller ID hint
+    onCallerPhoneChanged, confirmCallerPhone,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,

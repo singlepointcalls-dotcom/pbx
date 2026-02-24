@@ -36,18 +36,27 @@
   <!-- Top bar -->
   <header class="p-topbar">
     <div class="p-topbar-brand">&#9742; <span id="p-company-name">Client Portal</span></div>
-    <nav class="p-topbar-nav">
-      <button class="p-nav-btn active" onclick="Portal.nav('dashboard')">Dashboard</button>
-      <button class="p-nav-btn" onclick="Portal.nav('messages')">Messages</button>
-      <button class="p-nav-btn" onclick="Portal.nav('calls')">Call History</button>
-      <button class="p-nav-btn" onclick="Portal.nav('billing')">Billing</button>
-      <button class="p-nav-btn" onclick="Portal.nav('availability')">Availability</button>
+    <nav class="p-topbar-nav" id="p-topbar-nav">
+      <button class="p-nav-btn active" onclick="Portal.nav('dashboard')">&#128202; Dashboard</button>
+      <button class="p-nav-btn" onclick="Portal.nav('messages')">&#128220; Messages</button>
+      <button class="p-nav-btn" onclick="Portal.nav('calls')">&#128222; Call History</button>
+      <button class="p-nav-btn" onclick="Portal.nav('billing')">&#128182; Billing</button>
+      <button class="p-nav-btn" onclick="Portal.nav('availability')">&#9200; Availability</button>
     </nav>
     <div class="p-topbar-right">
       <span id="p-username-display" class="p-username"></span>
       <button class="p-btn p-btn-sm" onclick="Portal.logout()">Sign Out</button>
+      <button class="p-hamburger" id="p-hamburger" onclick="Portal.toggleMobileNav()" aria-label="Menu">&#9776;</button>
     </div>
   </header>
+
+  <!-- Push notification consent banner -->
+  <div class="p-push-banner hidden" id="p-push-banner">
+    <span>&#128276;</span>
+    <p>Get push notifications when new messages arrive for your account.</p>
+    <button class="p-btn p-btn-sm p-btn-primary" onclick="Portal.enablePush()">Enable</button>
+    <button class="p-btn p-btn-sm" onclick="Portal.dismissPushBanner()">Later</button>
+  </div>
 
   <!-- Main content -->
   <div class="p-content">
@@ -93,12 +102,14 @@
         </select>
       </div>
       <div class="p-stat-grid" id="p-call-stats"></div>
-      <table class="p-table" id="p-calls-table">
-        <thead><tr>
-          <th>Date / Time</th><th>Caller</th><th>Duration</th><th>Answered By</th><th>Status</th>
-        </tr></thead>
-        <tbody id="p-calls-tbody"><tr><td colspan="5" class="p-empty">Loading...</td></tr></tbody>
-      </table>
+      <div class="p-table-wrap">
+        <table class="p-table" id="p-calls-table">
+          <thead><tr>
+            <th>Date / Time</th><th>Caller</th><th>Duration</th><th>Answered By</th><th>Status</th>
+          </tr></thead>
+          <tbody id="p-calls-tbody"><tr><td colspan="5" class="p-empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- Billing -->
@@ -106,12 +117,14 @@
       <h1>Billing</h1>
       <div id="p-plan-card" class="p-plan-card"></div>
       <h3 style="margin:24px 0 12px">Monthly Reports</h3>
-      <table class="p-table">
-        <thead><tr>
-          <th>Period</th><th>Calls</th><th>Minutes</th><th>Messages</th><th>Amount Due</th><th>Report</th>
-        </tr></thead>
-        <tbody id="p-billing-tbody"><tr><td colspan="6" class="p-empty">Loading...</td></tr></tbody>
-      </table>
+      <div class="p-table-wrap">
+        <table class="p-table">
+          <thead><tr>
+            <th>Period</th><th>Calls</th><th>Minutes</th><th>Messages</th><th>Amount Due</th><th>Report</th>
+          </tr></thead>
+          <tbody id="p-billing-tbody"><tr><td colspan="6" class="p-empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- Availability -->

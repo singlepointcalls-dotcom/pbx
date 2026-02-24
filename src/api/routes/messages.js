@@ -41,10 +41,13 @@ router.get('/', async (req, res, next) => {
       'SELECT COUNT(*)'
     );
 
-    // CSV export (admin/supervisor only, capped at 50k rows)
+    // CSV export (admin/supervisor only; client_id required for per-client data isolation)
     if (req.query.format === 'csv') {
       if (!['admin', 'supervisor'].includes(req.operator?.role)) {
         return res.status(403).json({ error: 'CSV export requires admin or supervisor role' });
+      }
+      if (!client_id) {
+        return res.status(400).json({ error: 'client_id is required for CSV export' });
       }
       const csvResult = await pool.query(query + ' ORDER BY m.created_at DESC LIMIT 50000', params);
       const cols = ['id','client_name','operator_name','caller_name','caller_phone','caller_company','subject','body','urgency','status','created_at'];

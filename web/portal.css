@@ -437,10 +437,145 @@ body {
 .pa-label { font-weight: 700; font-size: 0.95rem; }
 .pa-desc  { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
 
-/* ---- Responsive ---- */
-@media (max-width: 640px) {
-  .p-content { padding: 16px; }
-  .p-topbar-nav { gap: 0; }
-  .p-nav-btn { padding: 5px 8px; font-size: 0.75rem; }
-  .p-login-box { padding: 32px 24px; }
+/* ---- Push notification banner ---- */
+.p-push-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--accent);
+  font-size: 0.82rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.p-push-banner.hidden { display: none; }
+.p-push-banner p { flex: 1; margin: 0; }
+
+/* ---- Mobile hamburger ---- */
+.p-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  color: var(--text);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ---- Responsive: tablet (≤ 820px) ---- */
+@media (max-width: 820px) {
+  .p-content { padding: 20px 20px; }
+
+  .p-topbar {
+    padding: 0 16px;
+    height: 52px;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+  }
+
+  /* Navigation becomes a full-width drawer that slides down */
+  .p-topbar-nav {
+    display: none;
+    position: fixed;
+    top: 52px; left: 0; right: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 8px 12px;
+    gap: 4px;
+    z-index: 190;
+    flex-direction: column;
+  }
+  .p-topbar-nav.open { display: flex; }
+
+  .p-nav-btn {
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    border-radius: var(--radius);
+  }
+
+  .p-hamburger { display: block; }
+
+  /* Show username abbreviated */
+  .p-username { display: none; }
+
+  .p-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* Stats grid: 2 columns on tablet */
+  .p-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Tables: horizontal scroll on tablet */
+  .p-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .p-table { min-width: 520px; }
+}
+
+/* ---- Responsive: mobile (≤ 540px) ---- */
+@media (max-width: 540px) {
+  .p-content { padding: 14px; }
+
+  .p-login-box { padding: 28px 18px; margin: 0 12px; }
+
+  /* Stats: 2 col on small mobile too */
+  .p-stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .p-stat-value { font-size: 1.6rem; }
+
+  /* Availability grid: 2 col */
+  .p-avail-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Message card: stack meta to column */
+  .p-msg-meta { flex-direction: column; gap: 3px; }
+
+  /* Client card: stack */
+  .p-client-card { flex-direction: column; align-items: flex-start; }
+
+  /* Plan details: 1 col */
+  .p-plan-details { flex-direction: column; }
+  .p-plan-card { max-width: 100%; }
+
+  /* Pagination: compact */
+  .p-pagination { gap: 8px; }
+  .p-page-info { font-size: 0.75rem; }
+  .p-btn-sm { padding: 5px 10px; }
+
+  /* Section header filter row */
+  .p-section-header { gap: 8px; }
+
+  /* Tables become card-list on mobile */
+  .p-table, .p-table thead, .p-table tbody, .p-table th, .p-table td, .p-table tr {
+    display: block;
+  }
+  .p-table thead tr { display: none; }
+  .p-table tbody tr {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    padding: 12px 14px;
+  }
+  .p-table tbody tr:hover td { background: none; }
+  .p-table td {
+    border: none;
+    padding: 3px 0;
+    font-size: 0.83rem;
+  }
+  .p-table td::before {
+    content: attr(data-label) ": ";
+    font-weight: 700;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 }

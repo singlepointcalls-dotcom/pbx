@@ -28,6 +28,7 @@ const wallboardRoutes  = require('./api/routes/wallboard');
 const chatRoutes       = require('./api/routes/chat');
 const qaRoutes         = require('./api/routes/qa');
 const ackRoutes        = require('./api/routes/ack');
+const pushRoutes       = require('./api/routes/push');
 
 const app = express();
 
@@ -106,6 +107,7 @@ app.use('/api/wallboard', wallboardRoutes);
 app.use('/api/chat',      chatRoutes);
 app.use('/api/qa',        qaRoutes);
 app.use('/api/ack',       ackRoutes);         // public — no auth
+app.use('/api/push',     pushRoutes);         // Web Push subscription management
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

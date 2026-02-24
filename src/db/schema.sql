@@ -546,3 +546,53 @@ ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS sla_met BOOLEAN;
 -- Operator status persistence
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS current_status VARCHAR(20) NOT NULL DEFAULT 'offline';
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ DEFAULT NOW();
+
+-- ============================================================
+-- v6: GDPR data retention, Web Push notifications
+-- ============================================================
+
+-- Clients: configurable data retention period (GDPR Art. 5(1)(e) — storage limitation)
+-- Allowed values: 3, 5, 9, 12 months. Default 12.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS data_retention_months INTEGER NOT NULL DEFAULT 12
+    CHECK (data_retention_months IN (3, 5, 9, 12));
+
+-- GDPR Art. 30 / Art. 17 — audit log for all data purges carried out under retention policy
+CREATE TABLE IF NOT EXISTS data_deletion_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- client may be deleted later; preserve name for audit continuity
+    client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+    client_name VARCHAR(255) NOT NULL,
+    table_name VARCHAR(100) NOT NULL,
+    records_deleted INTEGER NOT NULL DEFAULT 0,
+    retention_months INTEGER NOT NULL,
+    cutoff_date DATE NOT NULL,
+    deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_deletion_log_client ON data_deletion_log(client_id);
+CREATE INDEX IF NOT EXISTS idx_deletion_log_ts ON data_deletion_log(deleted_at DESC);
+
+-- Web Push subscription storage (personal data — GDPR lawful basis: legitimate interest / consent)
+-- endpoint is device-unique PII and must be protected accordingly
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- Exactly one of operator_id / portal_user_id must be set (enforced by CHECK below)
+    operator_id UUID REFERENCES operators(id) ON DELETE CASCADE,
+    portal_user_id UUID REFERENCES client_portal_users(id) ON DELETE CASCADE,
+    -- Web Push fields (IETF RFC 8030 / RFC 8292)
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    -- GDPR: record when consent was given and subscriber's browser context
+    consent_given_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    user_agent_hint VARCHAR(255),     -- browser family only — no full UA stored
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_push_subscriber CHECK (
+        (operator_id IS NOT NULL AND portal_user_id IS NULL) OR
+        (operator_id IS NULL  AND portal_user_id IS NOT NULL)
+    )
+);
+-- One row per endpoint (device); upsert on re-subscribe
+CREATE UNIQUE INDEX IF NOT EXISTS uq_push_endpoint ON push_subscriptions(endpoint);
+CREATE INDEX IF NOT EXISTS idx_push_operator  ON push_subscriptions(operator_id);
+CREATE INDEX IF NOT EXISTS idx_push_portal    ON push_subscriptions(portal_user_id);
