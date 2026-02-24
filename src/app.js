@@ -12,6 +12,8 @@ const messageRoutes = require('./api/routes/messages');
 const callRoutes = require('./api/routes/calls');
 const callControlRoutes = require('./api/routes/callcontrol');
 const operatorRoutes = require('./api/routes/operators');
+const reportRoutes = require('./api/routes/reports');
+const taskRoutes = require('./api/routes/tasks');
 
 const app = express();
 
@@ -30,6 +32,8 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/callcontrol', callControlRoutes);
 app.use('/api/operators', operatorRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

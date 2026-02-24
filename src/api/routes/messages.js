@@ -41,6 +41,19 @@ router.get('/', async (req, res, next) => {
       'SELECT COUNT(*)'
     );
 
+    // CSV export
+    if (req.query.format === 'csv') {
+      const csvResult = await pool.query(query + ' ORDER BY m.created_at DESC', params);
+      const cols = ['id','client_name','operator_name','caller_name','caller_phone','caller_company','subject','body','urgency','status','created_at'];
+      const header = cols.join(',');
+      const rows = csvResult.rows.map((r) =>
+        cols.map((c) => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',')
+      );
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="messages.csv"');
+      return res.send([header, ...rows].join('\r\n'));
+    }
+
     params.push(parseInt(limit), parseInt(offset));
     query += ` ORDER BY m.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 

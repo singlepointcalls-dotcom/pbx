@@ -37,6 +37,19 @@ router.get('/', async (req, res, next) => {
       query += ` AND cl.call_start <= $${params.length}`;
     }
 
+    // CSV export
+    if (req.query.format === 'csv') {
+      const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC', params);
+      const cols = ['id','client_name','caller_id_num','caller_id_name','did','call_start','call_answered','call_end','duration_seconds','disposition','operator_name'];
+      const header = cols.join(',');
+      const rows = csvResult.rows.map((r) =>
+        cols.map((c) => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(',')
+      );
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="calls.csv"');
+      return res.send([header, ...rows].join('\r\n'));
+    }
+
     params.push(parseInt(limit), parseInt(offset));
     query += ` ORDER BY cl.call_start DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 

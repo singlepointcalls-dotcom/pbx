@@ -566,3 +566,82 @@ body {
 }
 .toggle input:checked + span { background: var(--accent); }
 .toggle input:checked + span::after { transform: translateX(18px); }
+
+/* ---- Hold Button ---- */
+.btn-hold { background: var(--warning); color: #000; }
+.btn-hold:hover { background: #c88820; }
+.btn-hold-active { background: var(--danger); color: #fff; animation: pulse 1.5s infinite; }
+.btn-hold-active:hover { background: #d04040; }
+
+/* ---- Private Contact Badge ---- */
+.private-badge {
+  display: inline-block;
+  background: rgba(224,82,82,0.2);
+  color: var(--danger);
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.contact-private-row td { background: rgba(224,82,82,0.04); }
+.contact-private-row:hover td { background: rgba(224,82,82,0.08) !important; }
+
+/* ---- Tasks ---- */
+.tasks-list { display: flex; flex-direction: column; }
+.task-item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.task-item.task-overdue { border-left: 3px solid var(--danger); }
+.task-title { font-size: 0.85rem; font-weight: 600; }
+.task-client { font-size: 0.75rem; color: var(--accent); }
+.task-due { font-size: 0.72rem; color: var(--text-muted); }
+.task-due.overdue { color: var(--danger); }
+.task-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+/* ---- Reports ---- */
+.report-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.report-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  text-align: center;
+}
+.report-card-danger { border-top: 3px solid var(--danger); }
+.report-card-warning { border-top: 3px solid var(--warning); }
+.report-card-success { border-top: 3px solid var(--success); }
+.report-card-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.report-card-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+  font-weight: 600;
+}
+.report-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}

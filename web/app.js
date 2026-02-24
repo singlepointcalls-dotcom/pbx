@@ -128,6 +128,7 @@ const App = (() => {
     connectSocket();
     loadClients();
     loadMessages();
+    Tasks.load();
   }
 
   function switchView(view) {
@@ -165,6 +166,20 @@ const App = (() => {
     socket.on('call:transferred', (data) => {
       if (activeCall?.channelId === data.channelId) clearActiveCall();
       toast(`Call transferred`, 'info');
+    });
+    socket.on('call:held', (data) => {
+      if (activeCall?.channelId === data.channelId) {
+        callOnHold = true;
+        const btn = el('btn-hold');
+        if (btn) { btn.textContent = 'Unhold'; btn.classList.add('btn-hold-active'); }
+      }
+    });
+    socket.on('call:unheld', (data) => {
+      if (activeCall?.channelId === data.channelId) {
+        callOnHold = false;
+        const btn = el('btn-hold');
+        if (btn) { btn.textContent = 'Hold'; btn.classList.remove('btn-hold-active'); }
+      }
     });
     socket.on('operators:list', (data) => renderOperators(data.operators));
     socket.on('message:new', () => loadMessages());
@@ -275,6 +290,9 @@ const App = (() => {
   function clearActiveCall() {
     activeCall = null;
     activeCallStart = null;
+    callOnHold = false;
+    const btnHold = el('btn-hold');
+    if (btnHold) { btnHold.textContent = 'Hold'; btnHold.classList.remove('btn-hold-active'); }
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     el('active-call-panel').style.display = 'none';
     el('call-timer').textContent = '0:00';
@@ -288,6 +306,22 @@ const App = (() => {
     if (!activeCall) return;
     api('POST', `/callcontrol/${activeCall.channelId}/hangup`, {})
       .catch((err) => toast(`Hangup failed: ${err.message}`, 'danger'));
+  }
+
+  let callOnHold = false;
+
+  function toggleHold() {
+    if (!activeCall) return;
+    const action = callOnHold ? 'unhold' : 'hold';
+    api('POST', `/callcontrol/${activeCall.channelId}/${action}`, {})
+      .then(() => {
+        callOnHold = !callOnHold;
+        const btn = el('btn-hold');
+        btn.textContent = callOnHold ? 'Unhold' : 'Hold';
+        btn.classList.toggle('btn-hold-active', callOnHold);
+        toast(callOnHold ? 'Caller placed on hold' : 'Call resumed', 'info', 2500);
+      })
+      .catch((err) => toast(`Hold failed: ${err.message}`, 'danger'));
   }
 
   function showTransfer() {
@@ -332,6 +366,8 @@ const App = (() => {
       const options = clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
       el('msg-client').innerHTML = '<option value="">— Select Client —</option>' + options;
       el('msg-filter-client').innerHTML = '<option value="">All Clients</option>' + options;
+      const tfClient = el('tf-client');
+      if (tfClient) tfClient.innerHTML = '<option value="">— None —</option>' + options;
     } catch (err) {
       console.error('loadClients error:', err.message);
     }
@@ -494,6 +530,7 @@ const App = (() => {
     logout,
     pickupCall,
     hangup,
+    toggleHold,
     showTransfer,
     transfer,
     viewScript,
@@ -541,6 +578,7 @@ const Admin = (() => {
 
     if (name === 'clients') loadClients();
     else if (name === 'operators') loadOperators();
+    else if (name === 'reports') loadReports();
   }
 
   /* ---- Clients ---- */
@@ -690,12 +728,12 @@ const Admin = (() => {
       return;
     }
     tbody.innerHTML = contacts.map((c) => `
-      <tr>
-        <td>${escHtml(c.name)}</td>
+      <tr${c.is_private ? ' class="contact-private-row"' : ''}>
+        <td>${escHtml(c.name)}${c.is_private ? ' <span class="private-badge">PRIVATE</span>' : ''}</td>
         <td>${escHtml(c.title || '—')}</td>
         <td>${escHtml(c.phone || '—')}</td>
-        <td>${escHtml(c.email || '—')}</td>
-        <td>${c.notify_email ? '&#10003;' : ''}</td>
+        <td>${escHtml(c.email || '—')}${c.notify_email ? ' ✉' : ''}</td>
+        <td>${escHtml(c.sms_number || '—')}${c.notify_sms ? ' ✉' : ''}</td>
         <td>${c.priority}</td>
         <td>
           <button class="btn btn-sm btn-secondary" onclick="Admin.openContactModal('${c.id}')">Edit</button>
@@ -721,8 +759,11 @@ const Admin = (() => {
           el('ctf-title').value = contact.title || '';
           el('ctf-phone').value = contact.phone || '';
           el('ctf-email').value = contact.email || '';
+          el('ctf-sms').value = contact.sms_number || '';
           el('ctf-priority').value = contact.priority || 1;
           el('ctf-notify-email').checked = !!contact.notify_email;
+          el('ctf-notify-sms').checked = !!contact.notify_sms;
+          el('ctf-private').checked = !!contact.is_private;
         }
       } catch (err) {
         toast(`Failed to load contact: ${err.message}`, 'danger');
@@ -744,8 +785,11 @@ const Admin = (() => {
       title: el('ctf-title').value.trim() || null,
       phone: el('ctf-phone').value.trim() || null,
       email: el('ctf-email').value.trim() || null,
+      sms_number: el('ctf-sms').value.trim() || null,
       priority: parseInt(el('ctf-priority').value) || 1,
       notify_email: el('ctf-notify-email').checked,
+      notify_sms: el('ctf-notify-sms').checked,
+      is_private: el('ctf-private').checked,
     };
 
     try {
@@ -863,6 +907,92 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Reports ---- */
+  async function loadReports() {
+    const days = el('report-days')?.value || 30;
+
+    // Summary cards
+    try {
+      const s = await api('GET', '/reports/summary');
+      if (s) {
+        el('report-summary').innerHTML = `
+          <div class="report-card"><div class="report-card-value">${s.calls_today}</div><div class="report-card-label">Calls Today</div></div>
+          <div class="report-card"><div class="report-card-value">${s.answered_today}</div><div class="report-card-label">Answered</div></div>
+          <div class="report-card report-card-danger"><div class="report-card-value">${s.missed_today}</div><div class="report-card-label">Missed</div></div>
+          <div class="report-card"><div class="report-card-value">${s.messages_today}</div><div class="report-card-label">Messages Today</div></div>
+          <div class="report-card report-card-warning"><div class="report-card-value">${s.tasks_pending}</div><div class="report-card-label">Pending Tasks</div></div>
+          <div class="report-card report-card-success"><div class="report-card-value">${s.operators_online}</div><div class="report-card-label">Online Now</div></div>
+        `;
+      }
+    } catch {
+      el('report-summary').innerHTML = '<p class="empty-state">Failed to load summary</p>';
+    }
+
+    // Call volume
+    try {
+      const vol = await api('GET', `/reports/call-volume?days=${days}`);
+      const tbody = el('report-volume-tbody');
+      if (vol && vol.rows.length) {
+        tbody.innerHTML = vol.rows.map((r) => `
+          <tr>
+            <td>${new Date(r.day).toLocaleDateString('en-GB')}</td>
+            <td>${r.total_calls}</td>
+            <td>${r.answered_calls}</td>
+            <td>${r.missed_calls}</td>
+            <td>${Math.round(r.total_seconds / 60)}</td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No data for this period</td></tr>';
+      }
+    } catch {
+      el('report-volume-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Error loading data</td></tr>';
+    }
+
+    // Operator performance
+    try {
+      const ops = await api('GET', `/reports/operators?days=${days}`);
+      const tbody = el('report-ops-tbody');
+      if (ops && ops.rows.length) {
+        tbody.innerHTML = ops.rows.map((r) => `
+          <tr>
+            <td>${escHtml(r.full_name)}</td>
+            <td>${r.calls_answered}</td>
+            <td>${r.messages_taken}</td>
+            <td>${Math.round(r.total_seconds / 60)}</td>
+            <td>${r.avg_duration ? Math.round(r.avg_duration) + 's' : '—'}</td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No data for this period</td></tr>';
+      }
+    } catch {
+      el('report-ops-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Error loading data</td></tr>';
+    }
+
+    // Client activity
+    try {
+      const cl = await api('GET', `/reports/clients?days=${days}`);
+      const tbody = el('report-clients-tbody');
+      if (cl && cl.rows.length) {
+        tbody.innerHTML = cl.rows.map((r) => `
+          <tr>
+            <td>${escHtml(r.name)}</td>
+            <td>${escHtml(r.account_number)}</td>
+            <td>${r.total_calls}</td>
+            <td>${r.answered_calls}</td>
+            <td>${r.total_messages}</td>
+            <td>${Math.round(r.total_seconds / 60)}</td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No data for this period</td></tr>';
+      }
+    } catch {
+      el('report-clients-tbody').innerHTML = '<tr><td colspan="6" class="empty-state">Error loading data</td></tr>';
+    }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection,
@@ -870,6 +1000,110 @@ const Admin = (() => {
     openClientModal, closeClientModal, saveClient, toggleClient,
     openContactModal, closeContactModal, saveContact, deleteContact,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
+    loadReports,
   };
+
+})();
+
+/* ============================================================
+   Tasks Module — Operator Tasks / Reminders
+   ============================================================ */
+
+const Tasks = (() => {
+  const api = (...args) => App._api(...args);
+  const toast = (...args) => App._toast(...args);
+  const escHtml = (...args) => App._escHtml(...args);
+  const el = (id) => document.getElementById(id);
+
+  async function load() {
+    try {
+      const data = await api('GET', '/tasks?completed=false');
+      if (!data) return;
+      render(data.tasks);
+    } catch (err) {
+      console.error('Tasks.load error:', err.message);
+    }
+  }
+
+  function render(tasks) {
+    const container = el('tasks-list');
+    const badge = el('tasks-badge');
+    if (!tasks || !tasks.length) {
+      container.innerHTML = '<p class="empty-state">No pending tasks</p>';
+      badge.classList.add('hidden');
+      return;
+    }
+    badge.textContent = tasks.length;
+    badge.classList.remove('hidden');
+
+    const now = Date.now();
+    container.innerHTML = tasks.map((t) => {
+      const overdue = t.due_at && new Date(t.due_at).getTime() < now;
+      const dueStr = t.due_at
+        ? new Date(t.due_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })
+        : '';
+      return `
+        <div class="task-item${overdue ? ' task-overdue' : ''}">
+          <div class="task-title">${escHtml(t.title)}</div>
+          ${t.client_name ? `<div class="task-client">${escHtml(t.client_name)}</div>` : ''}
+          ${dueStr ? `<div class="task-due${overdue ? ' overdue' : ''}">${overdue ? '&#9888; Overdue: ' : 'Due: '}${dueStr}</div>` : ''}
+          <div class="task-actions">
+            <button class="btn btn-sm btn-secondary" onclick="Tasks.complete('${t.id}')">Done</button>
+            <button class="btn btn-sm btn-danger" onclick="Tasks.remove('${t.id}')">Del</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openNew() {
+    el('task-form').reset();
+    el('task-modal').style.display = 'flex';
+  }
+
+  function closeNew() {
+    el('task-modal').style.display = 'none';
+  }
+
+  async function saveNew() {
+    const title = el('tf-title').value.trim();
+    if (!title) return;
+    try {
+      await api('POST', '/tasks', {
+        title,
+        notes: el('tf-notes').value.trim() || null,
+        client_id: el('tf-client').value || null,
+        due_at: el('tf-due').value || null,
+      });
+      closeNew();
+      toast('Task created', 'success');
+      load();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function complete(taskId) {
+    try {
+      await api('POST', `/tasks/${taskId}/complete`, {});
+      toast('Task marked complete', 'success');
+      load();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function remove(taskId) {
+    if (!confirm('Delete this task?')) return;
+    try {
+      await api('DELETE', `/tasks/${taskId}`);
+      toast('Task deleted', 'info');
+      load();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  return { load, openNew, closeNew, saveNew, complete, remove };
 
 })();

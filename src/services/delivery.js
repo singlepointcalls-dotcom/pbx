@@ -64,6 +64,19 @@ async function deliverMessage(messageId) {
 
   const deliveryResults = [];
 
+  // SMS deliveries
+  for (const contact of contacts.filter((c) => c.notify_sms && c.sms_number)) {
+    const deliveryId = await createDeliveryRecord(messageId, contact.id, 'sms', contact.sms_number);
+    try {
+      await sendSms(contact.sms_number, message);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'failed', error: err.message });
+    }
+  }
+
   // Email deliveries
   for (const contact of contacts.filter((c) => c.notify_email && c.email)) {
     const deliveryId = await createDeliveryRecord(messageId, contact.id, 'email', contact.email);
@@ -106,6 +119,35 @@ async function deliverMessage(messageId) {
   await pool.query('UPDATE messages SET status = $1 WHERE id = $2', [newStatus, messageId]);
 
   return deliveryResults;
+}
+
+async function sendSms(toNumber, message) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER;
+
+  if (!accountSid || !authToken || !from) {
+    throw new Error('Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)');
+  }
+
+  const urgencyPrefix = message.urgency === 'emergency' ? 'EMERGENCY: '
+    : message.urgency === 'urgent' ? 'URGENT: ' : '';
+
+  const body = [
+    `${urgencyPrefix}Message for ${message.client_name}`,
+    `From: ${message.caller_name || message.caller_phone || 'Unknown'}`,
+    message.subject ? `Re: ${message.subject}` : null,
+    message.body,
+  ].filter(Boolean).join('\n');
+
+  await axios.post(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+    new URLSearchParams({ From: from, To: toNumber, Body: body }),
+    {
+      auth: { username: accountSid, password: authToken },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }
+  );
 }
 
 async function sendEmail(toAddress, message) {

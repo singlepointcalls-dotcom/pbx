@@ -183,6 +183,9 @@ async function answerCall(channelId, operatorExtension) {
     timeout: 30,
   });
 
+  // Store bridge ID for hold/unhold
+  callData.bridgeId = bridge.id;
+
   // Add inbound channel to bridge
   await bridge.addChannel({ channel: channelId });
 
@@ -248,7 +251,55 @@ function getActiveCalls() {
     callerIdName: data.callerIdName,
     did: data.did,
     startTime: data.startTime,
+    onHold: data.onHold || false,
   }));
 }
 
-module.exports = { connectARI, answerCall, transferCall, hangupCall, getActiveCalls };
+/**
+ * Place a call on hold by moving the caller into a holding bridge (plays MOH).
+ */
+async function holdCall(channelId) {
+  if (!ariClient) throw new Error('ARI not connected');
+  const callData = activeCalls.get(channelId);
+  if (!callData) throw new Error(`No active call for channel ${channelId}`);
+  if (callData.onHold) throw new Error('Call is already on hold');
+  if (!callData.bridgeId) throw new Error('Call has not been answered yet');
+
+  // Create a holding bridge — Asterisk plays MOH to channels in it automatically
+  const holdingBridge = ariClient.Bridge();
+  await holdingBridge.create({ type: 'holding' });
+  callData.holdBridgeId = holdingBridge.id;
+
+  // Move caller from mixing bridge to holding bridge
+  const mixingBridge = ariClient.Bridge({ id: callData.bridgeId });
+  await mixingBridge.removeChannel({ channel: channelId });
+  await holdingBridge.addChannel({ channel: channelId });
+
+  callData.onHold = true;
+  broadcast('call:held', { channelId, callLogId: callData.callLogId });
+  console.log(`[ARI] Call held: channel=${channelId}`);
+}
+
+/**
+ * Take a call off hold, moving the caller back into the mixing bridge.
+ */
+async function unholdCall(channelId) {
+  if (!ariClient) throw new Error('ARI not connected');
+  const callData = activeCalls.get(channelId);
+  if (!callData) throw new Error(`No active call for channel ${channelId}`);
+  if (!callData.onHold) throw new Error('Call is not on hold');
+
+  const holdingBridge = ariClient.Bridge({ id: callData.holdBridgeId });
+  const mixingBridge = ariClient.Bridge({ id: callData.bridgeId });
+
+  await holdingBridge.removeChannel({ channel: channelId });
+  await mixingBridge.addChannel({ channel: channelId });
+  try { await holdingBridge.destroy(); } catch (_) {}
+
+  callData.holdBridgeId = null;
+  callData.onHold = false;
+  broadcast('call:unheld', { channelId, callLogId: callData.callLogId });
+  console.log(`[ARI] Call unheld: channel=${channelId}`);
+}
+
+module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls };

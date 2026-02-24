@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const { requireAuth } = require('../middleware/auth');
-const { answerCall, transferCall, hangupCall, getActiveCalls } = require('../../asterisk/ari');
+const { answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls } = require('../../asterisk/ari');
 
 router.use(requireAuth);
 
@@ -30,6 +30,26 @@ router.post('/:channelId/transfer', async (req, res, next) => {
     if (!extension) return res.status(400).json({ error: 'extension is required' });
     await transferCall(req.params.channelId, extension);
     res.json({ message: 'Transfer initiated' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/callcontrol/:channelId/hold
+router.post('/:channelId/hold', async (req, res, next) => {
+  try {
+    await holdCall(req.params.channelId);
+    res.json({ message: 'Call placed on hold' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/callcontrol/:channelId/unhold
+router.post('/:channelId/unhold', async (req, res, next) => {
+  try {
+    await unholdCall(req.params.channelId);
+    res.json({ message: 'Call taken off hold' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS contacts (
     email VARCHAR(255),
     -- Delivery preferences
     notify_email BOOLEAN NOT NULL DEFAULT true,
+    notify_sms BOOLEAN NOT NULL DEFAULT false,
     notify_webhook BOOLEAN NOT NULL DEFAULT false,
+    sms_number VARCHAR(20),
+    -- Private flag — shown in red to operators only, never shared externally
+    is_private BOOLEAN NOT NULL DEFAULT false,
     -- Priority order for on-call escalation
     priority INTEGER NOT NULL DEFAULT 1,
     is_active BOOLEAN NOT NULL DEFAULT true,
@@ -114,7 +118,7 @@ CREATE TABLE IF NOT EXISTS message_deliveries (
     message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
     -- Delivery channel
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'webhook', 'inapp')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'sms', 'webhook', 'inapp')),
     -- Destination (email address or webhook URL)
     destination TEXT,
     -- Result
@@ -169,4 +173,28 @@ CREATE OR REPLACE TRIGGER clients_updated_at
 
 CREATE OR REPLACE TRIGGER messages_updated_at
     BEFORE UPDATE ON messages
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Tasks / reminders assigned to operators per client or call
+CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+    operator_id UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_by UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    call_log_id UUID REFERENCES call_logs(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    notes TEXT,
+    due_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_client    ON tasks(client_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_operator  ON tasks(operator_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_due       ON tasks(due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed_at);
+
+CREATE OR REPLACE TRIGGER tasks_updated_at
+    BEFORE UPDATE ON tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
