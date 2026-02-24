@@ -33,16 +33,16 @@ async function seed() {
      ON CONFLICT (account_number) DO NOTHING
      RETURNING id`,
     [
-      'Demo Medical Practice',
+      'Demo GP Surgery',
       'DEMO001',
-      ['+15551234567'],
-      'Thank you for calling Demo Medical Practice. How can I help you today?\n\n' +
-        '- Get caller name, phone number, and reason for calling\n' +
-        '- Ask if this is an emergency\n' +
-        '- For emergencies: dispatch on-call physician immediately\n' +
-        '- For non-urgent: take a message and advise callback within 2 business hours',
-      'Thank you for calling Demo Medical Practice. This is the answering service.',
-      'America/New_York',
+      ['+441604000001'],
+      'Thank you for calling Demo GP Surgery. How can I help you today?\n\n' +
+        '- Take the caller\'s full name, telephone number, and reason for calling\n' +
+        '- Ask whether this is urgent or can wait until surgery hours\n' +
+        '- For emergencies: dispatch the on-call GP immediately\n' +
+        '- For non-urgent: take a message and advise a callback within 2 working hours',
+      'Thank you for calling Demo GP Surgery. You\'re through to the answering service.',
+      'Europe/London',
     ]
   );
 
@@ -52,9 +52,9 @@ async function seed() {
     await pool.query(
       `INSERT INTO contacts (client_id, name, title, phone, email, notify_email, priority)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [clientId, 'Dr. Jane Smith', 'On-Call Physician', '+15559876543', 'drsmith@demo.com', true, 1]
+      [clientId, 'Dr. Jane Smith', 'On-Call GP', '+447700900001', 'drsmith@demo.co.uk', true, 1]
     );
-    console.log('Created sample client: Demo Medical Practice (+15551234567)');
+    console.log('Created sample client: Demo GP Surgery (+441604000001)');
   }
 
   console.log('Seeding complete.');

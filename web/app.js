@@ -474,7 +474,7 @@ const App = (() => {
   }
 
   function formatTime(date) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   }
 
   function relTime(isoStr) {
@@ -483,7 +483,7 @@ const App = (() => {
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return new Date(isoStr).toLocaleDateString();
+    return new Date(isoStr).toLocaleDateString('en-GB');
   }
 
   /* ---- Bootstrap ---- */

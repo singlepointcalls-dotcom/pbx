@@ -16,7 +16,7 @@ initSocketIO(server);
 
 // Start HTTP server
 server.listen(PORT, () => {
-  console.log(`Answering service running on port ${PORT}`);
+  console.log(`SinglePoint Calls answering service running on port ${PORT}`);
   console.log(`Operator console: http://localhost:${PORT}`);
 });
 

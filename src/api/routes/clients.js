@@ -45,7 +45,7 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/clients
 router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
-    const { name, account_number, dids = [], script, greeting, timezone = 'America/New_York', notes } = req.body;
+    const { name, account_number, dids = [], script, greeting, timezone = 'Europe/London', notes } = req.body;
     if (!name || !account_number) {
       return res.status(400).json({ error: 'name and account_number are required' });
     }

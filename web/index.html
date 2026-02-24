@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Answering Service Console</title>
+  <title>SinglePoint Calls — Operator Console</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
 <!-- Login Screen -->
 <div id="login-screen" class="screen active">
   <div class="login-box">
-    <h1>Answering Service</h1>
+    <h1>SinglePoint Calls</h1>
     <p class="subtitle">Operator Console</p>
     <form id="login-form">
       <div class="field">
@@ -34,7 +34,7 @@
   <!-- Top Bar -->
   <header class="topbar">
     <div class="topbar-left">
-      <span class="logo">&#9742; Answering Service</span>
+      <span class="logo">&#9742; SinglePoint Calls</span>
     </div>
     <div class="topbar-center">
       <span id="status-badge" class="status-badge ready">READY</span>
@@ -138,7 +138,7 @@
             </div>
             <div class="field">
               <label>Caller Phone</label>
-              <input type="tel" id="msg-caller-phone" placeholder="+1 555 000 0000" />
+              <input type="tel" id="msg-caller-phone" placeholder="+44 7700 900000" />
             </div>
             <div class="field">
               <label>Company</label>
@@ -262,13 +262,14 @@
           <div class="field">
             <label>Timezone</label>
             <select id="cf-timezone">
-              <option value="America/New_York">America/New_York</option>
-              <option value="America/Chicago">America/Chicago</option>
-              <option value="America/Denver">America/Denver</option>
-              <option value="America/Los_Angeles">America/Los_Angeles</option>
-              <option value="America/Phoenix">America/Phoenix</option>
-              <option value="America/Anchorage">America/Anchorage</option>
-              <option value="Pacific/Honolulu">Pacific/Honolulu</option>
+              <option value="Europe/London">Europe/London (GMT/BST)</option>
+              <option value="Europe/Dublin">Europe/Dublin (IST)</option>
+              <option value="Europe/Paris">Europe/Paris (CET)</option>
+              <option value="Europe/Amsterdam">Europe/Amsterdam (CET)</option>
+              <option value="Europe/Berlin">Europe/Berlin (CET)</option>
+              <option value="Europe/Madrid">Europe/Madrid (CET)</option>
+              <option value="Europe/Rome">Europe/Rome (CET)</option>
+              <option value="Atlantic/Canary">Atlantic/Canary (WET)</option>
             </select>
           </div>
           <div class="field" style="justify-content:flex-end;flex:0;min-width:120px">

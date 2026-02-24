@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS clients (
     -- Greeting to play or show operator
     greeting TEXT,
     -- Timezone for on-call schedule evaluation
-    timezone VARCHAR(50) NOT NULL DEFAULT 'America/New_York',
+    timezone VARCHAR(50) NOT NULL DEFAULT 'Europe/London',
     is_active BOOLEAN NOT NULL DEFAULT true,
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

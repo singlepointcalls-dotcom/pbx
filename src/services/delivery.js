@@ -116,7 +116,7 @@ async function sendEmail(toAddress, message) {
   const text = `
 MESSAGE FOR: ${message.client_name}
 URGENCY: ${message.urgency.toUpperCase()}
-DATE: ${new Date(message.created_at).toLocaleString()}
+DATE: ${new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
 
 FROM: ${message.caller_name || 'Unknown'} ${message.caller_phone ? `<${message.caller_phone}>` : ''}${message.caller_company ? ` — ${message.caller_company}` : ''}
 
@@ -124,7 +124,7 @@ MESSAGE:
 ${message.body}
 
 ---
-Sent by Answering Service
+Sent by SinglePoint Calls Answering Service
   `.trim();
 
   await transport.sendMail({
