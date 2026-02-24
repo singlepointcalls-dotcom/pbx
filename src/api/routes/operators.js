@@ -4,6 +4,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { validatePassword } = require('./auth');
 
 router.use(requireAuth);
 
@@ -26,6 +27,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
     if (!username || !password || !full_name || !email) {
       return res.status(400).json({ error: 'username, password, full_name, and email are required' });
     }
+    const pwErr = validatePassword(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
 
     const hash = await bcrypt.hash(password, 12);
     const result = await pool.query(
@@ -75,6 +78,8 @@ router.put('/me/password', async (req, res, next) => {
     if (!current_password || !new_password) {
       return res.status(400).json({ error: 'current_password and new_password required' });
     }
+    const pwErr = validatePassword(new_password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
 
     const result = await pool.query('SELECT * FROM operators WHERE id = $1', [req.operator.id]);
     const op = result.rows[0];
@@ -88,6 +93,17 @@ router.put('/me/password', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// DELETE /api/operators/:id/2fa — admin reset 2FA for any operator
+router.delete('/:id/2fa', requireRole('admin'), async (req, res, next) => {
+  try {
+    await pool.query(
+      'UPDATE operators SET totp_secret = NULL, totp_enabled = false WHERE id = $1',
+      [req.params.id]
+    );
+    res.json({ message: '2FA reset for operator' });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

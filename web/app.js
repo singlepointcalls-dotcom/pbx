@@ -12,6 +12,9 @@ const App = (() => {
   let socket = null;
   let clients = [];
 
+  // Pending 2FA token (between login phases)
+  let pendingTwoFAToken = null;
+
   // Active call state
   let activeCall = null;
   let activeCallStart = null;
@@ -90,16 +93,53 @@ const App = (() => {
         body: JSON.stringify({ username, password }),
       }).then((r) => r.json());
 
+      if (data.requires_2fa) {
+        pendingTwoFAToken = data.temp_token;
+        el('totp-input').value = '';
+        el('twofa-error').classList.add('hidden');
+        el('twofa-modal').style.display = 'flex';
+        setTimeout(() => el('totp-input').focus(), 100);
+        return;
+      }
       if (!data.token) throw new Error(data.error || 'Login failed');
-
-      token = data.token;
-      currentOperator = data.operator;
-      localStorage.setItem('as_token', token);
-      showConsole();
+      _finishLogin(data);
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.remove('hidden');
     }
+  }
+
+  async function verify2FA() {
+    const code = el('totp-input').value.trim();
+    const errorEl = el('twofa-error');
+    errorEl.classList.add('hidden');
+    if (!code || !pendingTwoFAToken) return;
+    try {
+      const data = await fetch('/api/auth/verify-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temp_token: pendingTwoFAToken, totp_code: code }),
+      }).then((r) => r.json());
+      if (!data.token) throw new Error(data.error || 'Verification failed');
+      pendingTwoFAToken = null;
+      el('twofa-modal').style.display = 'none';
+      _finishLogin(data);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove('hidden');
+    }
+  }
+
+  function cancel2FA() {
+    pendingTwoFAToken = null;
+    el('twofa-modal').style.display = 'none';
+  }
+
+  function _finishLogin(data) {
+    token = data.token;
+    currentOperator = data.operator;
+    localStorage.setItem('as_token', token);
+    showConsole();
   }
 
   function logout() {
@@ -123,12 +163,150 @@ const App = (() => {
 
     if (currentOperator.role === 'admin' || currentOperator.role === 'supervisor') {
       el('admin-tab').style.display = '';
+      const demoBtn = el('demo-btn');
+      const portalBtn = el('portal-link-btn');
+      if (demoBtn) demoBtn.style.display = '';
+      if (portalBtn) portalBtn.style.display = '';
     }
 
     connectSocket();
     loadClients();
     loadMessages();
     Tasks.load();
+  }
+
+  /* ---- Demo Mode ---- */
+  function startDemo() {
+    const demoClients = clients;
+    const client = demoClients[0] || {
+      id: null, name: 'Demo Company Ltd', greeting: 'Thank you for calling Demo Company.',
+      script: 'Take a message and advise the caller that someone will be in touch shortly.',
+    };
+    const demoCall = {
+      channelId: `demo-${Date.now()}`,
+      callerIdNum: '+447700900123',
+      callerIdName: 'John Smith',
+      did: '+441234567890',
+      client,
+      isVip: false,
+      isIgnored: false,
+    };
+    toast('Demo mode: Simulating incoming call', 'info', 3000);
+    handleCallRinging(demoCall);
+  }
+
+  /* ---- My Profile ---- */
+  function showMyProfile() {
+    if (!currentOperator) return;
+    el('profile-info').innerHTML =
+      `Logged in as <strong>${escHtml(currentOperator.username)}</strong> &bull; Role: <strong>${escHtml(currentOperator.role)}</strong>`;
+    el('pf-current-pw').value = '';
+    el('pf-new-pw').value = '';
+    el('pw-strength-bar').style.display = 'none';
+    el('pw-strength-fill').style.width = '0';
+
+    const tfaStatus = el('twofa-status');
+    if (tfaStatus) {
+      if (currentOperator.totp_enabled) {
+        tfaStatus.innerHTML = `
+          <p style="font-size:0.85rem;color:var(--success);margin-bottom:10px">&#10003; 2FA is enabled on your account.</p>
+          <button class="btn btn-sm btn-danger" onclick="App.disable2FA()">Disable 2FA</button>`;
+      } else {
+        tfaStatus.innerHTML = `
+          <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px">2FA is not enabled on your account.</p>
+          <button class="btn btn-sm btn-secondary" onclick="App.setup2FA()">Enable 2FA</button>`;
+      }
+    }
+    el('profile-modal').style.display = 'flex';
+  }
+
+  function closeProfile() {
+    el('profile-modal').style.display = 'none';
+  }
+
+  function showPwStrength(value) {
+    const bar = el('pw-strength-bar');
+    const fill = el('pw-strength-fill');
+    const label = el('pw-strength-label');
+    if (!bar || !fill) return;
+    if (!value) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    let score = 0;
+    if (value.length >= 12) score++;
+    if (/[A-Z]/.test(value)) score++;
+    if (/[a-z]/.test(value)) score++;
+    if (/[0-9]/.test(value)) score++;
+    if (/[^A-Za-z0-9]/.test(value)) score++;
+    const pct = (score / 5) * 100;
+    fill.style.width = `${pct}%`;
+    const levels = ['', 'pw-weak', 'pw-weak', 'pw-fair', 'pw-good', 'pw-strong'];
+    const labelText = ['', 'Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    fill.className = `pw-strength-fill ${levels[score] || ''}`;
+    if (label) label.textContent = labelText[score] || '';
+  }
+
+  async function changePassword() {
+    const currentPw = el('pf-current-pw').value;
+    const newPw = el('pf-new-pw').value;
+    if (!currentPw || !newPw) { toast('Both password fields are required', 'warning'); return; }
+    try {
+      await api('PUT', '/operators/me/password', { current_password: currentPw, new_password: newPw });
+      toast('Password changed successfully', 'success');
+      el('pf-current-pw').value = '';
+      el('pf-new-pw').value = '';
+      el('pw-strength-bar').style.display = 'none';
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- 2FA Setup ---- */
+  async function setup2FA() {
+    try {
+      const data = await api('GET', '/auth/2fa/setup');
+      if (!data) return;
+      el('twofa-qr').src = data.qr_code;
+      el('twofa-secret').textContent = data.secret;
+      el('twofa-confirm-code').value = '';
+      el('twofa-setup-error').classList.add('hidden');
+      el('profile-modal').style.display = 'none';
+      el('twofa-setup-modal').style.display = 'flex';
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function confirm2FA() {
+    const code = el('twofa-confirm-code').value.trim();
+    const errorEl = el('twofa-setup-error');
+    errorEl.classList.add('hidden');
+    if (!code) return;
+    try {
+      await api('POST', '/auth/2fa/confirm', { totp_code: code });
+      toast('2FA enabled successfully', 'success');
+      currentOperator.totp_enabled = true;
+      el('twofa-setup-modal').style.display = 'none';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove('hidden');
+    }
+  }
+
+  function close2FASetup() {
+    el('twofa-setup-modal').style.display = 'none';
+  }
+
+  async function disable2FA() {
+    const pw = prompt('Enter your current password to disable 2FA:');
+    if (!pw) return;
+    try {
+      await api('DELETE', '/auth/2fa', { password: pw });
+      toast('2FA disabled', 'success');
+      currentOperator.totp_enabled = false;
+      closeProfile();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
   }
 
   function switchView(view) {
@@ -807,6 +985,9 @@ const App = (() => {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
     showMessageDetail, switchView, onClientChange,
+    verify2FA, cancel2FA, startDemo,
+    showMyProfile, closeProfile, showPwStrength, changePassword,
+    setup2FA, confirm2FA, close2FASetup, disable2FA,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
@@ -853,6 +1034,8 @@ const Admin = (() => {
     else if (name === 'operators') loadOperators();
     else if (name === 'availability') loadAvailabilitySection();
     else if (name === 'reports') loadReports();
+    else if (name === 'billing') loadBillingSection();
+    else if (name === 'settings') loadSettings();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -867,6 +1050,7 @@ const Admin = (() => {
     if (name === 'contacts' && editingClientId) loadContacts(editingClientId);
     if (name === 'departments' && editingClientId) loadDepartments(editingClientId);
     if (name === 'lists' && editingClientId) { loadVip(editingClientId); loadIgnore(editingClientId); }
+    if (name === 'portal' && editingClientId) loadPortalUsers(editingClientId);
   }
 
   /* ---- Clients ---- */
@@ -932,7 +1116,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-portal-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -1824,6 +2008,241 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Billing ---- */
+  let billingClientId = null;
+
+  async function loadBillingSection() {
+    const sel = el('billing-client-select');
+    if (!sel) return;
+    try {
+      const data = await api('GET', '/clients');
+      sel.innerHTML = '<option value="">— Select Client —</option>' +
+        (data.clients || []).map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    } catch { /* ignore */ }
+  }
+
+  async function loadBillingForClient() {
+    const clientId = el('billing-client-select').value;
+    billingClientId = clientId || null;
+    if (!clientId) { el('billing-plan-editor').style.display = 'none'; return; }
+
+    try {
+      const data = await api('GET', `/billing/plans/${clientId}`);
+      const plan = data.plan || {};
+      el('bp-name').value        = plan.plan_name || 'Standard';
+      el('bp-fee').value         = plan.monthly_fee || '0';
+      el('bp-calls').value       = plan.included_calls || '0';
+      el('bp-mins').value        = plan.included_minutes || '0';
+      el('bp-admin').value       = plan.included_admin_minutes || '0';
+      el('bp-call-rate').value   = plan.extra_call_rate || '0';
+      el('bp-min-rate').value    = plan.extra_minute_rate || '0';
+      el('bp-admin-rate').value  = plan.extra_admin_rate || '0';
+      el('bp-currency').value    = plan.currency || 'GBP';
+      el('billing-plan-editor').style.display = '';
+    } catch {
+      el('billing-plan-editor').style.display = '';
+    }
+
+    await loadBillingReports(clientId);
+  }
+
+  async function loadBillingReports(clientId) {
+    const tbody = el('billing-reports-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/billing/reports/${clientId}`);
+      const reports = data.reports || [];
+      if (!reports.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No reports yet. Click "Generate Month Report" to create one.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = reports.map((r) => {
+        const bd = r.breakdown || {};
+        return `
+          <tr>
+            <td>${r.year}/${String(r.month).padStart(2, '0')}</td>
+            <td>${r.total_calls}</td>
+            <td>${r.total_minutes}</td>
+            <td>${r.admin_minutes}</td>
+            <td>${r.total_messages}</td>
+            <td><strong>${r.currency} ${parseFloat(r.amount_due).toFixed(2)}</strong></td>
+            <td><button class="btn btn-sm btn-secondary" onclick="Admin.regenerateReport('${clientId}',${r.year},${r.month})">Regenerate</button></td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function saveBillingPlan() {
+    if (!billingClientId) { toast('Select a client first', 'warning'); return; }
+    const body = {
+      plan_name:              el('bp-name').value.trim() || 'Standard',
+      monthly_fee:            parseFloat(el('bp-fee').value)       || 0,
+      included_calls:         parseInt(el('bp-calls').value)       || 0,
+      included_minutes:       parseInt(el('bp-mins').value)        || 0,
+      included_admin_minutes: parseInt(el('bp-admin').value)       || 0,
+      extra_call_rate:        parseFloat(el('bp-call-rate').value)  || 0,
+      extra_minute_rate:      parseFloat(el('bp-min-rate').value)   || 0,
+      extra_admin_rate:       parseFloat(el('bp-admin-rate').value) || 0,
+      currency:               el('bp-currency').value || 'GBP',
+    };
+    try {
+      await api('PUT', `/billing/plans/${billingClientId}`, body);
+      toast('Billing plan saved', 'success');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function generateBillingReport() {
+    if (!billingClientId) { toast('Select a client first', 'warning'); return; }
+    const now = new Date();
+    const yearInput = prompt('Year:', now.getFullYear());
+    if (!yearInput) return;
+    const monthInput = prompt('Month (1-12):', now.getMonth() + 1);
+    if (!monthInput) return;
+    try {
+      await api('POST', `/billing/reports/${billingClientId}/generate`, {
+        year: parseInt(yearInput), month: parseInt(monthInput),
+      });
+      toast('Report generated', 'success');
+      loadBillingReports(billingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function regenerateReport(clientId, year, month) {
+    try {
+      await api('POST', `/billing/reports/${clientId}/generate`, { year, month });
+      toast('Report regenerated', 'success');
+      loadBillingReports(clientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Settings ---- */
+  async function loadSettings() {
+    try {
+      const data = await api('GET', '/settings');
+      const s = data.settings || {};
+      const name = el('set-company-name'); if (name) name.value = s.company_name || '';
+      const fpbx = el('set-freepbx-url');  if (fpbx) fpbx.value = s.freepbx_url || '';
+      const r2fa = el('set-require-2fa');  if (r2fa) r2fa.checked = s.require_2fa === 'true';
+      const mpw  = el('set-min-pw');       if (mpw)  mpw.value  = s.min_password_length || '12';
+      const sto  = el('set-session-timeout'); if (sto) sto.value = s.session_timeout_hours || '12';
+    } catch (err) {
+      toast(`Failed to load settings: ${err.message}`, 'danger');
+    }
+  }
+
+  async function saveSettings() {
+    const settings = {};
+    const name = el('set-company-name'); if (name) settings.company_name = name.value.trim();
+    const fpbx = el('set-freepbx-url');  if (fpbx) settings.freepbx_url = fpbx.value.trim();
+    const r2fa = el('set-require-2fa');  if (r2fa) settings.require_2fa = String(r2fa.checked);
+    const mpw  = el('set-min-pw');       if (mpw)  settings.min_password_length = mpw.value;
+    const sto  = el('set-session-timeout'); if (sto) settings.session_timeout_hours = sto.value;
+    try {
+      await api('PUT', '/settings', settings);
+      toast('Settings saved', 'success');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  function openFreePBX() {
+    const url = el('set-freepbx-url')?.value?.trim();
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    else toast('Enter FreePBX URL first', 'warning');
+  }
+
+  /* ---- Portal Users ---- */
+  let editingPortalUserId = null;
+
+  async function loadPortalUsers(clientId) {
+    const tbody = el('portal-users-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/portal/clients/${clientId}/users`);
+      const users = data.users || [];
+      if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No portal users yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = users.map((u) => `
+        <tr>
+          <td>${escHtml(u.username)}</td>
+          <td>${escHtml(u.email || '—')}</td>
+          <td><span class="pill ${u.is_active ? 'pill-green' : 'pill-red'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <button class="btn btn-sm btn-secondary" onclick="Admin.openPortalUserModal('${u.id}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="Admin.deletePortalUser('${u.id}')">Del</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function openPortalUserModal(userId) {
+    editingPortalUserId = userId || null;
+    el('pu-modal-title').textContent = userId ? 'Edit Portal User' : 'Add Portal User';
+    el('portal-user-form').reset();
+    el('pu-username').disabled = !!userId;
+    el('pu-password').required = !userId;
+    el('pu-active-row').style.display = userId ? 'flex' : 'none';
+    el('pu-active').checked = true;
+    el('portal-user-modal').style.display = 'flex';
+  }
+
+  function closePortalUserModal() {
+    el('portal-user-modal').style.display = 'none';
+    editingPortalUserId = null;
+  }
+
+  async function savePortalUser() {
+    if (!editingClientId) return;
+    const body = {
+      email: el('pu-email').value.trim() || null,
+      is_active: el('pu-active').checked,
+    };
+    const pw = el('pu-password').value;
+    if (pw) body.password = pw;
+    try {
+      if (editingPortalUserId) {
+        await api('PUT', `/portal/clients/${editingClientId}/users/${editingPortalUserId}`, body);
+        toast('Portal user updated', 'success');
+      } else {
+        body.username = el('pu-username').value.trim();
+        if (!pw) { toast('Password is required', 'danger'); return; }
+        await api('POST', `/portal/clients/${editingClientId}/users`, body);
+        toast('Portal user created', 'success');
+      }
+      closePortalUserModal();
+      loadPortalUsers(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deletePortalUser(userId) {
+    if (!confirm('Delete this portal user?')) return;
+    try {
+      await api('DELETE', `/portal/clients/${editingClientId}/users/${userId}`);
+      toast('Portal user deleted', 'info');
+      loadPortalUsers(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -1841,6 +2260,9 @@ const Admin = (() => {
     setAvailability,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
     loadReports,
+    loadBillingForClient, saveBillingPlan, generateBillingReport, regenerateReport,
+    loadSettings, saveSettings, openFreePBX,
+    openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
   };
 
 })();

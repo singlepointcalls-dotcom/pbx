@@ -5,7 +5,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 
-const authRoutes = require('./api/routes/auth');
+const { router: authRoutes } = require('./api/routes/auth');
 const clientRoutes = require('./api/routes/clients');
 const contactRoutes = require('./api/routes/contacts');
 const messageRoutes = require('./api/routes/messages');
@@ -17,6 +17,9 @@ const taskRoutes = require('./api/routes/tasks');
 const departmentRoutes = require('./api/routes/departments');
 const vipRoutes = require('./api/routes/vip');
 const availabilityRoutes = require('./api/routes/availability');
+const portalRoutes = require('./api/routes/portal');
+const settingsRoutes = require('./api/routes/settings');
+const billingRoutes = require('./api/routes/billing');
 
 const app = express();
 
@@ -42,9 +45,23 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/tasks', taskRoutes);
 // All-clients availability dashboard
 app.use('/api/availability', availabilityRoutes);
+app.use('/api/portal', portalRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+
+// Client portal
+app.get('/portal', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'web', 'portal.html'));
+});
+app.get('/portal.js', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'web', 'portal.js'));
+});
+app.get('/portal.css', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'web', 'portal.css'));
+});
 
 // SPA fallback — serve index.html for all non-API routes
 app.get('*', (_req, res) => {

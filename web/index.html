@@ -44,7 +44,10 @@
         <button class="nav-tab active" onclick="App.switchView('console')">Console</button>
         <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">Admin</button>
       </nav>
+      <button class="btn btn-sm btn-secondary" id="demo-btn" onclick="App.startDemo()" style="display:none" title="Simulate an incoming call">&#9654; Demo</button>
+      <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
       <span id="operator-name" class="operator-name"></span>
+      <button class="btn btn-sm btn-secondary" onclick="App.showMyProfile()">&#128100;</button>
       <button class="btn btn-sm" onclick="App.logout()">Sign Out</button>
     </div>
   </header>
@@ -258,7 +261,9 @@
       <button class="admin-nav-item active" onclick="Admin.showSection('clients', event)">Clients</button>
       <button class="admin-nav-item" onclick="Admin.showSection('operators', event)">Operators</button>
       <button class="admin-nav-item" onclick="Admin.showSection('availability', event)">Availability</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('billing', event)">Billing</button>
       <button class="admin-nav-item" onclick="Admin.showSection('reports', event)">Reports</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
     <!-- Clients Section -->
@@ -333,6 +338,89 @@
       </table>
     </div>
 
+    <!-- Billing Section -->
+    <div id="admin-billing" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>Billing</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="billing-client-select" onchange="Admin.loadBillingForClient()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--radius);font-size:0.85rem">
+            <option value="">— Select Client —</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="Admin.generateBillingReport()">&#9654; Generate Month Report</button>
+        </div>
+      </div>
+      <div id="billing-plan-editor" style="display:none;margin-bottom:24px">
+        <h3 class="report-section-title">Billing Plan</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px">
+          <div class="field"><label>Plan Name</label><input type="text" id="bp-name" placeholder="Standard" /></div>
+          <div class="field"><label>Monthly Fee (&#163;)</label><input type="number" id="bp-fee" placeholder="0.00" step="0.01" /></div>
+          <div class="field"><label>Included Calls</label><input type="number" id="bp-calls" placeholder="0" /></div>
+          <div class="field"><label>Included Minutes</label><input type="number" id="bp-mins" placeholder="0" /></div>
+          <div class="field"><label>Included Admin Mins</label><input type="number" id="bp-admin" placeholder="0" /></div>
+          <div class="field"><label>Extra Call Rate (&#163;)</label><input type="number" id="bp-call-rate" placeholder="0.00" step="0.001" /></div>
+          <div class="field"><label>Extra Min Rate (&#163;)</label><input type="number" id="bp-min-rate" placeholder="0.00" step="0.001" /></div>
+          <div class="field"><label>Extra Admin Rate (&#163;)</label><input type="number" id="bp-admin-rate" placeholder="0.00" step="0.001" /></div>
+          <div class="field"><label>Currency</label>
+            <select id="bp-currency"><option>GBP</option><option>EUR</option><option>USD</option></select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="Admin.saveBillingPlan()">Save Plan</button>
+      </div>
+      <h3 class="report-section-title">Monthly Reports</h3>
+      <table class="admin-table">
+        <thead><tr><th>Period</th><th>Calls</th><th>Minutes</th><th>Admin Mins</th><th>Messages</th><th>Amount Due</th><th>Actions</th></tr></thead>
+        <tbody id="billing-reports-tbody"><tr><td colspan="7" class="empty-state">Select a client above</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Settings Section -->
+    <div id="admin-settings" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>System Settings</h2>
+        <button class="btn btn-primary btn-sm" onclick="Admin.saveSettings()">Save Settings</button>
+      </div>
+
+      <div style="max-width:640px;display:flex;flex-direction:column;gap:20px">
+        <div class="settings-card">
+          <h4 class="section-label">Company</h4>
+          <div class="field"><label>Company / Brand Name</label><input type="text" id="set-company-name" /></div>
+        </div>
+
+        <div class="settings-card">
+          <h4 class="section-label">FreePBX Integration</h4>
+          <div class="field">
+            <label>FreePBX Admin URL</label>
+            <div style="display:flex;gap:8px">
+              <input type="url" id="set-freepbx-url" placeholder="http://192.168.1.100/admin" style="flex:1" />
+              <button class="btn btn-sm btn-secondary" onclick="Admin.openFreePBX()">Open &#8599;</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h4 class="section-label">Security</h4>
+          <div class="form-row">
+            <div class="field">
+              <label>Require 2FA for All Operators</label>
+              <label class="toggle"><input type="checkbox" id="set-require-2fa" /><span></span></label>
+            </div>
+            <div class="field">
+              <label>Min Password Length</label>
+              <input type="number" id="set-min-pw" min="8" max="32" value="12" style="max-width:80px" />
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h4 class="section-label">Session</h4>
+          <div class="field">
+            <label>Session Timeout (hours)</label>
+            <input type="number" id="set-session-timeout" min="1" max="168" style="max-width:80px" />
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /view-admin -->
 
 </div><!-- /console-screen -->
@@ -355,6 +443,7 @@
         <button type="button" class="modal-tab" id="tab-contacts-btn" onclick="Admin.showClientTab('contacts',this)" style="display:none">Contacts</button>
         <button type="button" class="modal-tab" id="tab-depts-btn" onclick="Admin.showClientTab('departments',this)" style="display:none">Departments</button>
         <button type="button" class="modal-tab" id="tab-lists-btn" onclick="Admin.showClientTab('lists',this)" style="display:none">VIP / Ignore</button>
+        <button type="button" class="modal-tab" id="tab-portal-btn" onclick="Admin.showClientTab('portal',this)" style="display:none">Portal Users</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -555,6 +644,19 @@
         </div>
       </div>
 
+      <!-- Tab: Portal Users -->
+      <div id="ctab-portal" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>Client Portal Users</h4>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.openPortalUserModal()">+ Add User</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">Portal users can log in at <strong>/portal</strong> to view messages, call history and billing reports.</p>
+        <table class="admin-table">
+          <thead><tr><th>Username</th><th>Email</th><th>Active</th><th></th></tr></thead>
+          <tbody id="portal-users-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="Admin.closeClientModal()">Cancel</button>
         <button type="submit" class="btn btn-primary" id="cf-submit">Save Client</button>
@@ -696,6 +798,118 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="Tasks.closeNew()">Cancel</button>
         <button type="submit" class="btn btn-primary">Create Task</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== 2FA Verification Modal (shown at login if 2FA required) ===== -->
+<div id="twofa-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3>Two-Factor Authentication</h3>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:16px">Enter the 6-digit code from your authenticator app.</p>
+      <div class="field">
+        <label>Authentication Code</label>
+        <input type="text" id="totp-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+          style="font-size:1.4rem;letter-spacing:0.3em;text-align:center;font-family:monospace" />
+      </div>
+      <div id="twofa-error" class="error-msg hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.cancel2FA()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.verify2FA()">Verify</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== My Profile Modal ===== -->
+<div id="profile-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeProfile()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>My Profile</h3>
+      <button class="modal-close" onclick="App.closeProfile()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div id="profile-info" style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px"></div>
+
+      <h4 class="section-label" style="margin-bottom:8px">Change Password</h4>
+      <div class="field"><label>Current Password</label><input type="password" id="pf-current-pw" autocomplete="current-password" /></div>
+      <div class="field"><label>New Password</label><input type="password" id="pf-new-pw" autocomplete="new-password" oninput="App.showPwStrength(this.value)" /></div>
+      <div id="pw-strength-bar" style="display:none;margin-bottom:8px">
+        <div class="pw-strength-track"><div id="pw-strength-fill" class="pw-strength-fill"></div></div>
+        <div id="pw-strength-label" style="font-size:0.72rem;color:var(--text-muted);margin-top:3px"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="App.changePassword()">Update Password</button>
+
+      <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)" />
+
+      <h4 class="section-label" style="margin-bottom:8px">Two-Factor Authentication</h4>
+      <div id="twofa-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeProfile()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2FA Setup Modal ===== -->
+<div id="twofa-setup-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.close2FASetup()">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Enable Two-Factor Authentication</h3>
+      <button class="modal-close" onclick="App.close2FASetup()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px">
+        Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.),
+        then enter the 6-digit code below to confirm.
+      </p>
+      <div style="text-align:center;margin:16px 0">
+        <img id="twofa-qr" src="" alt="QR Code" style="width:180px;height:180px;border:1px solid var(--border);border-radius:8px" />
+      </div>
+      <p style="font-size:0.72rem;color:var(--text-muted);text-align:center;margin-bottom:16px">
+        Manual key: <code id="twofa-secret" style="font-size:0.7rem"></code>
+      </p>
+      <div class="field">
+        <label>Confirm Code</label>
+        <input type="text" id="twofa-confirm-code" placeholder="000000" maxlength="6" inputmode="numeric"
+          style="font-size:1.2rem;letter-spacing:0.3em;text-align:center;font-family:monospace" />
+      </div>
+      <div id="twofa-setup-error" class="error-msg hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.close2FASetup()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.confirm2FA()">Enable 2FA</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Portal User Modal ===== -->
+<div id="portal-user-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)Admin.closePortalUserModal()">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3 id="pu-modal-title">Add Portal User</h3>
+      <button class="modal-close" onclick="Admin.closePortalUserModal()">&#10005;</button>
+    </div>
+    <form id="portal-user-form" onsubmit="event.preventDefault();Admin.savePortalUser()">
+      <div class="modal-body">
+        <div class="field"><label>Username *</label><input type="text" id="pu-username" required autocomplete="off" /></div>
+        <div class="field"><label>Email</label><input type="email" id="pu-email" /></div>
+        <div class="field">
+          <label>Password <span style="font-weight:400;text-transform:none;letter-spacing:0">(leave blank to keep current)</span></label>
+          <input type="password" id="pu-password" autocomplete="new-password" />
+        </div>
+        <div class="field" id="pu-active-row" style="display:none">
+          <label>Active</label>
+          <label class="toggle"><input type="checkbox" id="pu-active" checked /><span></span></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="Admin.closePortalUserModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
   </div>

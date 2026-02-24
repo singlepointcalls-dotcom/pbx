@@ -1206,3 +1206,56 @@ body {
 }
 .sp-web-link:hover { background: var(--accent-light); border-color: rgba(79,122,255,0.3); }
 .sp-web-link-icon { font-size: 0.9rem; flex-shrink: 0; }
+
+/* ============================================================
+   Settings cards
+   ============================================================ */
+.settings-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  box-shadow: var(--shadow-sm);
+}
+.settings-card h4.section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+/* ============================================================
+   Password strength meter
+   ============================================================ */
+.pw-strength-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pw-strength-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  transition: width 0.25s, background-color 0.25s;
+  background: var(--border);
+}
+.pw-strength-fill.pw-weak   { background: var(--danger); }
+.pw-strength-fill.pw-fair   { background: var(--warning); }
+.pw-strength-fill.pw-good   { background: #6dc76d; }
+.pw-strength-fill.pw-strong { background: var(--success); }
+
+/* ============================================================
+   Error message in modals (used by 2FA modals, etc.)
+   ============================================================ */
+.error-msg {
+  background: var(--danger-light);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.83rem;
+  margin-top: 8px;
+}
+.error-msg.hidden { display: none; }

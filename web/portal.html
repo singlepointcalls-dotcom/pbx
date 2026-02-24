@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Portal — SinglePoint Calls</title>
+  <link rel="stylesheet" href="/portal.css" />
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="portal-login" class="p-screen active">
+  <div class="p-login-box">
+    <div class="p-logo">&#9742; SinglePoint Calls</div>
+    <h2>Client Portal</h2>
+    <p class="p-subtitle">Log in to view your messages, calls and billing</p>
+    <form id="portal-login-form">
+      <div class="p-field">
+        <label>Username</label>
+        <input type="text" id="p-username" autocomplete="username" required />
+      </div>
+      <div class="p-field">
+        <label>Password</label>
+        <input type="password" id="p-password" autocomplete="current-password" required />
+      </div>
+      <div id="p-login-error" class="p-error hidden"></div>
+      <button type="submit" class="p-btn p-btn-primary p-btn-full">Sign In</button>
+    </form>
+    <p class="p-login-footer">Need access? Contact your account manager.</p>
+  </div>
+</div>
+
+<!-- Portal App -->
+<div id="portal-app" class="p-screen">
+
+  <!-- Top bar -->
+  <header class="p-topbar">
+    <div class="p-topbar-brand">&#9742; <span id="p-company-name">Client Portal</span></div>
+    <nav class="p-topbar-nav">
+      <button class="p-nav-btn active" onclick="Portal.nav('dashboard')">Dashboard</button>
+      <button class="p-nav-btn" onclick="Portal.nav('messages')">Messages</button>
+      <button class="p-nav-btn" onclick="Portal.nav('calls')">Call History</button>
+      <button class="p-nav-btn" onclick="Portal.nav('billing')">Billing</button>
+      <button class="p-nav-btn" onclick="Portal.nav('availability')">Availability</button>
+    </nav>
+    <div class="p-topbar-right">
+      <span id="p-username-display" class="p-username"></span>
+      <button class="p-btn p-btn-sm" onclick="Portal.logout()">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <div class="p-content">
+
+    <!-- Dashboard -->
+    <section id="p-dashboard" class="p-section active">
+      <h1>Dashboard</h1>
+      <div id="p-client-info" class="p-client-card"></div>
+      <div class="p-stat-grid" id="p-stats"></div>
+      <h3>Recent Messages</h3>
+      <div id="p-dash-messages" class="p-msg-list"></div>
+    </section>
+
+    <!-- Messages -->
+    <section id="p-messages" class="p-section">
+      <div class="p-section-header">
+        <h1>Messages</h1>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="p-msg-filter" onchange="Portal.loadMessages()" class="p-select">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="delivered">Delivered</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+      </div>
+      <div id="p-messages-list" class="p-msg-list"></div>
+      <div class="p-pagination">
+        <button class="p-btn p-btn-sm" id="p-msg-prev" onclick="Portal.msgPage(-1)">&#8592; Previous</button>
+        <span id="p-msg-page-info" class="p-page-info"></span>
+        <button class="p-btn p-btn-sm" id="p-msg-next" onclick="Portal.msgPage(1)">Next &#8594;</button>
+      </div>
+    </section>
+
+    <!-- Call History -->
+    <section id="p-calls" class="p-section">
+      <div class="p-section-header">
+        <h1>Call History</h1>
+        <select id="p-call-days" onchange="Portal.loadCalls()" class="p-select">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <div class="p-stat-grid" id="p-call-stats"></div>
+      <table class="p-table" id="p-calls-table">
+        <thead><tr>
+          <th>Date / Time</th><th>Caller</th><th>Duration</th><th>Answered By</th><th>Status</th>
+        </tr></thead>
+        <tbody id="p-calls-tbody"><tr><td colspan="5" class="p-empty">Loading...</td></tr></tbody>
+      </table>
+    </section>
+
+    <!-- Billing -->
+    <section id="p-billing" class="p-section">
+      <h1>Billing</h1>
+      <div id="p-plan-card" class="p-plan-card"></div>
+      <h3 style="margin:24px 0 12px">Monthly Reports</h3>
+      <table class="p-table">
+        <thead><tr>
+          <th>Period</th><th>Calls</th><th>Minutes</th><th>Messages</th><th>Amount Due</th><th>Report</th>
+        </tr></thead>
+        <tbody id="p-billing-tbody"><tr><td colspan="6" class="p-empty">Loading...</td></tr></tbody>
+      </table>
+    </section>
+
+    <!-- Availability -->
+    <section id="p-availability" class="p-section">
+      <h1>Availability Status</h1>
+      <p class="p-subtitle" style="margin-bottom:24px">Update your status so our operators know how to handle your calls.</p>
+      <div class="p-avail-grid">
+        <label class="p-avail-card" id="pa-available">
+          <input type="radio" name="p-avail" value="available" onchange="Portal.setAvailability('available')" />
+          <span class="pa-icon">&#9989;</span>
+          <span class="pa-label">Available</span>
+          <span class="pa-desc">Taking calls and messages normally</span>
+        </label>
+        <label class="p-avail-card" id="pa-out_of_office">
+          <input type="radio" name="p-avail" value="out_of_office" onchange="Portal.setAvailability('out_of_office')" />
+          <span class="pa-icon">&#127968;</span>
+          <span class="pa-label">Out of Office</span>
+          <span class="pa-desc">Operators will take messages and advise</span>
+        </label>
+        <label class="p-avail-card" id="pa-annual_leave">
+          <input type="radio" name="p-avail" value="annual_leave" onchange="Portal.setAvailability('annual_leave')" />
+          <span class="pa-icon">&#127958;</span>
+          <span class="pa-label">Annual Leave</span>
+          <span class="pa-desc">On holiday — urgent messages only</span>
+        </label>
+        <label class="p-avail-card" id="pa-meeting">
+          <input type="radio" name="p-avail" value="meeting" onchange="Portal.setAvailability('meeting')" />
+          <span class="pa-icon">&#128197;</span>
+          <span class="pa-label">In a Meeting</span>
+          <span class="pa-desc">Temporarily unavailable, taking messages</span>
+        </label>
+      </div>
+      <div class="p-field" style="max-width:480px;margin-top:24px">
+        <label>Optional Note (shown to operators)</label>
+        <input type="text" id="p-avail-note" placeholder="e.g. Back at 3pm, call mobile for emergencies" />
+        <button class="p-btn p-btn-primary" style="margin-top:10px" onclick="Portal.saveAvailNote()">Save Note</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="/portal.js"></script>
+</body>
+</html>

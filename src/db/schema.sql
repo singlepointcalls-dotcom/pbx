@@ -284,3 +284,89 @@ UPDATE messages SET urgency = 'high' WHERE urgency IN ('urgent', 'emergency');
 ALTER TABLE message_deliveries DROP CONSTRAINT IF EXISTS message_deliveries_channel_check;
 ALTER TABLE message_deliveries ADD CONSTRAINT message_deliveries_channel_check
     CHECK (channel IN ('email', 'sms', 'webhook', 'inapp', 'phone_call'));
+
+-- =============================================================
+-- v3 Feature additions
+-- =============================================================
+
+-- Operators: TOTP 2FA support
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(100);
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- Clients: DID labels (map from DID -> friendly name) + HIPAA flag
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS did_labels JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS is_hipaa BOOLEAN NOT NULL DEFAULT false;
+
+-- Client portal users (clients can log in to view messages/stats)
+CREATE TABLE IF NOT EXISTS client_portal_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_portal_users_client ON client_portal_users(client_id);
+CREATE OR REPLACE TRIGGER portal_users_updated_at
+    BEFORE UPDATE ON client_portal_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- System settings (key-value store for admin configuration)
+CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Billing plans (per client subscription)
+CREATE TABLE IF NOT EXISTS billing_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE UNIQUE,
+    plan_name VARCHAR(100) NOT NULL DEFAULT 'Standard',
+    monthly_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+    included_calls INTEGER NOT NULL DEFAULT 0,
+    included_minutes INTEGER NOT NULL DEFAULT 0,
+    included_admin_minutes INTEGER NOT NULL DEFAULT 0,
+    extra_call_rate NUMERIC(8,4) NOT NULL DEFAULT 0,
+    extra_minute_rate NUMERIC(8,4) NOT NULL DEFAULT 0,
+    extra_admin_rate NUMERIC(8,4) NOT NULL DEFAULT 0,
+    currency VARCHAR(3) NOT NULL DEFAULT 'GBP',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE OR REPLACE TRIGGER billing_plans_updated_at
+    BEFORE UPDATE ON billing_plans FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Monthly billing reports (generated per client per month)
+CREATE TABLE IF NOT EXISTS billing_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    total_calls INTEGER NOT NULL DEFAULT 0,
+    answered_calls INTEGER NOT NULL DEFAULT 0,
+    missed_calls INTEGER NOT NULL DEFAULT 0,
+    total_minutes INTEGER NOT NULL DEFAULT 0,
+    admin_minutes INTEGER NOT NULL DEFAULT 0,
+    total_messages INTEGER NOT NULL DEFAULT 0,
+    amount_due NUMERIC(10,2) NOT NULL DEFAULT 0,
+    currency VARCHAR(3) NOT NULL DEFAULT 'GBP',
+    breakdown JSONB NOT NULL DEFAULT '{}',
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, year, month)
+);
+CREATE INDEX IF NOT EXISTS idx_billing_reports_client ON billing_reports(client_id);
+CREATE INDEX IF NOT EXISTS idx_billing_reports_period ON billing_reports(year DESC, month DESC);
+
+-- Insert default settings
+INSERT INTO system_settings (key, value) VALUES
+    ('freepbx_url', ''),
+    ('company_name', 'SinglePoint Calls'),
+    ('company_logo', ''),
+    ('default_timezone', 'Europe/London'),
+    ('session_timeout_hours', '12'),
+    ('require_2fa', 'false'),
+    ('min_password_length', '12')
+ON CONFLICT (key) DO NOTHING;
