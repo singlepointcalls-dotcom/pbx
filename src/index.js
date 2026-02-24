@@ -6,6 +6,7 @@ const http = require('http');
 const app = require('./app');
 const { initSocketIO } = require('./services/realtime');
 const { connectARI } = require('./asterisk/ari');
+const { startEscalationService } = require('./services/escalation');
 
 const PORT = parseInt(process.env.PORT || '3000');
 
@@ -24,6 +25,9 @@ server.listen(PORT, () => {
 connectARI().catch((err) => {
   console.warn('ARI connection failed (will retry):', err.message);
 });
+
+// Start escalation background service
+startEscalationService();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

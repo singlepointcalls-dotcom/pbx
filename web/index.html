@@ -42,11 +42,32 @@
     <div class="topbar-right">
       <nav class="topbar-nav" id="topbar-nav">
         <button class="nav-tab active" onclick="App.switchView('console')">Console</button>
+        <button class="nav-tab" id="wallboard-tab" onclick="App.switchView('wallboard')" style="display:none">&#128202; Wallboard</button>
         <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">Admin</button>
       </nav>
       <button class="btn btn-sm btn-secondary" onclick="App.openClientBrowser()" title="Browse client screen">&#128193; Client</button>
       <button class="btn btn-sm btn-secondary" onclick="App.openOutbound()" title="Make outbound call">&#128222;</button>
+      <!-- Break/status dropdown -->
+      <div class="break-dropdown-wrap" id="break-dropdown-wrap">
+        <button class="btn btn-sm btn-status" id="break-status-btn" onclick="App.toggleBreakMenu()" title="Set your status">
+          <span id="break-status-dot" class="status-dot dot-ready"></span>
+          <span id="break-status-label">Ready</span> &#9660;
+        </button>
+        <div class="break-menu" id="break-menu" style="display:none">
+          <button onclick="App.setOperatorStatus('ready')">&#9679; Ready</button>
+          <button onclick="App.setOperatorStatus('break')">&#9749; On Break</button>
+          <button onclick="App.setOperatorStatus('lunch')">&#127869; Lunch</button>
+          <button onclick="App.setOperatorStatus('training')">&#128218; Training</button>
+          <button onclick="App.setOperatorStatus('admin')">&#128196; Admin Work</button>
+        </div>
+      </div>
+      <!-- Team chat button -->
+      <button class="btn btn-sm btn-secondary" onclick="App.toggleChat()" title="Team chat" id="chat-btn">
+        &#128172; Chat <span id="chat-unread-badge" class="badge hidden">0</span>
+      </button>
       <button class="btn btn-sm btn-secondary" onclick="App.openAudioSettings()" title="Audio device settings">&#127911;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.toggleDarkMode()" title="Toggle dark mode" id="dark-mode-btn">&#127769;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.showShortcuts()" title="Keyboard shortcuts">&#9875;</button>
       <button class="btn btn-sm btn-secondary" id="demo-btn" onclick="App.startDemo()" style="display:none" title="Simulate an incoming call">&#9654; Demo</button>
       <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
       <span id="operator-name" class="operator-name"></span>
@@ -321,6 +342,65 @@
 
   </div><!-- /main-layout -->
 
+  <!-- ===== Wallboard View ===== -->
+  <div id="view-wallboard" class="wb-view" style="display:none">
+    <div class="wb-header">
+      <h2>&#128202; Live Wallboard</h2>
+      <span id="wb-last-updated" class="wb-ts"></span>
+      <button class="btn btn-sm btn-secondary" onclick="App.loadWallboard()">&#8635; Refresh</button>
+    </div>
+    <div class="wb-grid">
+      <div class="wb-card wb-card-blue">
+        <div class="wb-card-label">In Queue</div>
+        <div class="wb-card-value" id="wb-queue">—</div>
+      </div>
+      <div class="wb-card wb-card-green">
+        <div class="wb-card-label">Calls Today</div>
+        <div class="wb-card-value" id="wb-calls">—</div>
+        <div class="wb-card-sub" id="wb-answered"></div>
+      </div>
+      <div class="wb-card wb-card-red">
+        <div class="wb-card-label">Missed Today</div>
+        <div class="wb-card-value" id="wb-missed">—</div>
+      </div>
+      <div class="wb-card wb-card-purple">
+        <div class="wb-card-label">Messages Today</div>
+        <div class="wb-card-value" id="wb-messages">—</div>
+      </div>
+      <div class="wb-card wb-card-amber">
+        <div class="wb-card-label">SLA Met</div>
+        <div class="wb-card-value" id="wb-sla">—</div>
+      </div>
+      <div class="wb-card wb-card-teal">
+        <div class="wb-card-label">Avg Handle Time</div>
+        <div class="wb-card-value" id="wb-aht">—</div>
+      </div>
+      <div class="wb-card wb-card-orange">
+        <div class="wb-card-label">Unacknowledged</div>
+        <div class="wb-card-value" id="wb-unack">—</div>
+        <div class="wb-card-sub">messages &gt;4h old</div>
+      </div>
+    </div>
+    <div class="wb-operators">
+      <h3>Operators</h3>
+      <div id="wb-operators-grid" class="wb-operators-grid"></div>
+    </div>
+  </div>
+
+  <!-- ===== Team Chat Panel ===== -->
+  <div id="chat-panel" class="chat-panel" style="display:none">
+    <div class="chat-header">
+      <span>&#128172; Team Chat</span>
+      <button class="modal-close" onclick="App.toggleChat()">&#10005;</button>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input-wrap">
+      <input type="text" id="chat-input" class="chat-input" placeholder="Message team..." maxlength="500"
+             onkeydown="if(event.key==='Enter')App.sendChat()" />
+      <button class="btn btn-sm btn-primary" onclick="App.sendChat()">Send</button>
+    </div>
+  </div>
+
   <!-- ===== Admin Panel ===== -->
   <div id="view-admin" class="admin-view" style="display:none">
 
@@ -331,6 +411,8 @@
       <button class="admin-nav-item" onclick="Admin.showSection('availability', event)">Availability</button>
       <button class="admin-nav-item" onclick="Admin.showSection('billing', event)">Billing</button>
       <button class="admin-nav-item" onclick="Admin.showSection('reports', event)">Reports</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('performance', event)">&#127942; Performance</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('canned', event)">&#128221; Canned</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -496,6 +578,40 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Operator Performance Section -->
+    <div id="admin-performance" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#127942; Operator Performance</h2>
+        <select id="perf-days" onchange="Admin.loadPerformance()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.8rem">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <table class="admin-table" id="performance-table">
+        <thead><tr>
+          <th>Operator</th><th>Calls Answered</th><th>Calls Missed</th>
+          <th>Avg Handle Time</th><th>Messages Taken</th><th>Avg QA Score</th>
+        </tr></thead>
+        <tbody id="performance-tbody"><tr><td colspan="6" class="empty-state">Select period to load</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Canned Responses Section -->
+    <div id="admin-canned" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#128221; Canned Responses</h2>
+        <button class="btn btn-primary btn-sm" onclick="Admin.openCannedModal()">+ Add</button>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px">
+        Quick-fill text snippets. In the message form, type <code>/shortcode</code> to insert. Global responses are available for all clients.
+      </p>
+      <table class="admin-table" id="canned-table">
+        <thead><tr><th>Shortcode</th><th>Title</th><th>Client</th><th>Preview</th><th></th></tr></thead>
+        <tbody id="canned-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+      </table>
     </div>
 
   </div><!-- /view-admin -->
@@ -679,6 +795,58 @@
         <div class="field">
           <label>From Address</label>
           <input type="text" id="cf-smtp-from" placeholder="messages@clientdomain.com" />
+        </div>
+
+        <h4 class="section-label" style="margin-top:20px">Messaging Channels</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Configure additional channels for message delivery. Leave blank to disable.
+        </p>
+        <div class="delivery-actions-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-whatsapp" />
+            <span class="delivery-icon">&#128242;</span>
+            <span class="delivery-label">WhatsApp</span>
+            <span class="delivery-desc">Send via Twilio WhatsApp</span>
+          </label>
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-slack" />
+            <span class="delivery-icon">&#128276;</span>
+            <span class="delivery-label">Slack</span>
+            <span class="delivery-desc">Post to Slack channel</span>
+          </label>
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-teams" />
+            <span class="delivery-icon">&#128101;</span>
+            <span class="delivery-label">Microsoft Teams</span>
+            <span class="delivery-desc">Post to Teams channel</span>
+          </label>
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-telegram" />
+            <span class="delivery-icon">&#9992;</span>
+            <span class="delivery-label">Telegram</span>
+            <span class="delivery-desc">Send to Telegram chat</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>WhatsApp Number (E.164)</label><input type="text" id="cf-whatsapp" placeholder="+447700900000" /></div>
+          <div class="field"><label>Telegram Chat ID</label><input type="text" id="cf-telegram" placeholder="-100123456789" /></div>
+        </div>
+        <div class="field"><label>Slack Webhook URL</label><input type="text" id="cf-slack-webhook" placeholder="https://hooks.slack.com/services/..." /></div>
+        <div class="field"><label>Microsoft Teams Webhook URL</label><input type="text" id="cf-teams-webhook" placeholder="https://outlook.office.com/webhook/..." /></div>
+
+        <h4 class="section-label" style="margin-top:20px">Escalation</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          If a message is not acknowledged within the set time, it will be automatically re-delivered.
+        </p>
+        <div class="form-row">
+          <div class="field">
+            <label>Escalate after (minutes, 0 = disabled)</label>
+            <input type="number" id="cf-escalate-mins" min="0" max="240" value="0" placeholder="e.g. 15" style="max-width:100px" />
+          </div>
+          <div class="field">
+            <label>SLA — Answer within (seconds)</label>
+            <input type="number" id="cf-sla-seconds" min="10" max="300" value="30" placeholder="30" style="max-width:100px" />
+          </div>
         </div>
 
         <h4 class="section-label" style="margin-top:20px">Email Template</h4>
@@ -1222,6 +1390,95 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeOutbound()">Cancel</button>
       <button class="btn btn-primary" onclick="App.makeOutboundCall()">&#128222; Dial</button>
+    </div>
+  </div>
+</div>
+
+<!-- QA Score Modal -->
+<div id="qa-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeQA()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>&#127942; QA Score Call</h3>
+      <button class="modal-close" onclick="App.closeQA()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div id="qa-criteria" class="qa-criteria">
+        <label class="qa-row"><input type="checkbox" id="qa-greeting" /><span>Correct greeting used</span></label>
+        <label class="qa-row"><input type="checkbox" id="qa-script" /><span>Script followed</span></label>
+        <label class="qa-row"><input type="checkbox" id="qa-info" /><span>Information accurate and complete</span></label>
+        <label class="qa-row"><input type="checkbox" id="qa-tone" /><span>Professional and polite tone</span></label>
+        <label class="qa-row"><input type="checkbox" id="qa-msg" /><span>Message taken correctly</span></label>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Overall Score (1–10)</label>
+        <input type="range" id="qa-overall" min="1" max="10" value="8" oninput="document.getElementById('qa-overall-val').textContent=this.value" />
+        <span id="qa-overall-val" style="font-weight:700;font-size:1.1rem;margin-left:8px">8</span>/10
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="qa-notes" rows="3" placeholder="Optional coaching notes..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="App.submitQA()">Save Score</button>
+        <button class="btn btn-secondary" onclick="App.closeQA()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Keyboard Shortcuts Modal -->
+<div id="shortcuts-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeShortcuts()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>&#9875; Keyboard Shortcuts</h3>
+      <button class="modal-close" onclick="App.closeShortcuts()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <table class="shortcuts-table">
+        <tr><td><kbd>Ctrl+Enter</kbd></td><td>Submit message</td></tr>
+        <tr><td><kbd>Ctrl+A</kbd></td><td>Answer first queued call</td></tr>
+        <tr><td><kbd>Ctrl+H</kbd></td><td>Hang up active call</td></tr>
+        <tr><td><kbd>Ctrl+L</kbd></td><td>Toggle hold</td></tr>
+        <tr><td><kbd>Ctrl+M</kbd></td><td>Focus message body</td></tr>
+        <tr><td><kbd>Ctrl+D</kbd></td><td>Focus client selector</td></tr>
+        <tr><td><kbd>Ctrl+/</kbd></td><td>Show this shortcuts list</td></tr>
+        <tr><td><kbd>Escape</kbd></td><td>Close any open modal</td></tr>
+        <tr><td><code>/shortcode</code></td><td>Insert canned response in message body</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Canned Response Modal (admin) -->
+<div id="canned-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)Admin.closeCannedModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="canned-modal-title">Add Canned Response</h3>
+      <button class="modal-close" onclick="Admin.closeCannedModal()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="field">
+          <label>Shortcode (no spaces, e.g. <code>appt</code>)</label>
+          <input type="text" id="canned-shortcode" placeholder="appointment" maxlength="30" />
+        </div>
+        <div class="field">
+          <label>Client (blank = global)</label>
+          <select id="canned-client"><option value="">Global (all clients)</option></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Title</label>
+        <input type="text" id="canned-title" placeholder="Appointment booking" />
+      </div>
+      <div class="field">
+        <label>Response Text</label>
+        <textarea id="canned-body" rows="5" placeholder="Caller would like to book an appointment..."></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="Admin.saveCannedResponse()">Save</button>
+        <button class="btn btn-secondary" onclick="Admin.closeCannedModal()">Cancel</button>
+      </div>
     </div>
   </div>
 </div>

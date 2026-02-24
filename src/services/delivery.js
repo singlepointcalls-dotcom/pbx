@@ -97,11 +97,25 @@ function buildEmailVars(message) {
   };
 }
 
+// Generate a unique ack token for a message (idempotent)
+async function ensureAckToken(messageId) {
+  const existing = await pool.query('SELECT ack_token FROM messages WHERE id = $1', [messageId]);
+  if (existing.rows[0]?.ack_token) return existing.rows[0].ack_token;
+  const { v4: uuidv4 } = require('crypto');
+  // Use crypto.randomUUID if available (Node 14.17+), else fallback
+  const token = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : require('crypto').randomBytes(16).toString('hex');
+  await pool.query('UPDATE messages SET ack_token = $1 WHERE id = $2', [token, messageId]);
+  return token;
+}
+
 async function deliverMessage(messageId) {
   const msgResult = await pool.query(
     `SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
             c.delivery_actions, c.smtp_host, c.smtp_port,
-            c.smtp_user, c.smtp_pass, c.smtp_from, c.email_template
+            c.smtp_user, c.smtp_pass, c.smtp_from, c.email_template,
+            c.whatsapp_number, c.slack_webhook, c.teams_webhook, c.telegram_chat_id
      FROM messages m
      JOIN clients c ON m.client_id = c.id
      LEFT JOIN operators o ON m.operator_id = o.id
@@ -127,6 +141,10 @@ async function deliverMessage(messageId) {
     [message.client_id]
   );
   const webhooks = webhookResult.rows;
+
+  // Ensure this message has an ack token (for email include-link)
+  let ackToken = null;
+  try { ackToken = await ensureAckToken(messageId); } catch (_) {}
 
   const deliveryResults = [];
 
@@ -159,7 +177,7 @@ async function deliverMessage(messageId) {
     for (const contact of contacts.filter((c) => c.notify_email && c.email)) {
       const deliveryId = await createDeliveryRecord(messageId, contact.id, 'email', contact.email);
       try {
-        await sendEmail(contact.email, message);
+        await sendEmail(contact.email, message, ackToken);
         await updateDelivery(deliveryId, 'sent');
         deliveryResults.push({ channel: 'email', destination: contact.email, status: 'sent' });
       } catch (err) {
@@ -179,6 +197,58 @@ async function deliverMessage(messageId) {
     } catch (err) {
       await updateDelivery(deliveryId, 'failed', err.message);
       deliveryResults.push({ channel: 'webhook', destination: webhook.url, status: 'failed', error: err.message });
+    }
+  }
+
+  // WhatsApp (Twilio WhatsApp API)
+  if (message.whatsapp_number) {
+    const deliveryId = await createDeliveryRecord(messageId, null, 'whatsapp', message.whatsapp_number);
+    try {
+      await sendWhatsApp(message.whatsapp_number, message);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'whatsapp', destination: message.whatsapp_number, status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'whatsapp', destination: message.whatsapp_number, status: 'failed', error: err.message });
+    }
+  }
+
+  // Slack webhook
+  if (message.slack_webhook) {
+    const deliveryId = await createDeliveryRecord(messageId, null, 'slack', message.slack_webhook);
+    try {
+      await sendSlack(message.slack_webhook, message);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'slack', status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'slack', status: 'failed', error: err.message });
+    }
+  }
+
+  // Microsoft Teams webhook
+  if (message.teams_webhook) {
+    const deliveryId = await createDeliveryRecord(messageId, null, 'teams', message.teams_webhook);
+    try {
+      await sendTeams(message.teams_webhook, message);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'teams', status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'teams', status: 'failed', error: err.message });
+    }
+  }
+
+  // Telegram bot
+  if (message.telegram_chat_id && process.env.TELEGRAM_BOT_TOKEN) {
+    const deliveryId = await createDeliveryRecord(messageId, null, 'telegram', message.telegram_chat_id);
+    try {
+      await sendTelegram(message.telegram_chat_id, message);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'telegram', status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'telegram', status: 'failed', error: err.message });
     }
   }
 
@@ -224,18 +294,90 @@ async function sendSms(toNumber, message) {
   );
 }
 
-async function sendEmail(toAddress, message) {
+async function sendWhatsApp(toNumber, message) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromWa = process.env.TWILIO_WHATSAPP_FROM || `whatsapp:${process.env.TWILIO_FROM_NUMBER}`;
+  if (!accountSid || !authToken) throw new Error('Twilio credentials not configured');
+  const priorityPrefix = message.urgency === 'high' ? '🔴 HIGH PRIORITY\n' : '';
+  const body = `${priorityPrefix}📞 *Message for ${message.client_name}*\n👤 From: ${message.caller_name || message.caller_phone || 'Unknown'}${message.caller_company ? ` — ${message.caller_company}` : ''}\n${message.subject ? `📌 Subject: ${message.subject}\n` : ''}📝 ${message.body}`;
+  await axios.post(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+    new URLSearchParams({ From: fromWa, To: `whatsapp:${toNumber}`, Body: body }),
+    { auth: { username: accountSid, password: authToken }, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+}
+
+async function sendSlack(webhookUrl, message) {
+  if (isPrivateUrl(webhookUrl)) throw new Error('Slack webhook URL blocked (private address)');
+  const urgencyEmoji = message.urgency === 'high' ? ':red_circle:' : message.urgency === 'low' ? ':white_circle:' : ':large_blue_circle:';
+  const payload = {
+    text: `${urgencyEmoji} *Message for ${message.client_name}*`,
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: `📞 ${message.client_name} — New Message` } },
+      { type: 'section', fields: [
+        { type: 'mrkdwn', text: `*From:*\n${message.caller_name || 'Unknown'}${message.caller_phone ? ` (${message.caller_phone})` : ''}` },
+        { type: 'mrkdwn', text: `*Priority:*\n${(message.urgency || 'normal').toUpperCase()}` },
+      ]},
+      { type: 'section', text: { type: 'mrkdwn', text: `*Message:*\n${message.body}` } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `Sent via SinglePoint Calls | ${new Date().toLocaleString('en-GB')}` }] },
+    ],
+  };
+  await axios.post(webhookUrl, payload, { timeout: 5000 });
+}
+
+async function sendTeams(webhookUrl, message) {
+  if (isPrivateUrl(webhookUrl)) throw new Error('Teams webhook URL blocked (private address)');
+  const urgencyColour = message.urgency === 'high' ? 'FF0000' : message.urgency === 'low' ? '888888' : '4f7aff';
+  const payload = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: urgencyColour,
+    summary: `New message for ${message.client_name}`,
+    sections: [{
+      activityTitle: `📞 Message for ${message.client_name}`,
+      activitySubtitle: `From: ${message.caller_name || 'Unknown'}${message.caller_phone ? ` (${message.caller_phone})` : ''}`,
+      facts: [
+        { name: 'Priority', value: (message.urgency || 'normal').toUpperCase() },
+        { name: 'Subject', value: message.subject || '—' },
+        { name: 'Taken by', value: message.operator_name || '—' },
+      ],
+      text: message.body,
+    }],
+  };
+  await axios.post(webhookUrl, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 });
+}
+
+async function sendTelegram(chatId, message) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN not configured');
+  const priorityPrefix = message.urgency === 'high' ? '🔴 HIGH PRIORITY\n' : '';
+  const text = `${priorityPrefix}📞 *Message for ${message.client_name}*\n👤 From: ${message.caller_name || 'Unknown'}${message.caller_phone ? ` \\(${message.caller_phone}\\)` : ''}${message.subject ? `\n📌 Subject: ${message.subject}` : ''}\n\n${message.body}`;
+  await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, { chat_id: chatId, text, parse_mode: 'MarkdownV2' }, { timeout: 5000 });
+}
+
+async function sendEmail(toAddress, message, ackToken) {
   const transport = getClientTransporter(message);
   const fromAddress = message.smtp_from || process.env.SMTP_FROM;
 
   const urgencyLabel = (message.urgency || 'normal').toUpperCase();
-  const isHigh = message.urgency === 'urgent' || message.urgency === 'emergency';
-  const priorityTag = isHigh ? `[${urgencyLabel}] ` : '';
+  const isHigh = message.urgency === 'high';
+  const priorityTag = isHigh ? `[HIGH PRIORITY] ` : '';
   const subject = `${priorityTag}Message for ${message.client_name}: ${message.subject || 'New Message'}`;
 
+  // Build ack link if token provided
+  const baseUrl = process.env.BASE_URL || '';
+  const ackBlock = ackToken && baseUrl
+    ? `<div style="margin-top:18px;text-align:center"><a href="${baseUrl}/api/ack/${ackToken}" style="display:inline-block;background:#16a34a;color:#fff;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none">✓ Acknowledge Receipt</a><div style="font-size:11px;color:#aaa;margin-top:6px">Click to confirm you have received this message.</div></div>`
+    : '';
+
   // Render email body from template
-  const vars = buildEmailVars(message);
-  const template = message.email_template || DEFAULT_HTML_TEMPLATE;
+  const vars = { ...buildEmailVars(message), ack_block: ackBlock };
+  const rawTemplate = message.email_template || DEFAULT_HTML_TEMPLATE;
+  // Inject ack block before closing body if not already in template
+  const template = rawTemplate.includes('{{ack_block}}')
+    ? rawTemplate
+    : rawTemplate.replace('</div></body></html>', `${ackBlock}</div></body></html>`);
   const html = renderTemplate(template, vars);
 
   // Plain-text fallback

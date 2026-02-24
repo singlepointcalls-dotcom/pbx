@@ -78,6 +78,8 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
       delivery_actions = { phone_call: true, email: true, sms: false },
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
       web_links = [], outbound_caller_id, email_template, private_notes,
+      whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
+      escalation_rules = [], sla_answer_seconds = 30,
     } = req.body;
 
     if (!name || !account_number) {
@@ -89,8 +91,10 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
          (name, account_number, dids, script, greeting, timezone, notes,
           address, opening_times, info_sheets, custom_form, delivery_actions,
           smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, web_links,
-          outbound_caller_id, email_template, private_notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          outbound_caller_id, email_template, private_notes,
+          whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
+          escalation_rules, sla_answer_seconds)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
        RETURNING *`,
       [
         name, account_number, dids, script, greeting, timezone, notes,
@@ -103,6 +107,10 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
         smtp_pass || null, smtp_from || null,
         JSON.stringify(web_links),
         outbound_caller_id || null, email_template || null, private_notes || null,
+        whatsapp_number || null, telegram_chat_id || null,
+        slack_webhook || null, teams_webhook || null,
+        JSON.stringify(escalation_rules),
+        sla_answer_seconds,
       ]
     );
     res.status(201).json({ client: result.rows[0] });
@@ -120,6 +128,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       opening_times, info_sheets, custom_form, delivery_actions,
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
       web_links, outbound_caller_id, email_template, private_notes,
+      whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
+      escalation_rules, sla_answer_seconds,
     } = req.body;
 
     const result = await pool.query(
@@ -144,7 +154,13 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          web_links           = COALESCE($18, web_links),
          outbound_caller_id  = COALESCE($19, outbound_caller_id),
          email_template      = COALESCE($20, email_template),
-         private_notes       = COALESCE($21, private_notes)
+         private_notes       = COALESCE($21, private_notes),
+         whatsapp_number     = COALESCE($23, whatsapp_number),
+         telegram_chat_id    = COALESCE($24, telegram_chat_id),
+         slack_webhook       = COALESCE($25, slack_webhook),
+         teams_webhook       = COALESCE($26, teams_webhook),
+         escalation_rules    = COALESCE($27, escalation_rules),
+         sla_answer_seconds  = COALESCE($28, sla_answer_seconds)
        WHERE id = $22
        RETURNING *`,
       [
@@ -163,6 +179,12 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         email_template     !== undefined ? (email_template || null)     : null,
         private_notes      !== undefined ? (private_notes || null)      : null,
         req.params.id,
+        whatsapp_number  !== undefined ? (whatsapp_number || null)  : null,
+        telegram_chat_id !== undefined ? (telegram_chat_id || null) : null,
+        slack_webhook    !== undefined ? (slack_webhook || null)    : null,
+        teams_webhook    !== undefined ? (teams_webhook || null)    : null,
+        escalation_rules !== undefined ? JSON.stringify(escalation_rules) : null,
+        sla_answer_seconds !== undefined ? sla_answer_seconds : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });

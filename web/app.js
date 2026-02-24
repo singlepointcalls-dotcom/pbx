@@ -176,6 +176,25 @@ const App = (() => {
     loadMessages();
     Tasks.load();
     loadNoticeboard();
+
+    // Restore dark mode preference
+    if (localStorage.getItem('as_darkmode') === '1') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      const btn = el('dark-mode-btn');
+      if (btn) btn.title = 'Switch to light mode';
+    }
+
+    // Show wallboard tab for admin/supervisor
+    if (currentOperator.role === 'admin' || currentOperator.role === 'supervisor') {
+      const wbTab = el('wallboard-tab');
+      if (wbTab) wbTab.style.display = '';
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', handleKeyboardShortcut);
+
+    // Load canned responses for autocomplete
+    loadCannedResponsesForAutocomplete();
   }
 
   /* ---- Demo Mode ---- */
@@ -312,15 +331,30 @@ const App = (() => {
     }
   }
 
+  let wallboardInterval = null;
+
   function switchView(view) {
     document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+    el('view-console').style.display = 'none';
+    const adminView = el('view-admin');
+    if (adminView) adminView.style.display = 'none';
+    const wbView = el('view-wallboard');
+    if (wbView) wbView.style.display = 'none';
+
+    // Stop wallboard refresh when leaving that view
+    if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
+
     if (view === 'console') {
       el('view-console').style.display = '';
-      el('view-admin').style.display = 'none';
       document.querySelectorAll('.nav-tab')[0].classList.add('active');
+    } else if (view === 'wallboard') {
+      if (wbView) wbView.style.display = '';
+      const wbTab = el('wallboard-tab');
+      if (wbTab) wbTab.classList.add('active');
+      loadWallboard();
+      wallboardInterval = setInterval(loadWallboard, 30000);
     } else {
-      el('view-console').style.display = 'none';
-      el('view-admin').style.display = 'flex';
+      if (adminView) adminView.style.display = 'flex';
       el('admin-tab').classList.add('active');
       Admin.init();
     }
@@ -357,6 +391,8 @@ const App = (() => {
     });
     socket.on('operators:list', (data) => renderOperators(data.operators));
     socket.on('message:new', () => loadMessages());
+    socket.on('chat:message', (msg) => appendChatMessage(msg));
+    socket.on('operator:status_change', () => {}); // wallboard handles its own polling
     socket.on('client:availability', (data) => {
       // Update active call panel if it's for the current call's client
       if (activeCall?.client?.id === data.client_id) {
@@ -1186,10 +1222,15 @@ const App = (() => {
       container.innerHTML = '<p class="empty-state">No operators online</p>';
       return;
     }
+    const statusLabel = { ready:'Ready', busy:'On Call', break:'On Break', lunch:'Lunch',
+      training:'Training', admin:'Admin', offline:'Offline' };
+    const dotClass = { ready:'dot-ready', busy:'dot-busy', break:'dot-break', lunch:'dot-lunch',
+      training:'dot-training', admin:'dot-admin', offline:'dot-offline' };
     container.innerHTML = operators.map((op) => `
       <div class="operator-item">
-        <span class="op-dot ${op.status}"></span>
-        <span>${escHtml(op.username)}</span>
+        <span class="status-dot ${dotClass[op.status] || 'dot-offline'}"></span>
+        <span class="op-name">${escHtml(op.fullName || op.username)}</span>
+        <span class="op-status" style="font-size:0.72rem;color:var(--text-muted);margin-left:4px">${statusLabel[op.status] || op.status}</span>
       </div>
     `).join('');
   }
@@ -1566,6 +1607,375 @@ const App = (() => {
     }
   }
 
+  /* ---- Dark Mode ---- */
+  function toggleDarkMode() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('as_darkmode', '0');
+      const btn = el('dark-mode-btn');
+      if (btn) btn.title = 'Toggle dark mode';
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('as_darkmode', '1');
+      const btn = el('dark-mode-btn');
+      if (btn) btn.title = 'Switch to light mode';
+    }
+  }
+
+  /* ---- Keyboard Shortcuts ---- */
+  function handleKeyboardShortcut(e) {
+    const tag = document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      // Ctrl+Enter submits message form
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        const form = el('message-form');
+        if (form && el('message-form').style.display !== 'none') form.requestSubmit();
+      }
+      return;
+    }
+    if (!e.ctrlKey && e.key === 'Escape') {
+      // Close any open modal
+      document.querySelectorAll('.modal-overlay').forEach((m) => {
+        if (m.style.display !== 'none') m.style.display = 'none';
+      });
+      const chatPanel = el('chat-panel');
+      if (chatPanel && chatPanel.style.display !== 'none') chatPanel.style.display = 'none';
+      return;
+    }
+    if (!e.ctrlKey) return;
+    switch (e.key) {
+      case 'a': case 'A': {
+        e.preventDefault();
+        const first = document.querySelector('.call-item');
+        if (first) first.click();
+        break;
+      }
+      case 'h': case 'H':
+        e.preventDefault();
+        if (activeCall) hangup();
+        break;
+      case 'l': case 'L':
+        e.preventDefault();
+        if (activeCall) toggleHold();
+        break;
+      case 'm': case 'M': {
+        e.preventDefault();
+        const mb = el('msg-body');
+        if (mb) mb.focus();
+        break;
+      }
+      case 'd': case 'D': {
+        e.preventDefault();
+        const cs = el('msg-client');
+        if (cs) cs.focus();
+        break;
+      }
+      case '/':
+        e.preventDefault();
+        showShortcuts();
+        break;
+    }
+  }
+
+  function showShortcuts() { el('shortcuts-modal').style.display = 'flex'; }
+  function closeShortcuts() { el('shortcuts-modal').style.display = 'none'; }
+
+  /* ---- Canned Response Autocomplete ---- */
+  let cannedResponses = [];
+
+  async function loadCannedResponsesForAutocomplete() {
+    try {
+      const data = await api('GET', '/canned');
+      cannedResponses = data.canned_responses || [];
+    } catch { cannedResponses = []; }
+  }
+
+  (function setupCannedAutocomplete() {
+    document.addEventListener('DOMContentLoaded', () => {
+      // Wait for init to attach
+      setTimeout(() => {
+        const msgBody = el('msg-body');
+        if (!msgBody) return;
+
+        // Wrap textarea for positioning
+        const wrap = msgBody.parentElement;
+        if (wrap && !wrap.classList.contains('canned-dropdown-wrap')) {
+          wrap.classList.add('canned-dropdown-wrap');
+        }
+
+        const dropdown = document.createElement('div');
+        dropdown.id = 'canned-dropdown';
+        dropdown.className = 'canned-dropdown';
+        dropdown.style.display = 'none';
+        if (wrap) wrap.appendChild(dropdown);
+
+        let activeIdx = -1;
+
+        function hideDrop() { dropdown.style.display = 'none'; activeIdx = -1; }
+
+        msgBody.addEventListener('input', () => {
+          const val = msgBody.value;
+          const lastWord = val.split(/\s/).pop();
+          if (!lastWord.startsWith('/') || lastWord.length < 2) { hideDrop(); return; }
+          const query = lastWord.slice(1).toLowerCase();
+          const matches = cannedResponses.filter(
+            (c) => c.shortcode.toLowerCase().startsWith(query)
+          ).slice(0, 6);
+          if (!matches.length) { hideDrop(); return; }
+          activeIdx = -1;
+          dropdown.innerHTML = matches.map((c, i) =>
+            `<div class="canned-item" data-idx="${i}">
+              <span class="canned-item-code">/${escHtml(c.shortcode)}</span>
+              <span class="canned-item-title">${escHtml(c.title || c.body.substring(0, 40))}</span>
+            </div>`
+          ).join('');
+          dropdown._matches = matches;
+          dropdown.style.display = 'block';
+        });
+
+        msgBody.addEventListener('keydown', (e) => {
+          if (dropdown.style.display === 'none') return;
+          const items = dropdown.querySelectorAll('.canned-item');
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = Math.min(activeIdx + 1, items.length - 1);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = Math.max(activeIdx - 1, 0);
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            if (activeIdx >= 0) {
+              e.preventDefault();
+              insertCannedResponse(dropdown._matches[activeIdx]);
+              hideDrop();
+            }
+          } else if (e.key === 'Escape') {
+            hideDrop();
+          }
+          items.forEach((item, i) => item.classList.toggle('active', i === activeIdx));
+        });
+
+        dropdown.addEventListener('click', (e) => {
+          const item = e.target.closest('.canned-item');
+          if (!item) return;
+          const idx = parseInt(item.dataset.idx);
+          insertCannedResponse(dropdown._matches[idx]);
+          hideDrop();
+        });
+
+        document.addEventListener('click', (e) => {
+          if (!dropdown.contains(e.target) && e.target !== msgBody) hideDrop();
+        });
+      }, 500);
+    });
+  })();
+
+  function insertCannedResponse(canned) {
+    const msgBody = el('msg-body');
+    if (!msgBody) return;
+    const val = msgBody.value;
+    const parts = val.split(/(\s)/);
+    // Remove the last /shortcode fragment
+    const last = parts[parts.length - 1];
+    if (last && last.startsWith('/')) parts.pop();
+    msgBody.value = parts.join('') + canned.body;
+    msgBody.focus();
+  }
+
+  /* ---- Team Chat ---- */
+  let chatOpen = false;
+  let chatUnread = 0;
+
+  function toggleChat() {
+    const panel = el('chat-panel');
+    chatOpen = !chatOpen;
+    panel.style.display = chatOpen ? 'flex' : 'none';
+    if (chatOpen) {
+      chatUnread = 0;
+      updateChatBadge();
+      loadChatHistory();
+      setTimeout(() => el('chat-input').focus(), 100);
+    }
+  }
+
+  function updateChatBadge() {
+    const badge = el('chat-unread-badge');
+    if (!badge) return;
+    if (chatUnread > 0) {
+      badge.textContent = chatUnread;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  async function loadChatHistory() {
+    try {
+      const data = await api('GET', '/chat');
+      const msgs = data.messages || [];
+      const container = el('chat-messages');
+      container.innerHTML = '';
+      msgs.forEach((m) => appendChatMessage(m, false));
+      container.scrollTop = container.scrollHeight;
+    } catch { /* non-fatal */ }
+  }
+
+  function appendChatMessage(msg, scroll = true) {
+    const container = el('chat-messages');
+    if (!container) return;
+    const isOwn = currentOperator && (msg.sender_id === currentOperator.id || msg.operator_id === currentOperator.id);
+    const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const div = document.createElement('div');
+    div.className = `chat-msg${isOwn ? ' own' : ''}`;
+    div.innerHTML = `
+      ${!isOwn ? `<div class="chat-msg-sender">${escHtml(msg.sender_name || 'Operator')}</div>` : ''}
+      <div>${escHtml(msg.body || msg.message || '')}</div>
+      <div class="chat-msg-time">${time}</div>`;
+    container.appendChild(div);
+    if (scroll) container.scrollTop = container.scrollHeight;
+    if (!chatOpen) {
+      chatUnread++;
+      updateChatBadge();
+    }
+  }
+
+  async function sendChat() {
+    const input = el('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    try {
+      await api('POST', '/chat', { body: msg });
+    } catch (err) {
+      toast(`Chat error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Break / Status Management ---- */
+  function toggleBreakMenu() {
+    const menu = el('break-menu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function setOperatorStatus(status) {
+    const menu = el('break-menu');
+    if (menu) menu.style.display = 'none';
+    try {
+      if (status === 'ready') {
+        await api('POST', '/operators/me/break/end', {});
+      } else {
+        await api('POST', '/operators/me/break/start', { break_type: status });
+      }
+      // Update UI
+      const dotClasses = { ready: 'dot-ready', busy: 'dot-busy', break: 'dot-break',
+        lunch: 'dot-lunch', training: 'dot-training', admin: 'dot-admin', offline: 'dot-offline' };
+      const labels = { ready: 'Ready', busy: 'Busy', break: 'On Break', lunch: 'Lunch',
+        training: 'Training', admin: 'Admin', offline: 'Offline' };
+      const dot = el('break-status-dot');
+      const label = el('break-status-label');
+      if (dot) { dot.className = `status-dot ${dotClasses[status] || 'dot-offline'}`; }
+      if (label) label.textContent = labels[status] || status;
+      // Notify via socket
+      if (socket) socket.emit('operator:status', { status });
+    } catch (err) {
+      toast(`Status error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Wallboard ---- */
+  async function loadWallboard() {
+    try {
+      const data = await api('GET', '/wallboard');
+      const s = data.stats;
+      const setText = (id, val) => { const e = el(id); if (e) e.textContent = val; };
+      setText('wb-queue', s.queue_count);
+      setText('wb-calls', s.today_calls);
+      const answeredEl = el('wb-answered');
+      if (answeredEl) answeredEl.textContent = `${s.today_answered} answered`;
+      setText('wb-missed', s.today_missed);
+      setText('wb-messages', s.today_messages);
+      setText('wb-sla', s.sla_met_pct !== null ? `${s.sla_met_pct}%` : '—');
+      if (s.avg_handle_seconds !== null) {
+        const m = Math.floor(s.avg_handle_seconds / 60);
+        const sec = s.avg_handle_seconds % 60;
+        setText('wb-aht', `${m}:${String(sec).padStart(2, '0')}`);
+      } else {
+        setText('wb-aht', '—');
+      }
+      setText('wb-unack', s.unack_messages);
+      const ts = el('wb-last-updated');
+      if (ts) ts.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      // Render operator cards
+      renderWallboardOperators();
+    } catch (err) {
+      toast(`Wallboard error: ${err.message}`, 'danger');
+    }
+  }
+
+  function renderWallboardOperators() {
+    const grid = el('wb-operators-grid');
+    if (!grid) return;
+    // Use the connected operators from the realtime operators list
+    const ops = Array.from(document.querySelectorAll('#operators-list .operator-item'));
+    if (!ops.length) {
+      grid.innerHTML = '<p class="empty-state">No operators online</p>';
+      return;
+    }
+    // Parse from operator list DOM (simpler than maintaining separate state)
+    grid.innerHTML = ops.map((item) => {
+      const name = item.querySelector('.op-name')?.textContent || '';
+      const status = item.querySelector('.op-status')?.textContent || '';
+      const dotClass = item.querySelector('.status-dot')?.className.split(' ').find((c) => c.startsWith('dot-')) || 'dot-offline';
+      return `<div class="wb-op-card">
+        <span class="status-dot ${dotClass}"></span>
+        <div><div class="wb-op-name">${escHtml(name)}</div><div class="wb-op-status">${escHtml(status)}</div></div>
+      </div>`;
+    }).join('');
+  }
+
+  /* ---- QA Scoring ---- */
+  let qaCallLogId = null;
+
+  function openQA(callLogId) {
+    qaCallLogId = callLogId;
+    // Reset form
+    ['qa-greeting','qa-script','qa-info','qa-tone','qa-msg'].forEach((id) => {
+      const e = el(id); if (e) e.checked = false;
+    });
+    const overall = el('qa-overall');
+    if (overall) { overall.value = 8; el('qa-overall-val').textContent = '8'; }
+    const notes = el('qa-notes');
+    if (notes) notes.value = '';
+    el('qa-modal').style.display = 'flex';
+  }
+
+  function closeQA() {
+    el('qa-modal').style.display = 'none';
+    qaCallLogId = null;
+  }
+
+  async function submitQA() {
+    if (!qaCallLogId) return;
+    const overall = parseInt(el('qa-overall')?.value || '8');
+    const notes = el('qa-notes')?.value.trim() || null;
+    try {
+      await api('POST', `/qa/call/${qaCallLogId}`, {
+        greeting_correct:  !!(el('qa-greeting')?.checked),
+        script_followed:   !!(el('qa-script')?.checked),
+        info_accurate:     !!(el('qa-info')?.checked),
+        professional_tone: !!(el('qa-tone')?.checked),
+        message_complete:  !!(el('qa-msg')?.checked),
+        overall,
+        notes,
+      });
+      toast('QA score saved', 'success');
+      closeQA();
+    } catch (err) {
+      toast(`QA error: ${err.message}`, 'danger');
+    }
+  }
+
   /* ---- Bootstrap ---- */
   document.addEventListener('DOMContentLoaded', init);
 
@@ -1589,6 +1999,18 @@ const App = (() => {
     openClientBrowser, closeClientBrowser, loadClientScreen, takeMessageForContact,
     // Audio
     openAudioSettings, closeAudioSettings, saveAudioSettings, testAudio,
+    // Dark mode
+    toggleDarkMode,
+    // Shortcuts
+    showShortcuts, closeShortcuts,
+    // Chat
+    toggleChat, sendChat,
+    // Break / status
+    toggleBreakMenu, setOperatorStatus,
+    // Wallboard
+    loadWallboard,
+    // QA
+    openQA, closeQA, submitQA,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
@@ -1637,6 +2059,8 @@ const Admin = (() => {
     else if (name === 'reports') loadReports();
     else if (name === 'billing') loadBillingSection();
     else if (name === 'settings') loadSettings();
+    else if (name === 'performance') loadPerformance();
+    else if (name === 'canned') loadCannedResponses();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -1757,6 +2181,21 @@ const Admin = (() => {
         el('da-phone-call').checked = !!da.phone_call;
         el('da-email').checked = !!da.email;
         el('da-sms').checked = !!da.sms;
+        el('da-whatsapp').checked = !!da.whatsapp;
+        el('da-slack').checked    = !!da.slack;
+        el('da-teams').checked    = !!da.teams;
+        el('da-telegram').checked = !!da.telegram;
+
+        // New delivery channels
+        el('cf-whatsapp').value      = c.whatsapp_number   || '';
+        el('cf-telegram').value      = c.telegram_chat_id  || '';
+        el('cf-slack-webhook').value = c.slack_webhook      || '';
+        el('cf-teams-webhook').value = c.teams_webhook      || '';
+
+        // Escalation / SLA
+        const escRules = Array.isArray(c.escalation_rules) ? c.escalation_rules : [];
+        el('cf-escalate-mins').value = escRules.length ? (escRules[0].after_minutes || 0) : 0;
+        el('cf-sla-seconds').value   = c.sla_answer_seconds || 30;
 
         // SMTP
         el('cf-smtp-host').value = c.smtp_host || '';
@@ -1821,9 +2260,16 @@ const Admin = (() => {
 
       const delivery_actions = {
         phone_call: el('da-phone-call').checked,
-        email: el('da-email').checked,
-        sms: el('da-sms').checked,
+        email:      el('da-email').checked,
+        sms:        el('da-sms').checked,
+        whatsapp:   el('da-whatsapp').checked,
+        slack:      el('da-slack').checked,
+        teams:      el('da-teams').checked,
+        telegram:   el('da-telegram').checked,
       };
+
+      const escalateMins = parseInt(el('cf-escalate-mins').value) || 0;
+      const escalation_rules = escalateMins > 0 ? [{ after_minutes: escalateMins }] : [];
 
       const smtpPass = el('cf-smtp-pass').value;
       const body = {
@@ -1847,6 +2293,12 @@ const Admin = (() => {
         outbound_caller_id: el('cf-outbound-cli').value.trim() || null,
         private_notes: el('cf-private-notes').value.trim() || null,
         email_template: el('cf-email-template').value.trim() || null,
+        whatsapp_number:  el('cf-whatsapp').value.trim() || null,
+        telegram_chat_id: el('cf-telegram').value.trim() || null,
+        slack_webhook:    el('cf-slack-webhook').value.trim() || null,
+        teams_webhook:    el('cf-teams-webhook').value.trim() || null,
+        escalation_rules,
+        sla_answer_seconds: parseInt(el('cf-sla-seconds').value) || 30,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
 
@@ -3087,6 +3539,143 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Operator Performance ---- */
+  async function loadPerformance() {
+    const days = el('perf-days')?.value || '30';
+    const tbody = el('performance-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/operators/performance?days=${days}`);
+      const rows = data.performance || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No data for this period</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((r) => {
+        const aht = r.avg_duration_seconds
+          ? `${Math.floor(r.avg_duration_seconds / 60)}:${String(r.avg_duration_seconds % 60).padStart(2, '0')}`
+          : '—';
+        const qa = r.avg_qa_score ? `${r.avg_qa_score}/10` : '—';
+        return `<tr>
+          <td>${escHtml(r.full_name)}</td>
+          <td>${r.calls_answered}</td>
+          <td>${r.calls_missed}</td>
+          <td>${aht}</td>
+          <td>${r.messages_taken}</td>
+          <td>${qa}</td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  /* ---- Canned Responses ---- */
+  let editingCannedId = null;
+
+  async function loadCannedResponses() {
+    const tbody = el('canned-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/canned');
+      const rows = data.canned_responses || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No canned responses yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((r) => `
+        <tr>
+          <td><code>/${escHtml(r.shortcode)}</code></td>
+          <td>${escHtml(r.title || '—')}</td>
+          <td>${escHtml(r.client_name || 'Global')}</td>
+          <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.body)}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary" onclick="Admin.openCannedModal('${r.id}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="Admin.deleteCannedResponse('${r.id}')">Del</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function openCannedModal(cannedId) {
+    editingCannedId = cannedId || null;
+    el('canned-modal-title').textContent = cannedId ? 'Edit Canned Response' : 'Add Canned Response';
+    el('canned-shortcode').value = '';
+    el('canned-title').value = '';
+    el('canned-body').value = '';
+    el('canned-client').value = '';
+
+    // Populate client select
+    const clientSelect = el('canned-client');
+    if (clientSelect.options.length <= 1) {
+      const clientData = App._clients();
+      clientData.forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.id; opt.textContent = c.name;
+        clientSelect.appendChild(opt);
+      });
+    }
+
+    if (cannedId) {
+      try {
+        const data = await api('GET', '/canned');
+        const found = (data.canned_responses || []).find((r) => r.id === cannedId);
+        if (found) {
+          el('canned-shortcode').value = found.shortcode;
+          el('canned-title').value     = found.title || '';
+          el('canned-body').value      = found.body;
+          el('canned-client').value    = found.client_id || '';
+        }
+      } catch { /* ignore */ }
+    }
+    el('canned-modal').style.display = 'flex';
+  }
+
+  function closeCannedModal() {
+    el('canned-modal').style.display = 'none';
+    editingCannedId = null;
+  }
+
+  async function saveCannedResponse() {
+    const body = {
+      shortcode: el('canned-shortcode').value.trim().replace(/\s+/g, ''),
+      title:     el('canned-title').value.trim() || null,
+      body:      el('canned-body').value.trim(),
+      client_id: el('canned-client').value || null,
+    };
+    if (!body.shortcode) { toast('Shortcode is required', 'danger'); return; }
+    if (!body.body)      { toast('Response text is required', 'danger'); return; }
+    try {
+      if (editingCannedId) {
+        await api('PUT', `/canned/${editingCannedId}`, body);
+        toast('Canned response updated', 'success');
+      } else {
+        await api('POST', '/canned', body);
+        toast('Canned response created', 'success');
+      }
+      closeCannedModal();
+      loadCannedResponses();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deleteCannedResponse(cannedId) {
+    if (!confirm('Delete this canned response?')) return;
+    try {
+      await api('DELETE', `/canned/${cannedId}`);
+      toast('Deleted', 'info');
+      loadCannedResponses();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -3111,6 +3700,10 @@ const Admin = (() => {
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
     uploadLogo, removeLogo,
+    // Performance
+    loadPerformance,
+    // Canned
+    loadCannedResponses, openCannedModal, closeCannedModal, saveCannedResponse, deleteCannedResponse,
   };
 
 })();

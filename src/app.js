@@ -23,6 +23,11 @@ const billingRoutes = require('./api/routes/billing');
 const noticeboardRoutes = require('./api/routes/noticeboard');
 const clientNewsRoutes = require('./api/routes/client-news');
 const clientFilesRoutes = require('./api/routes/client-files');
+const cannedRoutes     = require('./api/routes/canned');
+const wallboardRoutes  = require('./api/routes/wallboard');
+const chatRoutes       = require('./api/routes/chat');
+const qaRoutes         = require('./api/routes/qa');
+const ackRoutes        = require('./api/routes/ack');
 
 const app = express();
 
@@ -75,6 +80,11 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/noticeboard', noticeboardRoutes);
 app.use('/api/clients', clientNewsRoutes);     // /api/clients/:id/news
 app.use('/api/clients', clientFilesRoutes);    // /api/clients/:id/files
+app.use('/api/canned',    cannedRoutes);
+app.use('/api/wallboard', wallboardRoutes);
+app.use('/api/chat',      chatRoutes);
+app.use('/api/qa',        qaRoutes);
+app.use('/api/ack',       ackRoutes);         // public — no auth
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

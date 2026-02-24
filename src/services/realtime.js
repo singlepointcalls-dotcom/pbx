@@ -69,6 +69,17 @@ function initSocketIO(httpServer) {
       if (entry) { entry.status = 'busy'; broadcastOperatorList(); }
     });
 
+    // Break / status change from operator
+    socket.on('operator:status', ({ status }) => {
+      const allowed = ['ready', 'busy', 'break', 'lunch', 'training', 'admin', 'offline'];
+      if (!allowed.includes(status)) return;
+      const entry = connectedOperators.get(socket.id);
+      if (entry) {
+        entry.status = status;
+        broadcastOperatorList();
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`[Socket.io] Operator disconnected: ${op.username}`);
       connectedOperators.delete(socket.id);

@@ -106,4 +106,99 @@ router.delete('/:id/2fa', requireRole('admin'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/operators/me/status — update own status
+router.post('/me/status', async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const allowed = ['ready', 'busy', 'break', 'lunch', 'training', 'admin', 'offline'];
+    if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    await pool.query(
+      'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
+      [status, req.operator.id]
+    );
+    // Also emit via Socket.io
+    const { broadcast } = require('../../services/realtime');
+    broadcast('operator:status_change', { operator_id: req.operator.id, status });
+    res.json({ status });
+  } catch (err) { next(err); }
+});
+
+// POST /api/operators/me/break/start — log start of break
+router.post('/me/break/start', async (req, res, next) => {
+  try {
+    const { break_type = 'break', notes } = req.body;
+    const allowed = ['break', 'lunch', 'training', 'admin'];
+    if (!allowed.includes(break_type)) return res.status(400).json({ error: 'Invalid break_type' });
+    // End any open break first
+    await pool.query(
+      `UPDATE operator_breaks SET ended_at = NOW()
+       WHERE operator_id = $1 AND ended_at IS NULL`,
+      [req.operator.id]
+    );
+    const result = await pool.query(
+      `INSERT INTO operator_breaks (operator_id, break_type, notes)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.operator.id, break_type, notes || null]
+    );
+    await pool.query(
+      'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
+      [break_type, req.operator.id]
+    );
+    res.json({ break: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// POST /api/operators/me/break/end — log end of break
+router.post('/me/break/end', async (req, res, next) => {
+  try {
+    await pool.query(
+      `UPDATE operator_breaks SET ended_at = NOW()
+       WHERE operator_id = $1 AND ended_at IS NULL`,
+      [req.operator.id]
+    );
+    await pool.query(
+      'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
+      ['ready', req.operator.id]
+    );
+    res.json({ message: 'Break ended' });
+  } catch (err) { next(err); }
+});
+
+// GET /api/operators/me/breaks — today's break log
+router.get('/me/breaks', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM operator_breaks
+       WHERE operator_id = $1 AND started_at >= CURRENT_DATE
+       ORDER BY started_at DESC`,
+      [req.operator.id]
+    );
+    res.json({ breaks: result.rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/operators/performance — operator performance stats (admin/supervisor)
+router.get('/performance', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const days = parseInt(req.query.days || '30');
+    const result = await pool.query(
+      `SELECT o.id, o.full_name, o.username,
+              COUNT(cl.id) FILTER (WHERE cl.call_answered IS NOT NULL) AS calls_answered,
+              COUNT(cl.id) FILTER (WHERE cl.call_answered IS NULL AND cl.call_end IS NOT NULL) AS calls_missed,
+              ROUND(AVG(cl.duration_seconds) FILTER (WHERE cl.duration_seconds IS NOT NULL)) AS avg_duration_seconds,
+              COUNT(m.id) AS messages_taken,
+              ROUND(AVG(q.overall)) AS avg_qa_score
+       FROM operators o
+       LEFT JOIN call_logs cl ON cl.operator_id = o.id AND cl.call_start >= NOW() - ($1 || ' days')::INTERVAL
+       LEFT JOIN messages m ON m.operator_id = o.id AND m.created_at >= NOW() - ($1 || ' days')::INTERVAL
+       LEFT JOIN call_qa_scores q ON q.call_log_id = cl.id
+       WHERE o.is_active = true
+       GROUP BY o.id, o.full_name, o.username
+       ORDER BY calls_answered DESC`,
+      [days]
+    );
+    res.json({ performance: result.rows, days });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

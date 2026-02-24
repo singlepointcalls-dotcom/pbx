@@ -472,3 +472,77 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS private_notes TEXT;
 
 -- Client logo (stored filename from uploads directory)
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS logo_url TEXT;
+
+-- ============================================================
+-- MARKET-LEADING FEATURE ADDITIONS
+-- ============================================================
+
+-- Canned responses (operator text snippets / quick-fill)
+CREATE TABLE IF NOT EXISTS canned_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shortcode VARCHAR(30) NOT NULL,
+    title VARCHAR(100) NOT NULL,
+    body TEXT NOT NULL,
+    client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+    created_by UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_global ON canned_responses (lower(shortcode)) WHERE client_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_canned_client ON canned_responses (lower(shortcode), client_id) WHERE client_id IS NOT NULL;
+
+-- Operator break / status log
+CREATE TABLE IF NOT EXISTS operator_breaks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    break_type VARCHAR(20) NOT NULL DEFAULT 'break',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_operator_breaks_op ON operator_breaks(operator_id, started_at DESC);
+
+-- Operator team chat
+CREATE TABLE IF NOT EXISTS operator_chat (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_operator_chat_ts ON operator_chat(created_at DESC);
+
+-- QA scoring per call
+CREATE TABLE IF NOT EXISTS call_qa_scores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    call_log_id UUID NOT NULL REFERENCES call_logs(id) ON DELETE CASCADE,
+    scored_by UUID NOT NULL REFERENCES operators(id),
+    greeting_correct  BOOLEAN NOT NULL DEFAULT false,
+    script_followed   BOOLEAN NOT NULL DEFAULT false,
+    info_accurate     BOOLEAN NOT NULL DEFAULT false,
+    professional_tone BOOLEAN NOT NULL DEFAULT false,
+    message_complete  BOOLEAN NOT NULL DEFAULT false,
+    overall INTEGER NOT NULL CHECK (overall BETWEEN 1 AND 10),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_qa_call ON call_qa_scores(call_log_id);
+
+-- Message acknowledgement tokens
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ack_token TEXT UNIQUE;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+
+-- Client: extra delivery channels + escalation + SLA target
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(30);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS slack_webhook TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS teams_webhook TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS escalation_rules JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_answer_seconds INTEGER NOT NULL DEFAULT 30;
+
+-- Call SLA tracking
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS sla_met BOOLEAN;
+
+-- Operator status persistence
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS current_status VARCHAR(20) NOT NULL DEFAULT 'offline';
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ DEFAULT NOW();
