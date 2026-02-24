@@ -1055,3 +1055,154 @@ body {
   font-size: 0.85rem;
   color: var(--text);
 }
+
+/* ============================================================
+   SCREEN POP
+   ============================================================ */
+
+/* DID badge — shows which number was called */
+.sp-did-badge {
+  display: inline-block;
+  background: var(--bg-panel-alt);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Open/closed badge */
+.sp-open-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.sp-open   { background: var(--success-light); color: var(--success); border: 1px solid #86efac; }
+.sp-closed { background: var(--danger-light);  color: var(--danger);  border: 1px solid #fca5a5; }
+
+/* Address / account meta */
+.sp-meta {
+  padding: 6px 16px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-alt);
+  line-height: 1.5;
+}
+
+/* Collapsible screen pop sections */
+.sp-section { border-bottom: 1px solid var(--border); }
+.sp-section-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px;
+  background: var(--bg-panel-alt);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  user-select: none;
+  transition: background 0.1s;
+}
+.sp-section-hdr:hover { background: var(--border); }
+.sp-arrow {
+  font-size: 0.65rem;
+  transition: transform 0.2s;
+  color: var(--text-muted);
+}
+.sp-section.open .sp-arrow { transform: rotate(180deg); }
+.sp-section-body { display: none; }
+.sp-section.open .sp-section-body { display: block; }
+
+/* Contacts in screen pop */
+.sp-dept-label {
+  padding: 5px 16px 3px;
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  background: var(--accent-light);
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-contact-item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.sp-contact-item:hover { background: var(--bg-panel-alt); }
+.sp-contact-item.sp-contact-private { background: #fff8f8; }
+.sp-contact-item.sp-contact-private:hover { background: var(--danger-light); }
+
+.sp-contact-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sp-contact-name  { font-weight: 700; font-size: 0.875rem; color: var(--text); }
+.sp-contact-title { font-size: 0.72rem; color: var(--text-muted); }
+.sp-contact-pills { display: flex; gap: 5px; align-items: center; margin-left: auto; }
+.sp-contact-ext   {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.sp-contact-phone {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.sp-contact-phone a { color: var(--accent); text-decoration: none; }
+.sp-contact-phone a:hover { text-decoration: underline; }
+.sp-contact-note {
+  font-size: 0.75rem;
+  color: var(--warning);
+  margin-top: 3px;
+  font-style: italic;
+}
+
+/* Contact availability dot */
+.sp-contact-avail {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sp-avail-green { background: var(--success); }
+.sp-avail-amber { background: var(--warning); }
+.sp-avail-red   { background: var(--danger); }
+
+/* Web links in screen pop */
+.sp-web-links { display: flex; flex-direction: column; gap: 4px; padding: 10px 16px; }
+
+.sp-web-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+.sp-web-link:hover { background: var(--accent-light); border-color: rgba(79,122,255,0.3); }
+.sp-web-link-icon { font-size: 0.9rem; flex-shrink: 0; }

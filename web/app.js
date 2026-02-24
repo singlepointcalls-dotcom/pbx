@@ -362,12 +362,80 @@ const App = (() => {
 
     el('script-panel').style.display = '';
     el('script-client-name').textContent = call.client.name;
+
+    // DID badge — show the number they called in
+    const didBadge = el('sp-did-badge');
+    if (didBadge && call.did) {
+      didBadge.textContent = call.did;
+      didBadge.style.display = '';
+    } else if (didBadge) {
+      didBadge.style.display = 'none';
+    }
+
+    // Render greeting + script immediately from cached call data
     el('client-greeting').textContent = call.client.greeting || '';
     el('client-script').textContent = call.client.script || 'No script configured for this client.';
 
+    // Hide advanced sections until screenpop data arrives
+    el('sp-contacts-section').style.display = 'none';
+    el('sp-links-section').style.display = 'none';
+    el('sp-meta').style.display = 'none';
+    el('sp-open-badge').style.display = 'none';
+    el('client-info-sheets').innerHTML = '';
+
+    // Fetch full screenpop data
+    if (call.client.id) {
+      api('GET', `/clients/${call.client.id}/screenpop`).then((data) => {
+        if (!data) return;
+        renderScreenPop(data, call.did);
+      }).catch(() => {});
+    }
+  }
+
+  function renderScreenPop(data, did) {
+    const { client, contacts, availability } = data;
+
+    // Client-level availability bar
+    const availBar = el('client-availability-bar');
+    if (availBar) {
+      if (availability.status !== 'available') {
+        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting' };
+        availBar.textContent = `Status: ${labels[availability.status] || availability.status}${availability.note ? ` — ${availability.note}` : ''}`;
+        availBar.className = `avail-bar avail-bar-${availability.status.replace(/_/g, '-')}`;
+        availBar.style.display = '';
+      } else {
+        availBar.style.display = 'none';
+      }
+    }
+
+    // Open/closed badge
+    const openBadge = el('sp-open-badge');
+    if (openBadge && client.opening_times && Object.keys(client.opening_times).length) {
+      const isOpen = isCurrentlyInHours(client.opening_times, client.timezone);
+      openBadge.textContent = isOpen ? 'Open Now' : 'Closed';
+      openBadge.className = `sp-open-badge ${isOpen ? 'sp-open' : 'sp-closed'}`;
+      openBadge.style.display = '';
+    }
+
+    // Address + account meta
+    const meta = el('sp-meta');
+    if (meta) {
+      const parts = [];
+      if (client.account_number) parts.push(`Acct: ${escHtml(client.account_number)}`);
+      if (client.address) parts.push(escHtml(client.address.replace(/\n/g, ', ')));
+      if (parts.length) {
+        meta.innerHTML = parts.join(' &bull; ');
+        meta.style.display = '';
+      }
+    }
+
+    // Re-render greeting/script from fresh data
+    el('client-greeting').textContent = client.greeting || '';
+    el('client-script').textContent = client.script || 'No script configured for this client.';
+
     // Info sheets
-    const infoSheets = call.client.info_sheets || [];
     const sheetsContainer = el('client-info-sheets');
+    const infoSheets = client.info_sheets || [];
     if (sheetsContainer) {
       if (infoSheets.length) {
         sheetsContainer.innerHTML = infoSheets.map((s, i) => `
@@ -379,33 +447,108 @@ const App = (() => {
             <div class="info-sheet-body">${escHtml(s.content || '')}</div>
           </div>
         `).join('');
+        el('sp-sheets-section').style.display = '';
       } else {
-        sheetsContainer.innerHTML = '';
+        el('sp-sheets-section').style.display = 'none';
       }
     }
 
-    // Availability bar inside script panel
-    if (call.client.id) {
-      const availBar = el('client-availability-bar');
-      if (availBar) {
-        api('GET', `/clients/${call.client.id}/availability`).then((data) => {
-          if (!data) return;
-          const avail = data.availability;
-          if (avail.status !== 'available') {
-            const labels = {
-              out_of_office: 'Out of Office',
-              annual_leave: 'Annual Leave',
-              meeting: 'In a Meeting',
-            };
-            availBar.textContent = `Status: ${labels[avail.status] || avail.status}${avail.note ? ` — ${avail.note}` : ''}`;
-            availBar.className = `avail-bar avail-bar-${avail.status.replace('_', '-')}`;
-            availBar.style.display = '';
-          } else {
-            availBar.style.display = 'none';
-          }
-        }).catch(() => {});
-      }
+    // Contacts
+    if (contacts && contacts.length) {
+      renderScreenPopContacts(contacts, client.opening_times, client.timezone);
+      el('sp-contacts-section').style.display = '';
     }
+
+    // Web links
+    const webLinks = client.web_links || [];
+    if (webLinks.length) {
+      const linksEl = el('sp-web-links');
+      if (linksEl) {
+        linksEl.innerHTML = webLinks.map((l) => `
+          <a href="${escHtml(l.url)}" target="_blank" rel="noopener noreferrer" class="sp-web-link">
+            <span class="sp-web-link-icon">&#128279;</span>
+            <span>${escHtml(l.title || l.url)}</span>
+          </a>
+        `).join('');
+      }
+      el('sp-links-section').style.display = '';
+    }
+  }
+
+  function renderScreenPopContacts(contacts, openingTimes, timezone) {
+    const container = el('sp-contacts');
+    if (!container) return;
+
+    // Group by department
+    const depts = new Map();
+    depts.set(null, []);
+    contacts.forEach((c) => {
+      const key = c.department_name || null;
+      if (!depts.has(key)) depts.set(key, []);
+      depts.get(key).push(c);
+    });
+
+    const actionLabels = { message: 'Message', transfer: 'Transfer', both: 'Msg+Xfer' };
+
+    let html = '';
+    for (const [dept, group] of depts.entries()) {
+      if (!group.length) continue;
+      if (dept) html += `<div class="sp-dept-label">${escHtml(dept)}</div>`;
+      html += group.map((c) => {
+        const avail = contactAvailBadge(c, openingTimes, timezone);
+        const privateTag = c.is_private ? '<span class="private-badge">PRIVATE</span>' : '';
+        const extInfo = (c.call_action === 'transfer' || c.call_action === 'both') && c.transfer_extension
+          ? `<span class="sp-contact-ext">Ext ${escHtml(c.transfer_extension)}</span>` : '';
+        const noteInfo = c.message_note ? `<div class="sp-contact-note">${escHtml(c.message_note)}</div>` : '';
+        return `
+          <div class="sp-contact-item${c.is_private ? ' sp-contact-private' : ''}">
+            <div class="sp-contact-header">
+              <div class="sp-contact-avail ${avail.cls}" title="${avail.text}"></div>
+              <div class="sp-contact-name">${escHtml(c.name)}${privateTag}</div>
+              ${c.title ? `<div class="sp-contact-title">${escHtml(c.title)}</div>` : ''}
+              <div class="sp-contact-pills">
+                <span class="pill pill-blue">${actionLabels[c.call_action] || c.call_action}</span>
+                ${extInfo}
+              </div>
+            </div>
+            ${c.phone ? `<div class="sp-contact-phone">&#128222; <a href="tel:${escHtml(c.phone)}">${escHtml(c.phone)}</a></div>` : ''}
+            ${noteInfo}
+          </div>
+        `;
+      }).join('');
+    }
+    container.innerHTML = html || '<p class="empty-state">No contacts</p>';
+  }
+
+  /* ---- Availability helpers ---- */
+  function isCurrentlyInHours(schedule, timezone) {
+    try {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone || 'Europe/London',
+        weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(now);
+      const day = parts.find((p) => p.type === 'weekday').value.toLowerCase();
+      const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+      const min  = parseInt(parts.find((p) => p.type === 'minute').value, 10);
+      const now_m = hour * 60 + min;
+      const s = schedule[day];
+      if (!s || s.closed) return false;
+      const [oh, om] = (s.open  || '09:00').split(':').map(Number);
+      const [ch, cm] = (s.close || '17:30').split(':').map(Number);
+      return now_m >= oh * 60 + om && now_m < ch * 60 + cm;
+    } catch { return true; }
+  }
+
+  function contactAvailBadge(contact, openingTimes, timezone) {
+    const type = contact.availability_type || 'always';
+    if (type === 'unavailable') return { text: 'Unavailable', cls: 'sp-avail-red' };
+    if (type === 'always')      return { text: 'Available',   cls: 'sp-avail-green' };
+    const sched = type === 'custom' ? (contact.availability_schedule || {}) : (openingTimes || {});
+    const inHours = isCurrentlyInHours(sched, timezone);
+    return inHours
+      ? { text: 'Available',  cls: 'sp-avail-green' }
+      : { text: 'Off Hours',  cls: 'sp-avail-amber' };
   }
 
   function prefillMessageForm(call) {
@@ -691,6 +834,8 @@ const Admin = (() => {
   let formFields = [];
   // Info sheets state
   let infoSheets = [];
+  // Web links state
+  let webLinks = [];
 
   /* ---- Init ---- */
   async function init() {
@@ -776,6 +921,7 @@ const Admin = (() => {
     el('cf-account').disabled = !!clientId;
     formFields = [];
     infoSheets = [];
+    webLinks = [];
 
     // Reset form
     el('client-form').reset();
@@ -832,6 +978,10 @@ const Admin = (() => {
         infoSheets = Array.isArray(c.info_sheets) ? c.info_sheets : [];
         renderInfoSheetsList();
 
+        // Web links
+        webLinks = Array.isArray(c.web_links) ? c.web_links : [];
+        renderWebLinksList();
+
         // Custom form
         formFields = Array.isArray(c.custom_form) ? c.custom_form : [];
         renderFormBuilder();
@@ -843,6 +993,7 @@ const Admin = (() => {
     } else {
       renderFormBuilder();
       renderInfoSheetsList();
+      renderWebLinksList();
     }
 
     el('client-modal').style.display = 'flex';
@@ -892,6 +1043,7 @@ const Admin = (() => {
         address: el('cf-address').value.trim() || null,
         opening_times: openingTimes,
         info_sheets: infoSheets,
+        web_links: webLinks,
         custom_form: formFields,
         delivery_actions,
         smtp_host: el('cf-smtp-host').value.trim() || null,
@@ -993,6 +1145,41 @@ const Admin = (() => {
   function removeInfoSheet(idx) {
     infoSheets.splice(idx, 1);
     renderInfoSheetsList();
+  }
+
+  /* ---- Web Links ---- */
+  function renderWebLinksList() {
+    const container = el('web-links-list');
+    if (!container) return;
+    if (!webLinks.length) {
+      container.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted)">No web links added yet.</p>';
+      return;
+    }
+    container.innerHTML = webLinks.map((l, i) => `
+      <div class="info-sheet-editor" style="display:flex;gap:8px;align-items:center">
+        <input type="text" value="${escHtml(l.title)}" placeholder="Link title (e.g. Patient Portal)"
+          oninput="Admin.updateWebLink(${i},'title',this.value)"
+          style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.85rem" />
+        <input type="url" value="${escHtml(l.url)}" placeholder="https://..."
+          oninput="Admin.updateWebLink(${i},'url',this.value)"
+          style="flex:2;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.85rem" />
+        <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeWebLink(${i})">&#10005;</button>
+      </div>
+    `).join('');
+  }
+
+  function addWebLink() {
+    webLinks.push({ title: '', url: '' });
+    renderWebLinksList();
+  }
+
+  function updateWebLink(idx, field, value) {
+    if (webLinks[idx]) webLinks[idx][field] = value;
+  }
+
+  function removeWebLink(idx) {
+    webLinks.splice(idx, 1);
+    renderWebLinksList();
   }
 
   /* ---- Custom Form Builder ---- */
@@ -1102,6 +1289,8 @@ const Admin = (() => {
     el('ctf-notify-email').checked = true;
     el('ctf-call-action').value = 'message';
     el('ctf-ext-row').style.display = 'none';
+    el('ctf-avail-type').value = 'always';
+    el('ctf-avail-schedule-wrap').style.display = 'none';
 
     // Load departments into select
     const deptSelect = el('ctf-department');
@@ -1136,6 +1325,15 @@ const Admin = (() => {
           el('ctf-transfer-ext').value = contact.transfer_extension || '';
           el('ctf-message-note').value = contact.message_note || '';
           if (contact.department_id) deptSelect.value = contact.department_id;
+          // Availability
+          const availType = contact.availability_type || 'always';
+          el('ctf-avail-type').value = availType;
+          if (availType === 'custom') {
+            el('ctf-avail-schedule-wrap').style.display = '';
+            renderContactAvailGrid(contact.availability_schedule || {});
+          } else {
+            el('ctf-avail-schedule-wrap').style.display = 'none';
+          }
           onCallActionChange();
         }
       } catch (err) {
@@ -1151,6 +1349,61 @@ const Admin = (() => {
     el('ctf-ext-row').style.display = (action === 'transfer' || action === 'both') ? 'flex' : 'none';
   }
 
+  function onAvailTypeChange() {
+    const type = el('ctf-avail-type').value;
+    const wrap = el('ctf-avail-schedule-wrap');
+    if (type === 'custom') {
+      wrap.style.display = '';
+      if (!el('cta-monday-closed')) renderContactAvailGrid({});
+    } else {
+      wrap.style.display = 'none';
+    }
+  }
+
+  function renderContactAvailGrid(schedule) {
+    const grid = el('ctf-avail-grid');
+    if (!grid) return;
+    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const labels = { monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun' };
+    grid.innerHTML = days.map((day) => {
+      const t = schedule[day] || { closed: false, open: '09:00', close: '17:30' };
+      return `
+        <div class="opening-row">
+          <span class="opening-day">${labels[day]}</span>
+          <label class="toggle" title="Closed">
+            <input type="checkbox" id="cta-${day}-closed" ${t.closed ? 'checked' : ''} onchange="Admin.toggleContactAvailDay('${day}')" />
+            <span></span>
+          </label>
+          <span style="font-size:0.72rem;color:var(--text-muted)">Closed</span>
+          <input type="time" id="cta-${day}-open"  value="${t.open  || '09:00'}" ${t.closed ? 'disabled' : ''} />
+          <span style="color:var(--text-muted);font-size:0.8rem">–</span>
+          <input type="time" id="cta-${day}-close" value="${t.close || '17:30'}" ${t.closed ? 'disabled' : ''} />
+        </div>
+      `;
+    }).join('');
+  }
+
+  function toggleContactAvailDay(day) {
+    const closed = el(`cta-${day}-closed`).checked;
+    el(`cta-${day}-open`).disabled  = closed;
+    el(`cta-${day}-close`).disabled = closed;
+  }
+
+  function getContactAvailSchedule() {
+    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const schedule = {};
+    days.forEach((day) => {
+      const closedEl = el(`cta-${day}-closed`);
+      if (!closedEl) return;
+      schedule[day] = {
+        closed: closedEl.checked,
+        open:   el(`cta-${day}-open`).value  || '09:00',
+        close:  el(`cta-${day}-close`).value || '17:30',
+      };
+    });
+    return schedule;
+  }
+
   function closeContactModal() {
     el('contact-modal').style.display = 'none';
     editingContactId = null;
@@ -1158,6 +1411,7 @@ const Admin = (() => {
 
   async function saveContact() {
     if (!editingClientId) return;
+    const availType = el('ctf-avail-type').value;
     const body = {
       name: el('ctf-name').value.trim(),
       title: el('ctf-title').value.trim() || null,
@@ -1172,6 +1426,8 @@ const Admin = (() => {
       call_action: el('ctf-call-action').value,
       transfer_extension: el('ctf-transfer-ext').value.trim() || null,
       message_note: el('ctf-message-note').value.trim() || null,
+      availability_type: availType,
+      availability_schedule: availType === 'custom' ? getContactAvailSchedule() : {},
     };
 
     try {
@@ -1575,9 +1831,10 @@ const Admin = (() => {
     openClientModal, closeClientModal, saveClient, toggleClient,
     toggleDayClosed,
     addInfoSheet, updateInfoSheet, removeInfoSheet,
+    addWebLink, updateWebLink, removeWebLink,
     addFormField, updateField, updateFieldOptions, removeField,
     openContactModal, closeContactModal, saveContact, deleteContact,
-    onCallActionChange,
+    onCallActionChange, onAvailTypeChange, toggleContactAvailDay,
     addDepartment, deleteDepartment,
     addVip, removeVip,
     addIgnore, removeIgnore,

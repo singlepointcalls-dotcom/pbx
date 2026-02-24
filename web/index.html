@@ -110,17 +110,56 @@
     <!-- Center: Script + Custom Form + Message Form -->
     <main class="content">
 
-      <!-- Client Script / Info -->
+      <!-- Client Screen Pop / Info -->
       <section class="panel" id="script-panel" style="display:none">
         <div class="panel-header">
-          <h2 id="script-client-name">Client Script</h2>
-          <span id="script-urgency" class="urgency-label"></span>
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            <h2 id="script-client-name">Client Script</h2>
+            <span id="sp-did-badge" class="sp-did-badge" style="display:none"></span>
+            <span id="sp-open-badge" class="sp-open-badge" style="display:none"></span>
+          </div>
         </div>
+        <!-- Client-level availability bar -->
         <div id="client-availability-bar" style="display:none" class="avail-bar"></div>
-        <div id="client-greeting" class="greeting-box"></div>
-        <div id="client-script" class="script-box"></div>
-        <!-- Client info sheets shown as expandable cards -->
-        <div id="client-info-sheets" class="info-sheets-container"></div>
+        <!-- Address / account meta row -->
+        <div id="sp-meta" class="sp-meta" style="display:none"></div>
+
+        <!-- Operator greeting / script -->
+        <div id="sp-script-section" class="sp-section open">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128221; Operator Script</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body">
+            <div id="client-greeting" class="greeting-box" style="margin:0 0 0 0"></div>
+            <div id="client-script" class="script-box"></div>
+          </div>
+        </div>
+
+        <!-- Staff & Contacts -->
+        <div id="sp-contacts-section" class="sp-section open" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128101; Staff &amp; Contacts</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-contacts"></div>
+        </div>
+
+        <!-- Information Sheets -->
+        <div id="sp-sheets-section" class="sp-section open">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128196; Information Sheets</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body">
+            <div id="client-info-sheets" class="info-sheets-container" style="margin:0"></div>
+          </div>
+        </div>
+
+        <!-- Web Links -->
+        <div id="sp-links-section" class="sp-section open" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#127760; Web Links</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-web-links"></div>
+        </div>
       </section>
 
       <!-- Message Form -->
@@ -383,6 +422,11 @@
         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Add reference sheets shown to operators during calls (e.g. out-of-hours procedures, directions).</p>
         <div id="info-sheets-list"></div>
         <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addInfoSheet()" style="margin-top:8px">+ Add Sheet</button>
+
+        <h4 class="section-label" style="margin-top:20px">Web Links</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Quick-access links shown to operators during calls (e.g. website, patient portal, booking system).</p>
+        <div id="web-links-list"></div>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addWebLink()" style="margin-top:8px">+ Add Link</button>
       </div>
 
       <!-- Tab: Delivery Actions & SMTP -->
@@ -561,6 +605,19 @@
         <div class="field">
           <label>Contact Note (shown to operator)</label>
           <textarea id="ctf-message-note" rows="2" placeholder="e.g. Always call mobile first"></textarea>
+        </div>
+        <div class="field">
+          <label>Availability</label>
+          <select id="ctf-avail-type" onchange="Admin.onAvailTypeChange()">
+            <option value="always">Always Available</option>
+            <option value="business_hours">Business Hours Only</option>
+            <option value="custom">Custom Schedule</option>
+            <option value="unavailable">Currently Unavailable</option>
+          </select>
+        </div>
+        <div id="ctf-avail-schedule-wrap" style="display:none">
+          <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px">Set the hours this contact is available for calls/messages.</p>
+          <div class="opening-grid" id="ctf-avail-grid"><!-- rendered by JS --></div>
         </div>
         <div class="form-row">
           <div class="field"><label>Email Notify</label><label class="toggle"><input type="checkbox" id="ctf-notify-email" checked /><span></span></label></div>

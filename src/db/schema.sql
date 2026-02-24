@@ -266,6 +266,14 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS call_action VARCHAR(20) NOT NULL D
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS transfer_extension VARCHAR(20);
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS message_note TEXT;
 
+-- Contact availability timeframe
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS availability_type VARCHAR(20) NOT NULL DEFAULT 'always'
+    CHECK (availability_type IN ('always', 'business_hours', 'custom', 'unavailable'));
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS availability_schedule JSONB NOT NULL DEFAULT '{}';
+
+-- Client web links (quick-access URLs shown to operators during calls)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS web_links JSONB NOT NULL DEFAULT '[]';
+
 -- Messages: rename urgency values to low / normal / high
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_urgency_check;
 ALTER TABLE messages ADD CONSTRAINT messages_urgency_check
