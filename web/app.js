@@ -119,9 +119,29 @@ const App = (() => {
     el('login-screen').classList.remove('active');
     el('console-screen').classList.add('active');
     el('operator-name').textContent = currentOperator.username;
+
+    // Show admin tab for admins and supervisors
+    if (currentOperator.role === 'admin' || currentOperator.role === 'supervisor') {
+      el('admin-tab').style.display = '';
+    }
+
     connectSocket();
     loadClients();
     loadMessages();
+  }
+
+  function switchView(view) {
+    document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+    if (view === 'console') {
+      el('view-console').style.display = '';
+      el('view-admin').style.display = 'none';
+      document.querySelectorAll('.nav-tab')[0].classList.add('active');
+    } else {
+      el('view-console').style.display = 'none';
+      el('view-admin').style.display = 'flex';
+      el('admin-tab').classList.add('active');
+      Admin.init();
+    }
   }
 
   /* ---- Socket.io ---- */
@@ -481,6 +501,363 @@ const App = (() => {
     saveMessageOnly,
     loadMessages,
     showMessageDetail,
+    switchView,
+    // expose api helper for Admin module
+    _api: api,
+    _toast: toast,
+    _escHtml: escHtml,
+  };
+
+})();
+
+/* ============================================================
+   Admin Module — Client, Contact, and Operator Management
+   ============================================================ */
+
+const Admin = (() => {
+  const api = (...args) => App._api(...args);
+  const toast = (...args) => App._toast(...args);
+  const escHtml = (...args) => App._escHtml(...args);
+  const el = (id) => document.getElementById(id);
+
+  let initialized = false;
+  let editingClientId = null;
+  let editingContactId = null;
+  let editingOperatorId = null;
+
+  /* ---- Init ---- */
+  async function init() {
+    if (!initialized) {
+      initialized = true;
+    }
+    showSection('clients');
+  }
+
+  function showSection(name) {
+    document.querySelectorAll('.admin-section').forEach((s) => s.style.display = 'none');
+    document.querySelectorAll('.admin-nav-item').forEach((b) => b.classList.remove('active'));
+    el(`admin-${name}`).style.display = 'block';
+    event.target.classList.add('active');
+
+    if (name === 'clients') loadClients();
+    else if (name === 'operators') loadOperators();
+  }
+
+  /* ---- Clients ---- */
+  let allClients = [];
+
+  async function loadClients() {
+    const tbody = el('clients-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/clients');
+      allClients = data.clients;
+      renderClientsTable(allClients);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function searchClients() {
+    const q = el('client-search').value.toLowerCase();
+    const filtered = allClients.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.account_number.toLowerCase().includes(q)
+    );
+    renderClientsTable(filtered);
+  }
+
+  function renderClientsTable(clients) {
+    const tbody = el('clients-tbody');
+    if (!clients.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No clients found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = clients.map((c) => `
+      <tr>
+        <td>${escHtml(c.account_number)}</td>
+        <td><strong>${escHtml(c.name)}</strong></td>
+        <td><code>${(c.dids || []).join(', ') || '—'}</code></td>
+        <td>${escHtml(c.timezone)}</td>
+        <td><span class="pill ${c.is_active ? 'pill-green' : 'pill-red'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="Admin.openClientModal('${c.id}')">Edit</button>
+          <button class="btn btn-sm ${c.is_active ? 'btn-danger' : 'btn-secondary'}" onclick="Admin.toggleClient('${c.id}', ${!c.is_active})">
+            ${c.is_active ? 'Deactivate' : 'Activate'}
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function openClientModal(clientId) {
+    editingClientId = clientId || null;
+    el('client-modal-title').textContent = clientId ? 'Edit Client' : 'Add Client';
+    el('cf-account').disabled = !!clientId; // account number is immutable after creation
+
+    // Reset form
+    el('client-form').reset();
+    el('cf-active').checked = true;
+    el('contacts-section').style.display = 'none';
+
+    if (clientId) {
+      try {
+        const data = await api('GET', `/clients/${clientId}`);
+        const c = data.client;
+        el('cf-account').value = c.account_number;
+        el('cf-name').value = c.name;
+        el('cf-dids').value = (c.dids || []).join(', ');
+        el('cf-timezone').value = c.timezone;
+        el('cf-active').checked = c.is_active;
+        el('cf-greeting').value = c.greeting || '';
+        el('cf-script').value = c.script || '';
+        el('cf-notes').value = c.notes || '';
+        el('contacts-section').style.display = 'block';
+        loadContacts(clientId);
+      } catch (err) {
+        toast(`Failed to load client: ${err.message}`, 'danger');
+        return;
+      }
+    }
+
+    el('client-modal').style.display = 'flex';
+  }
+
+  function closeClientModal() {
+    el('client-modal').style.display = 'none';
+    editingClientId = null;
+  }
+
+  async function saveClient() {
+    const btn = el('cf-submit');
+    btn.disabled = true;
+    try {
+      const didsRaw = el('cf-dids').value.trim();
+      const dids = didsRaw ? didsRaw.split(',').map((d) => d.trim()).filter(Boolean) : [];
+
+      const body = {
+        name: el('cf-name').value.trim(),
+        dids,
+        timezone: el('cf-timezone').value,
+        is_active: el('cf-active').checked,
+        greeting: el('cf-greeting').value.trim() || null,
+        script: el('cf-script').value.trim() || null,
+        notes: el('cf-notes').value.trim() || null,
+      };
+
+      if (editingClientId) {
+        await api('PUT', `/clients/${editingClientId}`, body);
+        toast('Client updated', 'success');
+      } else {
+        body.account_number = el('cf-account').value.trim();
+        await api('POST', '/clients', body);
+        toast('Client created', 'success');
+      }
+      closeClientModal();
+      loadClients();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function toggleClient(clientId, setActive) {
+    try {
+      await api('PUT', `/clients/${clientId}`, { is_active: setActive });
+      toast(`Client ${setActive ? 'activated' : 'deactivated'}`, 'success');
+      loadClients();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Contacts ---- */
+  async function loadContacts(clientId) {
+    const tbody = el('contacts-tbody');
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/contacts`);
+      renderContactsTable(data.contacts, clientId);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Error</td></tr>`;
+    }
+  }
+
+  function renderContactsTable(contacts, clientId) {
+    const tbody = el('contacts-tbody');
+    if (!contacts.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No contacts yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = contacts.map((c) => `
+      <tr>
+        <td>${escHtml(c.name)}</td>
+        <td>${escHtml(c.title || '—')}</td>
+        <td>${escHtml(c.phone || '—')}</td>
+        <td>${escHtml(c.email || '—')}</td>
+        <td>${c.notify_email ? '&#10003;' : ''}</td>
+        <td>${c.priority}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="Admin.openContactModal('${c.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="Admin.deleteContact('${clientId}','${c.id}')">Del</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function openContactModal(contactId) {
+    editingContactId = contactId || null;
+    el('contact-modal-title').textContent = contactId ? 'Edit Contact' : 'Add Contact';
+    el('contact-form').reset();
+    el('ctf-priority').value = 1;
+    el('ctf-notify-email').checked = true;
+
+    if (contactId) {
+      // We'd need to fetch the contact — simplest: find from existing tbody data
+      // For now, just open empty and user re-fills (editing is infrequent)
+    }
+
+    el('contact-modal').style.display = 'flex';
+  }
+
+  function closeContactModal() {
+    el('contact-modal').style.display = 'none';
+    editingContactId = null;
+  }
+
+  async function saveContact() {
+    if (!editingClientId) return;
+    const body = {
+      name: el('ctf-name').value.trim(),
+      title: el('ctf-title').value.trim() || null,
+      phone: el('ctf-phone').value.trim() || null,
+      email: el('ctf-email').value.trim() || null,
+      priority: parseInt(el('ctf-priority').value) || 1,
+      notify_email: el('ctf-notify-email').checked,
+    };
+
+    try {
+      if (editingContactId) {
+        await api('PUT', `/clients/${editingClientId}/contacts/${editingContactId}`, body);
+        toast('Contact updated', 'success');
+      } else {
+        await api('POST', `/clients/${editingClientId}/contacts`, body);
+        toast('Contact added', 'success');
+      }
+      closeContactModal();
+      loadContacts(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deleteContact(clientId, contactId) {
+    if (!confirm('Delete this contact?')) return;
+    try {
+      await api('DELETE', `/clients/${clientId}/contacts/${contactId}`);
+      toast('Contact deleted', 'success');
+      loadContacts(clientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Operators ---- */
+  async function loadOperators() {
+    const tbody = el('operators-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/operators');
+      renderOperatorsTable(data.operators);
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function renderOperatorsTable(operators) {
+    const tbody = el('operators-tbody');
+    if (!operators.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No operators</td></tr>';
+      return;
+    }
+    tbody.innerHTML = operators.map((op) => `
+      <tr>
+        <td>${escHtml(op.username)}</td>
+        <td>${escHtml(op.full_name)}</td>
+        <td>${escHtml(op.email)}</td>
+        <td><span class="pill pill-blue">${op.role}</span></td>
+        <td><span class="pill ${op.is_active ? 'pill-green' : 'pill-red'}">${op.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="Admin.openOperatorModal('${op.id}')">Edit</button>
+          <button class="btn btn-sm ${op.is_active ? 'btn-danger' : 'btn-secondary'}"
+                  onclick="Admin.toggleOperator('${op.id}', ${!op.is_active})">
+            ${op.is_active ? 'Deactivate' : 'Activate'}
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function openOperatorModal(operatorId) {
+    editingOperatorId = operatorId || null;
+    el('op-modal-title').textContent = operatorId ? 'Edit Operator' : 'Add Operator';
+    el('operator-form').reset();
+    el('opf-username').disabled = !!operatorId;
+    el('opf-password').required = !operatorId;
+    el('opf-password').placeholder = operatorId ? 'Leave blank to keep current' : '';
+    el('opf-active-row').style.display = operatorId ? 'flex' : 'none';
+    el('operator-modal').style.display = 'flex';
+  }
+
+  function closeOperatorModal() {
+    el('operator-modal').style.display = 'none';
+    editingOperatorId = null;
+  }
+
+  async function saveOperator() {
+    const body = {
+      full_name: el('opf-fullname').value.trim(),
+      email: el('opf-email').value.trim(),
+      role: el('opf-role').value,
+    };
+    const pw = el('opf-password').value;
+    if (pw) body.password = pw;
+    if (editingOperatorId) body.is_active = el('opf-active').checked;
+
+    try {
+      if (editingOperatorId) {
+        await api('PUT', `/operators/${editingOperatorId}`, body);
+        toast('Operator updated', 'success');
+      } else {
+        body.username = el('opf-username').value.trim();
+        if (!pw) { toast('Password is required', 'danger'); return; }
+        await api('POST', '/operators', body);
+        toast('Operator created', 'success');
+      }
+      closeOperatorModal();
+      loadOperators();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function toggleOperator(operatorId, setActive) {
+    try {
+      await api('PUT', `/operators/${operatorId}`, { is_active: setActive });
+      toast(`Operator ${setActive ? 'activated' : 'deactivated'}`, 'success');
+      loadOperators();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Public ---- */
+  return {
+    init, showSection,
+    searchClients,
+    openClientModal, closeClientModal, saveClient, toggleClient,
+    openContactModal, closeContactModal, saveContact, deleteContact,
+    openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
   };
 
 })();

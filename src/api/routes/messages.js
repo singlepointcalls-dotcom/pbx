@@ -34,16 +34,22 @@ router.get('/', async (req, res, next) => {
       query += ` AND m.urgency = $${params.length}`;
     }
 
+    // Count uses the same filters captured before adding LIMIT/OFFSET
+    const filterParams = params.slice();
+    const countQuery = query.replace(
+      'SELECT m.*, c.name AS client_name, o.full_name AS operator_name',
+      'SELECT COUNT(*)'
+    );
+
     params.push(parseInt(limit), parseInt(offset));
     query += ` ORDER BY m.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
-    const result = await pool.query(query, params);
-    const count = await pool.query(
-      'SELECT COUNT(*) FROM messages WHERE 1=1' + (client_id ? ' AND client_id = $1' : ''),
-      client_id ? [client_id] : []
-    );
+    const [result, countResult] = await Promise.all([
+      pool.query(query, params),
+      pool.query(countQuery, filterParams),
+    ]);
 
-    res.json({ messages: result.rows, total: parseInt(count.rows[0].count) });
+    res.json({ messages: result.rows, total: parseInt(countResult.rows[0].count) });
   } catch (err) {
     next(err);
   }

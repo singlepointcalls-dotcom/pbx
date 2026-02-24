@@ -45,6 +45,13 @@ async function connectARI() {
 }
 
 async function handleStasisStart(event, channel) {
+  // Skip channels originated for operator legs — identified by the first Stasis app arg
+  const args = event.args || [];
+  if (args[0] === 'operator') {
+    console.log(`[ARI] StasisStart: skipping operator leg channel=${channel.id}`);
+    return;
+  }
+
   const channelId = channel.id;
   const callerIdNum = channel.caller.number || 'Unknown';
   const callerIdName = channel.caller.name || '';
