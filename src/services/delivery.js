@@ -275,7 +275,40 @@ async function sendQuickNotify(contact, channel, subject, body) {
   }
 }
 
+/**
+ * Validate that a URL does not point to private/internal networks (SSRF protection).
+ */
+function isPrivateUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname;
+    // Block localhost variants
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') return true;
+    // Block private IPv4 ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x (link-local)
+    const ipv4Match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipv4Match) {
+      const [, a, b] = ipv4Match.map(Number);
+      if (a === 10) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 0) return true;
+    }
+    // Block file:// and other non-http(s) schemes
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+    // Block internal metadata endpoints (cloud providers)
+    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') return true;
+    return false;
+  } catch {
+    return true; // Invalid URL — block
+  }
+}
+
 async function sendWebhook(webhook, message) {
+  if (isPrivateUrl(webhook.url)) {
+    throw new Error('Webhook URL points to a private/internal address and is blocked');
+  }
+
   const payload = {
     event: 'message.created',
     timestamp: new Date().toISOString(),

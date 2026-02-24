@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const pool = require('../../config/database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
 
@@ -98,7 +98,7 @@ router.post('/:id/complete', async (req, res, next) => {
 });
 
 // DELETE /api/tasks/:id
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
     await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
     res.json({ message: 'Task deleted' });

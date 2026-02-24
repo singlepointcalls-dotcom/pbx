@@ -8,6 +8,42 @@ const QRCode = require('qrcode');
 const pool = require('../../config/database');
 const { requireAuth } = require('../middleware/auth');
 
+/* ---- Simple in-memory rate limiter for auth endpoints ---- */
+const loginAttempts = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_ATTEMPTS = 10;
+
+function rateLimitAuth(req, res, next) {
+  const key = req.ip + ':' + (req.body?.username || '');
+  const now = Date.now();
+  const entry = loginAttempts.get(key);
+
+  if (entry) {
+    // Clean expired entries
+    if (now - entry.firstAttempt > RATE_LIMIT_WINDOW_MS) {
+      loginAttempts.set(key, { count: 1, firstAttempt: now });
+      return next();
+    }
+    if (entry.count >= MAX_ATTEMPTS) {
+      const retryAfter = Math.ceil((entry.firstAttempt + RATE_LIMIT_WINDOW_MS - now) / 1000);
+      res.setHeader('Retry-After', retryAfter);
+      return res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
+    }
+    entry.count++;
+  } else {
+    loginAttempts.set(key, { count: 1, firstAttempt: now });
+  }
+
+  // Periodic cleanup — every 100 requests, purge expired entries
+  if (loginAttempts.size > 1000) {
+    for (const [k, v] of loginAttempts) {
+      if (now - v.firstAttempt > RATE_LIMIT_WINDOW_MS) loginAttempts.delete(k);
+    }
+  }
+
+  next();
+}
+
 /* ---- Password strength validator ---- */
 function validatePassword(password) {
   if (!password || password.length < 12) return 'Password must be at least 12 characters';
@@ -19,7 +55,7 @@ function validatePassword(password) {
 }
 
 // POST /api/auth/login
-router.post('/login', async (req, res, next) => {
+router.post('/login', rateLimitAuth, async (req, res, next) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -69,7 +105,7 @@ router.post('/login', async (req, res, next) => {
 });
 
 // POST /api/auth/verify-2fa
-router.post('/verify-2fa', async (req, res, next) => {
+router.post('/verify-2fa', rateLimitAuth, async (req, res, next) => {
   try {
     const { temp_token, totp_code } = req.body;
     if (!temp_token || !totp_code) {
@@ -78,7 +114,7 @@ router.post('/verify-2fa', async (req, res, next) => {
 
     let payload;
     try {
-      payload = jwt.verify(temp_token, process.env.JWT_SECRET);
+      payload = jwt.verify(temp_token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     } catch {
       return res.status(401).json({ error: 'Invalid or expired verification token' });
     }

@@ -118,13 +118,13 @@ router.delete('/:clientId/contacts/:contactId', requireRole('admin', 'supervisor
 });
 
 // POST /api/clients/:clientId/contacts/:contactId/notify — quick email or SMS to a contact
-router.post('/:clientId/contacts/:contactId/notify', async (req, res, next) => {
+router.post('/:clientId/contacts/:contactId/notify', requireRole('admin', 'supervisor', 'operator'), async (req, res, next) => {
   try {
     const { channel, subject, body } = req.body;
     if (!channel || !body) return res.status(400).json({ error: 'channel and body are required' });
 
     const result = await pool.query(
-      `SELECT ct.*, cl.smtp_host, cl.smtp_port, cl.smtp_user, cl.smtp_pass, cl.smtp_from,
+      `SELECT ct.*, cl.smtp_host, cl.smtp_port, cl.smtp_user, cl.smtp_from,
               cl.name AS client_name
        FROM contacts ct
        JOIN clients cl ON ct.client_id = cl.id
@@ -133,6 +133,15 @@ router.post('/:clientId/contacts/:contactId/notify', async (req, res, next) => {
     );
     const contact = result.rows[0];
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+    // Fetch SMTP pass separately so it's never in the response object
+    if (channel === 'email') {
+      const smtpResult = await pool.query(
+        'SELECT smtp_pass FROM clients WHERE id = $1',
+        [req.params.clientId]
+      );
+      contact.smtp_pass = smtpResult.rows[0]?.smtp_pass || null;
+    }
 
     const { sendQuickNotify } = require('../../services/delivery');
     await sendQuickNotify(contact, channel, subject, body, req.operator);

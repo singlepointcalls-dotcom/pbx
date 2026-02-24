@@ -86,7 +86,11 @@ router.get('/:clientId/files/:fileId/download', async (req, res, next) => {
     const file = result.rows[0];
     if (!file) return res.status(404).json({ error: 'File not found' });
 
-    const filePath = path.join(UPLOAD_DIR, file.filename);
+    const filePath = path.resolve(UPLOAD_DIR, path.basename(file.filename));
+    // Ensure resolved path stays within UPLOAD_DIR (path traversal protection)
+    if (!filePath.startsWith(path.resolve(UPLOAD_DIR))) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
 
     res.download(filePath, file.original_name);
@@ -101,8 +105,10 @@ router.delete('/:clientId/files/:fileId', requireRole('admin', 'supervisor'), as
       [req.params.fileId, req.params.clientId]
     );
     if (result.rows[0]) {
-      const filePath = path.join(UPLOAD_DIR, result.rows[0].filename);
-      try { fs.unlinkSync(filePath); } catch (_) {}
+      const filePath = path.resolve(UPLOAD_DIR, path.basename(result.rows[0].filename));
+      if (filePath.startsWith(path.resolve(UPLOAD_DIR))) {
+        try { fs.unlinkSync(filePath); } catch (_) {}
+      }
     }
     res.json({ message: 'File deleted' });
   } catch (err) { next(err); }

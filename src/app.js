@@ -26,9 +26,23 @@ const clientFilesRoutes = require('./api/routes/client-files');
 
 const app = express();
 
-app.use(cors());
+// CORS — restrict to configured origins (default: same-origin only)
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+  : [];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (same-origin, curl, server-to-server)
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(morgan('combined'));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // Serve operator console static files
 app.use(express.static(path.join(__dirname, '..', 'web')));
@@ -74,10 +88,12 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'web', 'index.html'));
 });
 
-// Error handler
+// Error handler — avoid leaking stack traces in production
 app.use((err, _req, res, _next) => {
   console.error(err.stack);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  const status = err.status || 500;
+  const message = status === 500 ? 'Internal server error' : (err.message || 'Internal server error');
+  res.status(status).json({ error: message });
 });
 
 module.exports = app;

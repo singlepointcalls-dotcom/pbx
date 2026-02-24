@@ -22,7 +22,7 @@ function requirePortalAuth(req, res, next) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
   try {
-    const payload = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+    const payload = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET, { algorithms: ['HS256'] });
     if (payload.type !== 'portal') return res.status(403).json({ error: 'Forbidden' });
     req.portalUser = payload;
     next();

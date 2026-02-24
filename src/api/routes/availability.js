@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const pool = require('../../config/database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { broadcast } = require('../../services/realtime');
 
 router.use(requireAuth);
@@ -40,7 +40,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // PUT /api/clients/:clientId/availability
-router.put('/:clientId/availability', async (req, res, next) => {
+router.put('/:clientId/availability', requireRole('admin', 'supervisor', 'operator'), async (req, res, next) => {
   try {
     const { status, note } = req.body;
     if (status && !VALID_STATUSES.includes(status)) {
