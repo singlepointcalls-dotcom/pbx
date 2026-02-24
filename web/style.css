@@ -75,7 +75,14 @@ body {
   flex-shrink: 0;
 }
 
-.logo { font-size: 1rem; font-weight: 700; color: var(--accent); }
+.logo {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 18px rgba(79, 122, 255, 0.55);
+}
+.logo .logo-icon { color: #7a9fff; margin-right: 5px; }
 .operator-name { font-size: 0.875rem; color: var(--text-muted); margin-right: 12px; }
 
 .status-badge {
