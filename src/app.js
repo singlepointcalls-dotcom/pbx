@@ -47,6 +47,13 @@ app.use(express.json({ limit: '1mb' }));
 // Serve operator console static files
 app.use(express.static(path.join(__dirname, '..', 'web')));
 
+// Serve uploaded files (logos, client files) — block script execution from SVGs
+app.use('/uploads', (_req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, express.static(path.join(__dirname, '..', 'uploads')));
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/clients', clientRoutes);

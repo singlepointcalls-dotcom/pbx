@@ -585,6 +585,18 @@ const App = (() => {
   function renderScreenPop(data, did, callerNum) {
     const { client, contacts, availability } = data;
 
+    // Client logo
+    const logoEl = el('sp-client-logo');
+    if (logoEl) {
+      if (client.logo_url) {
+        logoEl.src = `/uploads/${client.logo_url}`;
+        logoEl.alt = client.name;
+        logoEl.style.display = '';
+      } else {
+        logoEl.style.display = 'none';
+      }
+    }
+
     // Client-level availability bar
     const availBar = el('client-availability-bar');
     if (availBar) {
@@ -765,10 +777,11 @@ const App = (() => {
           ? `<span class="sp-contact-ext">Ext ${escHtml(c.transfer_extension)}</span>` : '';
         const noteInfo = c.message_note ? `<div class="sp-contact-note">${escHtml(c.message_note)}</div>` : '';
         const actBtns = [];
+        actBtns.push(`<button class="btn-take-msg" onclick="App.takeMessageForContact('${escHtml(c.client_id || '')}','${escHtml(c.name)}','${escHtml(c.phone || '')}','${escHtml(c.email || '')}')">&#128221; Take a Message</button>`);
         if (c.phone) actBtns.push(`<button onclick="App.originateToContact('${escHtml(c.phone)}','${escHtml(c.client_id || '')}')">&#128222; Call</button>`);
         if (c.email) actBtns.push(`<button onclick="App.quickContactCompose('${escHtml(c.id)}','${escHtml(c.client_id || '')}','email','${escHtml(c.email)}','${escHtml(c.name)}')">&#9993; Email</button>`);
         if (c.sms_number || c.phone) actBtns.push(`<button onclick="App.quickContactCompose('${escHtml(c.id)}','${escHtml(c.client_id || '')}','sms','${escHtml(c.sms_number || c.phone)}','${escHtml(c.name)}')">&#128172; SMS</button>`);
-        const actionsHtml = actBtns.length ? `<div class="sp-contact-actions">${actBtns.join('')}</div>` : '';
+        const actionsHtml = `<div class="sp-contact-actions">${actBtns.join('')}</div>`;
 
         return `
           <div class="sp-contact-item${c.is_private ? ' sp-contact-private' : ''}">
@@ -1325,6 +1338,170 @@ const App = (() => {
       .catch((err) => toast(`Error: ${err.message}`, 'danger'));
   }
 
+  /* ---- Client Browser (open any client screen without a call) ---- */
+  function openClientBrowser() {
+    const sel = el('cb-client-select');
+    sel.innerHTML = '<option value="">-- Choose a client --</option>' +
+      clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    el('cb-screen').innerHTML = '';
+    el('client-browser-modal').style.display = 'flex';
+  }
+
+  function closeClientBrowser() {
+    el('client-browser-modal').style.display = 'none';
+  }
+
+  async function loadClientScreen() {
+    const clientId = el('cb-client-select').value;
+    const container = el('cb-screen');
+    if (!clientId) { container.innerHTML = ''; return; }
+    try {
+      const data = await api('GET', `/clients/${clientId}/screenpop`);
+      if (!data) return;
+      const { client, contacts, availability } = data;
+
+      let html = '';
+
+      // Logo + name header
+      if (client.logo_url) {
+        html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <img src="/uploads/${escHtml(client.logo_url)}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:contain;border:1px solid #e0e0e0" />
+          <h3>${escHtml(client.name)}</h3>
+        </div>`;
+      } else {
+        html += `<h3 style="margin-bottom:12px">${escHtml(client.name)}</h3>`;
+      }
+
+      // Availability
+      if (availability.status !== 'available') {
+        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting' };
+        html += `<div class="avail-bar avail-bar-${availability.status.replace(/_/g, '-')}" style="margin-bottom:8px">
+          Status: ${labels[availability.status] || availability.status}${availability.note ? ' — ' + escHtml(availability.note) : ''}
+        </div>`;
+      }
+
+      // Account / address
+      const parts = [];
+      if (client.account_number) parts.push(`Acct: ${escHtml(client.account_number)}`);
+      if (client.address) parts.push(escHtml(client.address.replace(/\n/g, ', ')));
+      if (parts.length) html += `<div class="sp-meta" style="display:block;margin-bottom:8px">${parts.join(' &bull; ')}</div>`;
+
+      // Greeting
+      if (client.greeting) html += `<div class="greeting-box" style="margin-bottom:8px">${escHtml(renderScript(client.greeting, client.name))}</div>`;
+
+      // Script
+      if (client.script) html += `<div class="script-box" style="margin-bottom:12px">${escHtml(renderScript(client.script, client.name))}</div>`;
+
+      // Private notes
+      if (client.private_notes) {
+        html += `<div style="color:var(--danger);font-weight:600;padding:8px;background:#fff0f0;border-radius:4px;margin-bottom:8px">
+          <strong>Private Notes:</strong> ${escHtml(client.private_notes)}
+        </div>`;
+      }
+
+      // Contacts
+      if (contacts && contacts.length) {
+        html += '<h4 style="margin:8px 0 4px">Staff & Contacts</h4>';
+        html += contacts.map((c) => {
+          const btns = [];
+          btns.push(`<button class="btn-take-msg" onclick="App.takeMessageForContact('${escHtml(c.client_id || clientId)}','${escHtml(c.name)}','${escHtml(c.phone || '')}','${escHtml(c.email || '')}')">Take a Message</button>`);
+          if (c.phone) btns.push(`<button onclick="App.originateToContact('${escHtml(c.phone)}','${escHtml(clientId)}')">&#128222; Call</button>`);
+          if (c.email) btns.push(`<button onclick="App.quickContactCompose('${escHtml(c.id)}','${escHtml(clientId)}','email','${escHtml(c.email)}','${escHtml(c.name)}')">&#9993; Email</button>`);
+          return `<div class="sp-contact-item" style="margin-bottom:6px;padding:6px 8px;background:#f5f7fa;border-radius:6px">
+            <strong>${escHtml(c.name)}</strong>${c.title ? ` — ${escHtml(c.title)}` : ''}
+            ${c.phone ? `<span style="margin-left:8px;color:var(--text-muted)">${escHtml(c.phone)}</span>` : ''}
+            <div class="sp-contact-actions">${btns.join('')}</div>
+          </div>`;
+        }).join('');
+      }
+
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = `<p class="feedback error">${escHtml(err.message)}</p>`;
+    }
+  }
+
+  /* ---- Take a Message for specific contact ---- */
+  function takeMessageForContact(clientId, contactName, phone, email) {
+    // Close any open modals
+    closeClientBrowser();
+    // Switch to console view
+    switchView('console');
+    // Pre-fill message form
+    el('msg-client').value = clientId;
+    onClientChange();
+    el('msg-caller-name').value = contactName || '';
+    el('msg-caller-phone').value = phone || '';
+    el('msg-subject').value = `Message for ${contactName}`;
+    el('msg-body').focus();
+    toast(`Taking message for ${contactName}`, 'info');
+  }
+
+  /* ---- Audio Device Settings ---- */
+  async function openAudioSettings() {
+    el('audio-settings-modal').style.display = 'flex';
+    try {
+      // Request mic permission to enumerate devices
+      await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => s.getTracks().forEach((t) => t.stop()));
+      const devices = await navigator.mediaDevices.enumerateDevices();
+
+      const outputDevices = devices.filter((d) => d.kind === 'audiooutput');
+      const inputDevices = devices.filter((d) => d.kind === 'audioinput');
+
+      const saved = JSON.parse(localStorage.getItem('as_audio_devices') || '{}');
+
+      const outputSelect = el('audio-output-device');
+      outputSelect.innerHTML = '<option value="default">System Default</option>' +
+        outputDevices.map((d) => `<option value="${escHtml(d.deviceId)}"${d.deviceId === saved.output ? ' selected' : ''}>${escHtml(d.label || 'Speaker ' + d.deviceId.slice(0, 6))}</option>`).join('');
+
+      const inputSelect = el('audio-input-device');
+      inputSelect.innerHTML = '<option value="default">System Default</option>' +
+        inputDevices.map((d) => `<option value="${escHtml(d.deviceId)}"${d.deviceId === saved.input ? ' selected' : ''}>${escHtml(d.label || 'Microphone ' + d.deviceId.slice(0, 6))}</option>`).join('');
+
+      const ringSelect = el('audio-ring-device');
+      ringSelect.innerHTML = '<option value="default">System Default</option>' +
+        outputDevices.map((d) => `<option value="${escHtml(d.deviceId)}"${d.deviceId === saved.ring ? ' selected' : ''}>${escHtml(d.label || 'Speaker ' + d.deviceId.slice(0, 6))}</option>`).join('');
+    } catch (err) {
+      toast('Could not enumerate audio devices. Check browser permissions.', 'danger');
+    }
+  }
+
+  function closeAudioSettings() {
+    el('audio-settings-modal').style.display = 'none';
+  }
+
+  function saveAudioSettings() {
+    const output = el('audio-output-device').value;
+    const input = el('audio-input-device').value;
+    const ring = el('audio-ring-device').value;
+    localStorage.setItem('as_audio_devices', JSON.stringify({ output, input, ring }));
+
+    // Apply ring device to ringer element
+    const ringer = el('ringer');
+    if (ringer && ringer.setSinkId && ring !== 'default') {
+      ringer.setSinkId(ring).catch(() => {});
+    }
+
+    toast('Audio settings saved', 'success');
+    closeAudioSettings();
+  }
+
+  function testAudio() {
+    const output = el('audio-output-device').value;
+    const statusEl = el('audio-test-status');
+    statusEl.textContent = 'Playing...';
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 440;
+      osc.connect(ctx.destination);
+      osc.start();
+      setTimeout(() => { osc.stop(); ctx.close(); statusEl.textContent = 'Done'; }, 1000);
+    } catch {
+      statusEl.textContent = 'Audio test failed';
+    }
+  }
+
   /* ---- Bootstrap ---- */
   document.addEventListener('DOMContentLoaded', init);
 
@@ -1344,6 +1521,10 @@ const App = (() => {
     quickContactCompose, closeQuickContact, sendQuickContact,
     // Outbound
     openOutbound, closeOutbound, makeOutboundCall, originateToContact,
+    // Client browser
+    openClientBrowser, closeClientBrowser, loadClientScreen, takeMessageForContact,
+    // Audio
+    openAudioSettings, closeAudioSettings, saveAudioSettings, testAudio,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
@@ -1471,6 +1652,7 @@ const Admin = (() => {
     el('da-phone-call').checked = true;
     el('da-email').checked = true;
     el('da-sms').checked = false;
+    renderLogoPreview(null);
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
@@ -1502,6 +1684,9 @@ const Admin = (() => {
         el('cf-outbound-cli').value = c.outbound_caller_id || '';
         el('cf-private-notes').value = c.private_notes || '';
         el('cf-email-template').value = c.email_template || '';
+
+        // Logo
+        renderLogoPreview(c.logo_url || null);
 
         // Delivery actions
         const da = c.delivery_actions || { phone_call: true, email: true, sms: false };
@@ -2787,6 +2972,57 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Client Logo Upload ---- */
+  async function uploadLogo() {
+    if (!editingClientId) { toast('Save the client first', 'danger'); return; }
+    const fileInput = el('cf-logo-file');
+    if (!fileInput.files.length) { toast('Select an image file', 'danger'); return; }
+
+    const formData = new FormData();
+    formData.append('logo', fileInput.files[0]);
+
+    try {
+      const res = await fetch(`/api/clients/${editingClientId}/logo`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('as_token')}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Upload failed');
+      }
+      const data = await res.json();
+      renderLogoPreview(data.logo_url);
+      toast('Logo uploaded', 'success');
+      fileInput.value = '';
+    } catch (err) {
+      toast(`Logo upload failed: ${err.message}`, 'danger');
+    }
+  }
+
+  async function removeLogo() {
+    if (!editingClientId) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/logo`);
+      renderLogoPreview(null);
+      toast('Logo removed', 'info');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  function renderLogoPreview(logoUrl) {
+    const preview = el('cf-logo-preview');
+    const removeBtn = el('cf-logo-remove');
+    if (logoUrl) {
+      preview.innerHTML = `<img src="/uploads/${escHtml(logoUrl)}" alt="Logo" />`;
+      removeBtn.style.display = '';
+    } else {
+      preview.innerHTML = '<span style="font-size:0.8rem;color:var(--text-muted)">No logo</span>';
+      removeBtn.style.display = 'none';
+    }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -2810,6 +3046,7 @@ const Admin = (() => {
     loadClientNewsAdmin, openNewsEditor, saveNews, deleteNews,
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
+    uploadLogo, removeLogo,
   };
 
 })();

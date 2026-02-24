@@ -1319,3 +1319,24 @@ body {
   cursor: pointer;
 }
 .sp-contact-actions button:hover { background: var(--accent-light); border-color: var(--accent); }
+
+/* Client logo in screen pop */
+.sp-client-logo {
+  width: 36px; height: 36px; border-radius: 6px; object-fit: contain;
+  border: 1px solid var(--border); background: #fff;
+}
+
+/* Logo preview in admin */
+.logo-preview-area { min-height: 40px; }
+.logo-preview-area img { max-width: 120px; max-height: 60px; border-radius: 6px; border: 1px solid var(--border); }
+
+/* Client browser screen */
+#cb-screen .sp-section { margin-bottom: 8px; }
+#cb-screen .greeting-box, #cb-screen .script-box { white-space: pre-wrap; }
+
+/* Take-a-message button in contacts */
+.sp-contact-actions .btn-take-msg {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+  font-weight: 600;
+}
+.sp-contact-actions .btn-take-msg:hover { opacity: 0.85; }

@@ -114,4 +114,51 @@ router.delete('/:clientId/files/:fileId', requireRole('admin', 'supervisor'), as
   } catch (err) { next(err); }
 });
 
+// POST /api/clients/:clientId/logo — upload client logo
+const logoUpload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB max for logos
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'];
+    if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      return cb(new Error('Logo must be an image file (png, jpg, gif, svg, webp)'));
+    }
+    cb(null, true);
+  },
+});
+
+router.post('/:clientId/logo', requireRole('admin', 'supervisor'), logoUpload.single('logo'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No image file uploaded' });
+
+    // Delete old logo file if exists
+    const old = await pool.query('SELECT logo_url FROM clients WHERE id = $1', [req.params.clientId]);
+    if (old.rows[0]?.logo_url) {
+      const oldPath = path.resolve(UPLOAD_DIR, path.basename(old.rows[0].logo_url));
+      if (oldPath.startsWith(path.resolve(UPLOAD_DIR))) {
+        try { fs.unlinkSync(oldPath); } catch (_) {}
+      }
+    }
+
+    const logoFilename = req.file.filename;
+    await pool.query('UPDATE clients SET logo_url = $1 WHERE id = $2', [logoFilename, req.params.clientId]);
+    res.json({ logo_url: logoFilename });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/clients/:clientId/logo — remove client logo
+router.delete('/:clientId/logo', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const old = await pool.query('SELECT logo_url FROM clients WHERE id = $1', [req.params.clientId]);
+    if (old.rows[0]?.logo_url) {
+      const oldPath = path.resolve(UPLOAD_DIR, path.basename(old.rows[0].logo_url));
+      if (oldPath.startsWith(path.resolve(UPLOAD_DIR))) {
+        try { fs.unlinkSync(oldPath); } catch (_) {}
+      }
+    }
+    await pool.query('UPDATE clients SET logo_url = NULL WHERE id = $1', [req.params.clientId]);
+    res.json({ message: 'Logo removed' });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

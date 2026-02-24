@@ -44,7 +44,9 @@
         <button class="nav-tab active" onclick="App.switchView('console')">Console</button>
         <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">Admin</button>
       </nav>
+      <button class="btn btn-sm btn-secondary" onclick="App.openClientBrowser()" title="Browse client screen">&#128193; Client</button>
       <button class="btn btn-sm btn-secondary" onclick="App.openOutbound()" title="Make outbound call">&#128222;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.openAudioSettings()" title="Audio device settings">&#127911;</button>
       <button class="btn btn-sm btn-secondary" id="demo-btn" onclick="App.startDemo()" style="display:none" title="Simulate an incoming call">&#9654; Demo</button>
       <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
       <span id="operator-name" class="operator-name"></span>
@@ -128,6 +130,7 @@
       <section class="panel" id="script-panel" style="display:none">
         <div class="panel-header">
           <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            <img id="sp-client-logo" src="" alt="" class="sp-client-logo" style="display:none" />
             <h2 id="script-client-name">Client Script</h2>
             <span id="sp-did-badge" class="sp-did-badge" style="display:none"></span>
             <span id="sp-open-badge" class="sp-open-badge" style="display:none"></span>
@@ -549,10 +552,24 @@
             <label>Outbound Caller ID</label>
             <input type="text" id="cf-outbound-cli" placeholder="e.g. +441234567890 (leave blank for default)" />
           </div>
+          <div class="field">
+            <label>Client Logo</label>
+            <div id="cf-logo-preview" class="logo-preview-area"></div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+              <input type="file" id="cf-logo-file" accept="image/*" style="font-size:0.8rem" />
+              <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.uploadLogo()">Upload</button>
+              <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeLogo()" id="cf-logo-remove" style="display:none">Remove</button>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Greeting (shown to operator on call)</label>
-          <textarea id="cf-greeting" rows="2" placeholder="Thank you for calling..."></textarea>
+          <textarea id="cf-greeting" rows="2" placeholder="{{greeting}}, thank you for calling {{client}}, {{operator}} speaking..."></textarea>
+          <p style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">
+            Variables: <code>{{greeting}}</code> (Good Morning/Afternoon/Evening),
+            <code>{{client}}</code> (client name),
+            <code>{{operator}}</code> (operator name).
+          </p>
         </div>
         <div class="field">
           <label>Operator Script</label>
@@ -1192,6 +1209,63 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeOutbound()">Cancel</button>
       <button class="btn btn-primary" onclick="App.makeOutboundCall()">&#128222; Dial</button>
+    </div>
+  </div>
+</div>
+
+<!-- Client Browser Modal -->
+<div id="client-browser-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeClientBrowser()">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3>Browse Client</h3>
+      <button class="modal-close" onclick="App.closeClientBrowser()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Select Client</label>
+        <select id="cb-client-select" onchange="App.loadClientScreen()">
+          <option value="">-- Choose a client --</option>
+        </select>
+      </div>
+      <div id="cb-screen" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Audio Device Settings Modal -->
+<div id="audio-settings-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeAudioSettings()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Audio Device Settings</h3>
+      <button class="modal-close" onclick="App.closeAudioSettings()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Speaker / Headset Output</label>
+        <select id="audio-output-device">
+          <option value="default">System Default</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Microphone Input</label>
+        <select id="audio-input-device">
+          <option value="default">System Default</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Ring Device (ring tone output)</label>
+        <select id="audio-ring-device">
+          <option value="default">System Default</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <button class="btn btn-sm btn-secondary" onclick="App.testAudio()">Test Speaker</button>
+        <span id="audio-test-status" style="margin-left:8px;font-size:0.8rem;color:var(--text-muted)"></span>
+      </div>
+      <div class="form-actions" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="App.saveAudioSettings()">Save</button>
+        <button class="btn btn-secondary" onclick="App.closeAudioSettings()">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
