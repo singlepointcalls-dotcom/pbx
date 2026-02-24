@@ -45,16 +45,35 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/clients
 router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
-    const { name, account_number, dids = [], script, greeting, timezone = 'Europe/London', notes } = req.body;
+    const {
+      name, account_number, dids = [], script, greeting,
+      timezone = 'Europe/London', notes, address,
+      opening_times = {}, info_sheets = [], custom_form = [],
+      delivery_actions = { phone_call: true, email: true, sms: false },
+      smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
+    } = req.body;
+
     if (!name || !account_number) {
       return res.status(400).json({ error: 'name and account_number are required' });
     }
 
     const result = await pool.query(
-      `INSERT INTO clients (name, account_number, dids, script, greeting, timezone, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO clients
+         (name, account_number, dids, script, greeting, timezone, notes,
+          address, opening_times, info_sheets, custom_form, delivery_actions,
+          smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING *`,
-      [name, account_number, dids, script, greeting, timezone, notes]
+      [
+        name, account_number, dids, script, greeting, timezone, notes,
+        address,
+        JSON.stringify(opening_times),
+        JSON.stringify(info_sheets),
+        JSON.stringify(custom_form),
+        JSON.stringify(delivery_actions),
+        smtp_host || null, smtp_port || null, smtp_user || null,
+        smtp_pass || null, smtp_from || null,
+      ]
     );
     res.status(201).json({ client: result.rows[0] });
   } catch (err) {
@@ -66,19 +85,46 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
 // PUT /api/clients/:id
 router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
-    const { name, dids, script, greeting, timezone, is_active, notes } = req.body;
+    const {
+      name, dids, script, greeting, timezone, is_active, notes, address,
+      opening_times, info_sheets, custom_form, delivery_actions,
+      smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
+    } = req.body;
+
     const result = await pool.query(
       `UPDATE clients SET
-         name = COALESCE($1, name),
-         dids = COALESCE($2, dids),
-         script = COALESCE($3, script),
-         greeting = COALESCE($4, greeting),
-         timezone = COALESCE($5, timezone),
-         is_active = COALESCE($6, is_active),
-         notes = COALESCE($7, notes)
-       WHERE id = $8
+         name             = COALESCE($1, name),
+         dids             = COALESCE($2, dids),
+         script           = COALESCE($3, script),
+         greeting         = COALESCE($4, greeting),
+         timezone         = COALESCE($5, timezone),
+         is_active        = COALESCE($6, is_active),
+         notes            = COALESCE($7, notes),
+         address          = COALESCE($8, address),
+         opening_times    = COALESCE($9, opening_times),
+         info_sheets      = COALESCE($10, info_sheets),
+         custom_form      = COALESCE($11, custom_form),
+         delivery_actions = COALESCE($12, delivery_actions),
+         smtp_host        = COALESCE($13, smtp_host),
+         smtp_port        = COALESCE($14, smtp_port),
+         smtp_user        = COALESCE($15, smtp_user),
+         smtp_pass        = COALESCE($16, smtp_pass),
+         smtp_from        = COALESCE($17, smtp_from)
+       WHERE id = $18
        RETURNING *`,
-      [name, dids, script, greeting, timezone, is_active, notes, req.params.id]
+      [
+        name, dids, script, greeting, timezone, is_active, notes, address,
+        opening_times !== undefined ? JSON.stringify(opening_times) : null,
+        info_sheets   !== undefined ? JSON.stringify(info_sheets)   : null,
+        custom_form   !== undefined ? JSON.stringify(custom_form)   : null,
+        delivery_actions !== undefined ? JSON.stringify(delivery_actions) : null,
+        smtp_host !== undefined ? smtp_host : null,
+        smtp_port !== undefined ? smtp_port : null,
+        smtp_user !== undefined ? smtp_user : null,
+        smtp_pass !== undefined ? smtp_pass : null,
+        smtp_from !== undefined ? smtp_from : null,
+        req.params.id,
+      ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
     res.json({ client: result.rows[0] });

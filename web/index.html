@@ -75,6 +75,8 @@
             <div class="caller-phone" id="ac-caller-phone">—</div>
           </div>
           <div class="client-badge" id="ac-client-name">—</div>
+          <!-- Availability badge shown during active call -->
+          <div id="ac-availability" class="avail-badge-inline" style="display:none"></div>
           <div class="call-actions">
             <button class="btn btn-danger" onclick="App.hangup()">Hang Up</button>
             <button class="btn btn-hold" id="btn-hold" onclick="App.toggleHold()">Hold</button>
@@ -105,17 +107,20 @@
 
     </aside>
 
-    <!-- Center: Script + Message Form -->
+    <!-- Center: Script + Custom Form + Message Form -->
     <main class="content">
 
-      <!-- Client Script -->
+      <!-- Client Script / Info -->
       <section class="panel" id="script-panel" style="display:none">
         <div class="panel-header">
           <h2 id="script-client-name">Client Script</h2>
           <span id="script-urgency" class="urgency-label"></span>
         </div>
+        <div id="client-availability-bar" style="display:none" class="avail-bar"></div>
         <div id="client-greeting" class="greeting-box"></div>
         <div id="client-script" class="script-box"></div>
+        <!-- Client info sheets shown as expandable cards -->
+        <div id="client-info-sheets" class="info-sheets-container"></div>
       </section>
 
       <!-- Message Form -->
@@ -129,17 +134,16 @@
           <div class="form-row">
             <div class="field">
               <label>Client *</label>
-              <select id="msg-client" required>
+              <select id="msg-client" required onchange="App.onClientChange()">
                 <option value="">— Select Client —</option>
               </select>
             </div>
             <div class="field">
-              <label>Urgency</label>
+              <label>Priority</label>
               <select id="msg-urgency">
                 <option value="normal">Normal</option>
                 <option value="low">Low</option>
-                <option value="urgent">Urgent</option>
-                <option value="emergency">Emergency</option>
+                <option value="high">High</option>
               </select>
             </div>
           </div>
@@ -163,8 +167,12 @@
           </div>
           <div class="field">
             <label>Message *</label>
-            <textarea id="msg-body" rows="5" placeholder="Enter message details..." required></textarea>
+            <textarea id="msg-body" rows="4" placeholder="Enter message details..." required spellcheck="true"></textarea>
           </div>
+
+          <!-- Custom form fields rendered here by App.onClientChange() -->
+          <div id="custom-form-fields"></div>
+
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="msg-submit">
               Save &amp; Deliver
@@ -210,6 +218,7 @@
     <div class="admin-nav">
       <button class="admin-nav-item active" onclick="Admin.showSection('clients', event)">Clients</button>
       <button class="admin-nav-item" onclick="Admin.showSection('operators', event)">Operators</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('availability', event)">Availability</button>
       <button class="admin-nav-item" onclick="Admin.showSection('reports', event)">Reports</button>
     </div>
 
@@ -244,6 +253,15 @@
       </table>
     </div>
 
+    <!-- Availability Section -->
+    <div id="admin-availability" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>Client Availability</h2>
+        <p style="color:var(--text-muted);font-size:0.82rem">Set the availability status for each client — visible to operators during calls.</p>
+      </div>
+      <div id="availability-list" class="availability-grid"></div>
+    </div>
+
     <!-- Reports Section -->
     <div id="admin-reports" class="admin-section" style="display:none">
       <div class="admin-toolbar">
@@ -258,27 +276,19 @@
           <a id="export-calls-btn" href="/api/calls?format=csv" class="btn btn-sm btn-secondary">&#11015; Calls CSV</a>
         </div>
       </div>
-
-      <!-- Summary Cards -->
       <div id="report-summary" class="report-cards"></div>
-
-      <!-- Call Volume Table -->
       <h3 class="report-section-title">Daily Call Volume</h3>
-      <table class="admin-table" id="report-volume-table">
+      <table class="admin-table">
         <thead><tr><th>Date</th><th>Total</th><th>Answered</th><th>Missed</th><th>Total Minutes</th></tr></thead>
         <tbody id="report-volume-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
       </table>
-
-      <!-- Operator Stats -->
       <h3 class="report-section-title" style="margin-top:24px">Operator Performance</h3>
-      <table class="admin-table" id="report-ops-table">
+      <table class="admin-table">
         <thead><tr><th>Operator</th><th>Calls Answered</th><th>Messages Taken</th><th>Total Minutes</th><th>Avg Duration</th></tr></thead>
         <tbody id="report-ops-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
       </table>
-
-      <!-- Client Stats -->
       <h3 class="report-section-title" style="margin-top:24px">Client Activity</h3>
-      <table class="admin-table" id="report-clients-table">
+      <table class="admin-table">
         <thead><tr><th>Client</th><th>Account</th><th>Total Calls</th><th>Answered</th><th>Messages</th><th>Total Minutes</th></tr></thead>
         <tbody id="report-clients-tbody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
       </table>
@@ -288,15 +298,28 @@
 
 </div><!-- /console-screen -->
 
-<!-- ===== Client Modal ===== -->
+<!-- ===== Client Modal (Tabbed) ===== -->
 <div id="client-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)Admin.closeClientModal()">
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="modal-header">
       <h3 id="client-modal-title">Add Client</h3>
       <button class="modal-close" onclick="Admin.closeClientModal()">&#10005;</button>
     </div>
     <form id="client-form" onsubmit="event.preventDefault();Admin.saveClient()">
-      <div class="modal-body">
+
+      <!-- Tab bar -->
+      <div class="modal-tabs">
+        <button type="button" class="modal-tab active" onclick="Admin.showClientTab('basic',this)">Basic Info</button>
+        <button type="button" class="modal-tab" onclick="Admin.showClientTab('details',this)">Details</button>
+        <button type="button" class="modal-tab" onclick="Admin.showClientTab('delivery',this)">Delivery</button>
+        <button type="button" class="modal-tab" onclick="Admin.showClientTab('form',this)">Custom Form</button>
+        <button type="button" class="modal-tab" id="tab-contacts-btn" onclick="Admin.showClientTab('contacts',this)" style="display:none">Contacts</button>
+        <button type="button" class="modal-tab" id="tab-depts-btn" onclick="Admin.showClientTab('departments',this)" style="display:none">Departments</button>
+        <button type="button" class="modal-tab" id="tab-lists-btn" onclick="Admin.showClientTab('lists',this)" style="display:none">VIP / Ignore</button>
+      </div>
+
+      <!-- Tab: Basic Info -->
+      <div id="ctab-basic" class="modal-body ctab active">
         <div class="form-row">
           <div class="field">
             <label>Account Number *</label>
@@ -309,7 +332,7 @@
         </div>
         <div class="field">
           <label>DIDs (E.164, comma-separated)</label>
-          <input type="text" id="cf-dids" placeholder="+15551234567, +15559876543" />
+          <input type="text" id="cf-dids" placeholder="+441234567890, +441234567891" />
         </div>
         <div class="form-row">
           <div class="field">
@@ -331,32 +354,166 @@
           </div>
         </div>
         <div class="field">
-          <label>Greeting (read aloud / shown to operator)</label>
+          <label>Greeting (shown to operator on call)</label>
           <textarea id="cf-greeting" rows="2" placeholder="Thank you for calling..."></textarea>
         </div>
         <div class="field">
           <label>Operator Script</label>
-          <textarea id="cf-script" rows="6" placeholder="Step-by-step call-handling instructions..."></textarea>
+          <textarea id="cf-script" rows="5" placeholder="Step-by-step call-handling instructions..."></textarea>
         </div>
         <div class="field">
           <label>Notes (internal)</label>
           <textarea id="cf-notes" rows="2"></textarea>
         </div>
-        <!-- Contacts sub-table (only shown when editing existing client) -->
-        <div id="contacts-section" style="display:none">
-          <div class="admin-toolbar" style="margin-top:16px">
-            <h4>Contacts / On-Call</h4>
-            <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.openContactModal()">+ Add Contact</button>
+      </div>
+
+      <!-- Tab: Details (Address, Opening Times, Info Sheets) -->
+      <div id="ctab-details" class="modal-body ctab" style="display:none">
+        <div class="field">
+          <label>Business Address</label>
+          <textarea id="cf-address" rows="3" placeholder="123 Example Street&#10;London&#10;EC1A 1BB"></textarea>
+        </div>
+
+        <h4 class="section-label">Opening Hours</h4>
+        <div id="opening-times-grid" class="opening-grid">
+          <!-- Rendered by JS -->
+        </div>
+
+        <h4 class="section-label" style="margin-top:16px">Information Sheets</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Add reference sheets shown to operators during calls (e.g. out-of-hours procedures, directions).</p>
+        <div id="info-sheets-list"></div>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addInfoSheet()" style="margin-top:8px">+ Add Sheet</button>
+      </div>
+
+      <!-- Tab: Delivery Actions & SMTP -->
+      <div id="ctab-delivery" class="modal-body ctab" style="display:none">
+        <h4 class="section-label">Delivery Actions</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">Select which actions are triggered when a message is taken for this client.</p>
+        <div class="delivery-actions-grid">
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-phone-call" />
+            <span class="delivery-icon">&#128222;</span>
+            <span class="delivery-label">Phone Call</span>
+            <span class="delivery-desc">Prompt operator to call the contact</span>
+          </label>
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-email" checked />
+            <span class="delivery-icon">&#9993;</span>
+            <span class="delivery-label">Email</span>
+            <span class="delivery-desc">Send email notification to contacts</span>
+          </label>
+          <label class="delivery-action-item">
+            <input type="checkbox" id="da-sms" />
+            <span class="delivery-icon">&#128172;</span>
+            <span class="delivery-label">SMS / Text</span>
+            <span class="delivery-desc">Send SMS to contacts with a mobile number</span>
+          </label>
+        </div>
+
+        <h4 class="section-label" style="margin-top:20px">Email Settings</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Leave blank to use the SinglePoint global SMTP. Fill in to use this client's own email address.
+        </p>
+        <div class="form-row">
+          <div class="field">
+            <label>SMTP Host</label>
+            <input type="text" id="cf-smtp-host" placeholder="smtp.clientdomain.com" />
           </div>
-          <table class="admin-table">
-            <thead><tr><th>Name</th><th>Title</th><th>Phone</th><th>Email</th><th>SMS</th><th>Priority</th><th></th></tr></thead>
-            <tbody id="contacts-tbody"></tbody>
-          </table>
+          <div class="field" style="max-width:100px">
+            <label>Port</label>
+            <input type="number" id="cf-smtp-port" placeholder="587" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>SMTP Username</label>
+            <input type="text" id="cf-smtp-user" autocomplete="off" placeholder="user@clientdomain.com" />
+          </div>
+          <div class="field">
+            <label>SMTP Password</label>
+            <input type="password" id="cf-smtp-pass" autocomplete="new-password" placeholder="Leave blank to keep current" />
+          </div>
+        </div>
+        <div class="field">
+          <label>From Address</label>
+          <input type="text" id="cf-smtp-from" placeholder="messages@clientdomain.com" />
         </div>
       </div>
+
+      <!-- Tab: Custom Form Builder -->
+      <div id="ctab-form" class="modal-body ctab" style="display:none">
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:14px">
+          Build a custom message form for this client. Fields appear on the operator's console when taking a message.
+        </p>
+        <div id="form-builder-list"></div>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addFormField()" style="margin-top:8px">+ Add Field</button>
+      </div>
+
+      <!-- Tab: Contacts -->
+      <div id="ctab-contacts" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>Contacts / On-Call</h4>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.openContactModal()">+ Add Contact</button>
+        </div>
+        <table class="admin-table">
+          <thead><tr>
+            <th>Name</th><th>Dept</th><th>Phone</th><th>Email</th>
+            <th>Action</th><th>Priority</th><th></th>
+          </tr></thead>
+          <tbody id="contacts-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Tab: Departments -->
+      <div id="ctab-departments" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>Departments</h4>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="new-dept-name" placeholder="Department name" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 10px;font-size:0.85rem" />
+            <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addDepartment()">+ Add</button>
+          </div>
+        </div>
+        <div id="departments-list"></div>
+      </div>
+
+      <!-- Tab: VIP / Ignore Lists -->
+      <div id="ctab-lists" class="modal-body ctab" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+          <!-- VIP -->
+          <div>
+            <div class="admin-toolbar" style="margin-bottom:10px">
+              <h4 style="color:var(--warning)">&#11088; VIP Numbers</h4>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Calls from these numbers are flagged as VIP to operators.</p>
+            <div style="display:flex;gap:6px;margin-bottom:10px">
+              <input type="tel" id="new-vip-phone" placeholder="+441234567890" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
+              <input type="text" id="new-vip-label" placeholder="Label (optional)" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
+              <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addVip()">Add</button>
+            </div>
+            <div id="vip-list"></div>
+          </div>
+
+          <!-- Ignore -->
+          <div>
+            <div class="admin-toolbar" style="margin-bottom:10px">
+              <h4 style="color:var(--danger)">&#128683; Ignore List</h4>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Calls from these numbers are silently logged — no operator alert.</p>
+            <div style="display:flex;gap:6px;margin-bottom:10px">
+              <input type="tel" id="new-ignore-phone" placeholder="+441234567890" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
+              <input type="text" id="new-ignore-label" placeholder="Label (optional)" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
+              <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addIgnore()">Add</button>
+            </div>
+            <div id="ignore-list"></div>
+          </div>
+
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="Admin.closeClientModal()">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="cf-submit">Save</button>
+        <button type="submit" class="btn btn-primary" id="cf-submit">Save Client</button>
       </div>
     </form>
   </div>
@@ -364,7 +521,7 @@
 
 <!-- ===== Contact Modal ===== -->
 <div id="contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)Admin.closeContactModal()">
-  <div class="modal" style="max-width:480px">
+  <div class="modal" style="max-width:540px">
     <div class="modal-header">
       <h3 id="contact-modal-title">Add Contact</h3>
       <button class="modal-close" onclick="Admin.closeContactModal()">&#10005;</button>
@@ -373,15 +530,37 @@
       <div class="modal-body">
         <div class="form-row">
           <div class="field"><label>Name *</label><input type="text" id="ctf-name" required /></div>
-          <div class="field"><label>Title</label><input type="text" id="ctf-title" /></div>
+          <div class="field"><label>Title / Role</label><input type="text" id="ctf-title" /></div>
         </div>
         <div class="form-row">
           <div class="field"><label>Phone</label><input type="tel" id="ctf-phone" placeholder="+44 7700 900000" /></div>
           <div class="field"><label>Email</label><input type="email" id="ctf-email" /></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>SMS Number</label><input type="tel" id="ctf-sms" placeholder="+44 7700 900000" /></div>
+          <div class="field">
+            <label>Department</label>
+            <select id="ctf-department"><option value="">— None —</option></select>
+          </div>
           <div class="field"><label>Priority</label><input type="number" id="ctf-priority" value="1" min="1" /></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>SMS Number</label><input type="tel" id="ctf-sms" placeholder="+44 7700 900000" /></div>
+          <div class="field">
+            <label>Call Action</label>
+            <select id="ctf-call-action" onchange="Admin.onCallActionChange()">
+              <option value="message">Take Message</option>
+              <option value="transfer">Transfer Call</option>
+              <option value="both">Message &amp; Transfer</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="ctf-ext-row" style="display:none">
+          <label>Transfer Extension</label>
+          <input type="text" id="ctf-transfer-ext" placeholder="e.g. 1001" />
+        </div>
+        <div class="field">
+          <label>Contact Note (shown to operator)</label>
+          <textarea id="ctf-message-note" rows="2" placeholder="e.g. Always call mobile first"></textarea>
         </div>
         <div class="form-row">
           <div class="field"><label>Email Notify</label><label class="toggle"><input type="checkbox" id="ctf-notify-email" checked /><span></span></label></div>

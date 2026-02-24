@@ -14,6 +14,9 @@ const callControlRoutes = require('./api/routes/callcontrol');
 const operatorRoutes = require('./api/routes/operators');
 const reportRoutes = require('./api/routes/reports');
 const taskRoutes = require('./api/routes/tasks');
+const departmentRoutes = require('./api/routes/departments');
+const vipRoutes = require('./api/routes/vip');
+const availabilityRoutes = require('./api/routes/availability');
 
 const app = express();
 
@@ -27,13 +30,18 @@ app.use(express.static(path.join(__dirname, '..', 'web')));
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/clients', clientRoutes);
-app.use('/api/clients', contactRoutes);  // /api/clients/:id/contacts
+app.use('/api/clients', contactRoutes);      // /api/clients/:id/contacts, /oncall
+app.use('/api/clients', departmentRoutes);   // /api/clients/:id/departments
+app.use('/api/clients', vipRoutes);          // /api/clients/:id/vip, /ignore
+app.use('/api/clients', availabilityRoutes); // /api/clients/:id/availability
 app.use('/api/messages', messageRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/callcontrol', callControlRoutes);
 app.use('/api/operators', operatorRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tasks', taskRoutes);
+// All-clients availability dashboard
+app.use('/api/availability', availabilityRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

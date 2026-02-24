@@ -3,22 +3,24 @@
 /**
  * Message Delivery Service
  *
- * Delivers messages to client contacts via:
- *   - Email (SMTP via nodemailer)
- *   - Webhook (HTTP POST to client-configured URL)
- *   - In-app (always stored; no external delivery needed)
+ * Delivers messages to client contacts via channels selected in client.delivery_actions:
+ *   - phone_call  (creates a record prompting the operator to call)
+ *   - email       (SMTP — global SinglePoint or per-client override)
+ *   - sms         (Twilio)
+ *   - webhook     (HTTP POST to client-configured URL)
+ *   - inapp       (always stored; no external delivery needed)
  */
 
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 const pool = require('../config/database');
 
-// Lazily created SMTP transporter
-let transporter = null;
+// Global transporter (SinglePoint SMTP) — lazily created
+let globalTransporter = null;
 
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
+function getGlobalTransporter() {
+  if (!globalTransporter) {
+    globalTransporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_SECURE === 'true',
@@ -28,16 +30,37 @@ function getTransporter() {
       },
     });
   }
-  return transporter;
+  return globalTransporter;
+}
+
+/**
+ * Return a nodemailer transporter for a client, falling back to the global one.
+ * Per-client credentials are stored encrypted-at-rest in the DB (operator responsibility).
+ */
+function getClientTransporter(client) {
+  if (client.smtp_host) {
+    return nodemailer.createTransport({
+      host: client.smtp_host,
+      port: client.smtp_port || 587,
+      secure: client.smtp_port === 465,
+      auth: {
+        user: client.smtp_user,
+        pass: client.smtp_pass,
+      },
+    });
+  }
+  return getGlobalTransporter();
 }
 
 /**
  * Deliver a message to all active contacts for the client.
- * Creates delivery records and attempts each channel.
+ * Respects client.delivery_actions to decide which channels to use.
  */
 async function deliverMessage(messageId) {
   const msgResult = await pool.query(
-    `SELECT m.*, c.name AS client_name
+    `SELECT m.*, c.name AS client_name,
+            c.delivery_actions, c.smtp_host, c.smtp_port,
+            c.smtp_user, c.smtp_pass, c.smtp_from
      FROM messages m
      JOIN clients c ON m.client_id = c.id
      WHERE m.id = $1`,
@@ -46,11 +69,12 @@ async function deliverMessage(messageId) {
   const message = msgResult.rows[0];
   if (!message) throw new Error(`Message ${messageId} not found`);
 
-  // Get active contacts for this client who want notifications
+  // Parse delivery_actions — default to email on if missing
+  const da = message.delivery_actions || { phone_call: true, email: true, sms: false };
+
+  // Get active contacts for this client
   const contactResult = await pool.query(
-    `SELECT * FROM contacts
-     WHERE client_id = $1 AND is_active = true
-     ORDER BY priority ASC`,
+    `SELECT * FROM contacts WHERE client_id = $1 AND is_active = true ORDER BY priority ASC`,
     [message.client_id]
   );
   const contacts = contactResult.rows;
@@ -64,33 +88,46 @@ async function deliverMessage(messageId) {
 
   const deliveryResults = [];
 
-  // SMS deliveries
-  for (const contact of contacts.filter((c) => c.notify_sms && c.sms_number)) {
-    const deliveryId = await createDeliveryRecord(messageId, contact.id, 'sms', contact.sms_number);
-    try {
-      await sendSms(contact.sms_number, message);
+  // Phone-call action: create a record so operators know to call this contact
+  if (da.phone_call) {
+    for (const contact of contacts.filter((c) => c.call_action !== 'message' || da.phone_call)) {
+      const deliveryId = await createDeliveryRecord(messageId, contact.id, 'phone_call', contact.phone);
       await updateDelivery(deliveryId, 'sent');
-      deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'sent' });
-    } catch (err) {
-      await updateDelivery(deliveryId, 'failed', err.message);
-      deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'failed', error: err.message });
+      deliveryResults.push({ channel: 'phone_call', destination: contact.phone, status: 'sent' });
     }
   }
 
-  // Email deliveries
-  for (const contact of contacts.filter((c) => c.notify_email && c.email)) {
-    const deliveryId = await createDeliveryRecord(messageId, contact.id, 'email', contact.email);
-    try {
-      await sendEmail(contact.email, message);
-      await updateDelivery(deliveryId, 'sent');
-      deliveryResults.push({ channel: 'email', destination: contact.email, status: 'sent' });
-    } catch (err) {
-      await updateDelivery(deliveryId, 'failed', err.message);
-      deliveryResults.push({ channel: 'email', destination: contact.email, status: 'failed', error: err.message });
+  // SMS deliveries (only if client allows sms and contact opts in)
+  if (da.sms) {
+    for (const contact of contacts.filter((c) => c.notify_sms && c.sms_number)) {
+      const deliveryId = await createDeliveryRecord(messageId, contact.id, 'sms', contact.sms_number);
+      try {
+        await sendSms(contact.sms_number, message);
+        await updateDelivery(deliveryId, 'sent');
+        deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'sent' });
+      } catch (err) {
+        await updateDelivery(deliveryId, 'failed', err.message);
+        deliveryResults.push({ channel: 'sms', destination: contact.sms_number, status: 'failed', error: err.message });
+      }
     }
   }
 
-  // Webhook deliveries
+  // Email deliveries (only if client allows email and contact opts in)
+  if (da.email) {
+    for (const contact of contacts.filter((c) => c.notify_email && c.email)) {
+      const deliveryId = await createDeliveryRecord(messageId, contact.id, 'email', contact.email);
+      try {
+        await sendEmail(contact.email, message);
+        await updateDelivery(deliveryId, 'sent');
+        deliveryResults.push({ channel: 'email', destination: contact.email, status: 'sent' });
+      } catch (err) {
+        await updateDelivery(deliveryId, 'failed', err.message);
+        deliveryResults.push({ channel: 'email', destination: contact.email, status: 'failed', error: err.message });
+      }
+    }
+  }
+
+  // Webhook deliveries (always honoured when configured)
   for (const webhook of webhooks) {
     const deliveryId = await createDeliveryRecord(messageId, null, 'webhook', webhook.url);
     try {
@@ -108,11 +145,8 @@ async function deliverMessage(messageId) {
   await updateDelivery(inappDeliveryId, 'sent');
   deliveryResults.push({ channel: 'inapp', status: 'sent' });
 
-  // Update message status
-  // Only consider external channels (email/webhook) when deciding failed vs delivered.
-  // [].every() returns true (vacuous truth), so guard with a length check to avoid
-  // marking in-app-only deliveries as failed.
-  const externalResults = deliveryResults.filter((r) => r.channel !== 'inapp');
+  // Update message status — only external channels (email/sms/webhook) count towards failure
+  const externalResults = deliveryResults.filter((r) => ['email', 'sms', 'webhook'].includes(r.channel));
   const allFailed = externalResults.length > 0 && externalResults.every((r) => r.status === 'failed');
   const newStatus = allFailed ? 'failed' : 'delivered';
 
@@ -130,11 +164,9 @@ async function sendSms(toNumber, message) {
     throw new Error('Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)');
   }
 
-  const urgencyPrefix = message.urgency === 'emergency' ? 'EMERGENCY: '
-    : message.urgency === 'urgent' ? 'URGENT: ' : '';
-
+  const priorityPrefix = message.urgency === 'high' ? 'HIGH PRIORITY: ' : '';
   const body = [
-    `${urgencyPrefix}Message for ${message.client_name}`,
+    `${priorityPrefix}Message for ${message.client_name}`,
     `From: ${message.caller_name || message.caller_phone || 'Unknown'}`,
     message.subject ? `Re: ${message.subject}` : null,
     message.body,
@@ -151,14 +183,21 @@ async function sendSms(toNumber, message) {
 }
 
 async function sendEmail(toAddress, message) {
-  const transport = getTransporter();
-  const urgencyLabel = message.urgency === 'emergency' ? '[EMERGENCY] ' : message.urgency === 'urgent' ? '[URGENT] ' : '';
-  const subject = `${urgencyLabel}Message for ${message.client_name}: ${message.subject || 'New Message'}`;
+  const transport = getClientTransporter(message);
+  const fromAddress = message.smtp_from || process.env.SMTP_FROM;
+
+  const priorityLabel = message.urgency === 'high' ? '[HIGH PRIORITY] ' : '';
+  const subject = `${priorityLabel}Message for ${message.client_name}: ${message.subject || 'New Message'}`;
+
+  const priorityLine = message.urgency === 'high'
+    ? 'PRIORITY: HIGH\n'
+    : message.urgency === 'low'
+      ? 'PRIORITY: LOW\n'
+      : 'PRIORITY: NORMAL\n';
 
   const text = `
 MESSAGE FOR: ${message.client_name}
-URGENCY: ${message.urgency.toUpperCase()}
-DATE: ${new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+${priorityLine}DATE: ${new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
 
 FROM: ${message.caller_name || 'Unknown'} ${message.caller_phone ? `<${message.caller_phone}>` : ''}${message.caller_company ? ` — ${message.caller_company}` : ''}
 
@@ -170,7 +209,7 @@ Sent by SinglePoint Calls Answering Service
   `.trim();
 
   await transport.sendMail({
-    from: process.env.SMTP_FROM,
+    from: fromAddress,
     to: toAddress,
     subject,
     text,
@@ -197,7 +236,6 @@ async function sendWebhook(webhook, message) {
 
   const headers = { 'Content-Type': 'application/json' };
 
-  // Sign payload if secret is configured
   if (webhook.secret) {
     const crypto = require('crypto');
     const sig = crypto
@@ -217,9 +255,7 @@ async function sendWebhook(webhook, message) {
       return;
     } catch (err) {
       lastErr = err;
-      if (attempt < maxRetries) {
-        await sleep(attempt * 1000);
-      }
+      if (attempt < maxRetries) await sleep(attempt * 1000);
     }
   }
   throw new Error(`Webhook failed after ${maxRetries} attempts: ${lastErr.message}`);
@@ -237,7 +273,9 @@ async function createDeliveryRecord(messageId, contactId, channel, destination) 
 
 async function updateDelivery(deliveryId, status, errorMessage = null) {
   await pool.query(
-    `UPDATE message_deliveries SET status = $1, error_message = $2, sent_at = CASE WHEN $1 = 'sent' THEN NOW() ELSE sent_at END
+    `UPDATE message_deliveries
+     SET status = $1, error_message = $2,
+         sent_at = CASE WHEN $1 = 'sent' THEN NOW() ELSE sent_at END
      WHERE id = $3`,
     [status, errorMessage, deliveryId]
   );

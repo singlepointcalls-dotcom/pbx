@@ -1,5 +1,5 @@
 /* ============================================================
-   Answering Service — Operator Console Application
+   SinglePoint Calls — Operator Console Application
    ============================================================ */
 
 'use strict';
@@ -16,6 +16,7 @@ const App = (() => {
   let activeCall = null;
   let activeCallStart = null;
   let timerInterval = null;
+  let callOnHold = false;
 
   /* ---- DOM Helpers ---- */
   const el = (id) => document.getElementById(id);
@@ -120,7 +121,6 @@ const App = (() => {
     el('console-screen').classList.add('active');
     el('operator-name').textContent = currentOperator.username;
 
-    // Show admin tab for admins and supervisors
     if (currentOperator.role === 'admin' || currentOperator.role === 'supervisor') {
       el('admin-tab').style.display = '';
     }
@@ -148,24 +148,17 @@ const App = (() => {
   /* ---- Socket.io ---- */
   function connectSocket() {
     if (socket) socket.disconnect();
-
     socket = io({ auth: { token } });
 
-    socket.on('connect', () => {
-      console.log('Socket connected');
-      toast('Connected to live call stream', 'success', 2000);
-    });
-
-    socket.on('disconnect', () => {
-      toast('Disconnected — reconnecting...', 'warning');
-    });
+    socket.on('connect', () => toast('Connected to live call stream', 'success', 2000));
+    socket.on('disconnect', () => toast('Disconnected — reconnecting...', 'warning'));
 
     socket.on('call:ringing', handleCallRinging);
     socket.on('call:answered', handleCallAnswered);
     socket.on('call:ended', handleCallEnded);
     socket.on('call:transferred', (data) => {
       if (activeCall?.channelId === data.channelId) clearActiveCall();
-      toast(`Call transferred`, 'info');
+      toast('Call transferred', 'info');
     });
     socket.on('call:held', (data) => {
       if (activeCall?.channelId === data.channelId) {
@@ -183,10 +176,16 @@ const App = (() => {
     });
     socket.on('operators:list', (data) => renderOperators(data.operators));
     socket.on('message:new', () => loadMessages());
+    socket.on('client:availability', (data) => {
+      // Update active call panel if it's for the current call's client
+      if (activeCall?.client?.id === data.client_id) {
+        renderAvailabilityInline(data.availability);
+      }
+    });
   }
 
   /* ---- Call Queue ---- */
-  const callQueue = new Map(); // channelId -> call data
+  const callQueue = new Map();
 
   function handleCallRinging(data) {
     callQueue.set(data.channelId, data);
@@ -201,11 +200,10 @@ const App = (() => {
       callQueue.delete(data.channelId);
       renderCallQueue();
     }
-    // If WE answered it — show active call panel
     if (activeCall?.channelId === data.channelId) {
       el('status-badge').className = 'status-badge busy';
       el('status-badge').textContent = 'ON CALL';
-      socket.emit('operator:busy');
+      if (socket) socket.emit('operator:busy');
     } else if (callQueue.size === 0) {
       el('status-badge').className = 'status-badge ready';
       el('status-badge').textContent = 'READY';
@@ -215,16 +213,11 @@ const App = (() => {
   function handleCallEnded(data) {
     callQueue.delete(data.channelId);
     renderCallQueue();
-
-    if (activeCall?.channelId === data.channelId) {
-      clearActiveCall();
-      toast('Call ended', 'info');
-    }
-
+    if (activeCall?.channelId === data.channelId) { clearActiveCall(); toast('Call ended', 'info'); }
     if (callQueue.size === 0) {
       el('status-badge').className = 'status-badge ready';
       el('status-badge').textContent = 'READY';
-      socket.emit('operator:ready');
+      if (socket) socket.emit('operator:ready');
     }
   }
 
@@ -240,10 +233,12 @@ const App = (() => {
 
     container.innerHTML = '';
     for (const [channelId, call] of callQueue.entries()) {
+      const vipBadge = call.isVip ? '<span class="vip-badge">&#11088; VIP</span>' : '';
+      const ignoreBadge = call.isIgnored ? '<span class="ignore-badge">Ignored</span>' : '';
       const item = document.createElement('div');
       item.className = 'call-item ringing';
       item.innerHTML = `
-        <div class="call-item-caller">${escHtml(call.callerIdName || call.callerIdNum)}</div>
+        <div class="call-item-caller">${escHtml(call.callerIdName || call.callerIdNum)} ${vipBadge}${ignoreBadge}</div>
         ${call.callerIdName ? `<div class="call-item-did">${escHtml(call.callerIdNum)}</div>` : ''}
         <div class="call-item-client">${call.client ? escHtml(call.client.name) : 'Unknown Client'}</div>
         <div class="call-item-time">${formatTime(new Date())}</div>
@@ -270,8 +265,32 @@ const App = (() => {
         showActiveCallPanel(call);
         viewScript(channelId);
         prefillMessageForm(call);
+        // Load client availability
+        if (call.client) loadCallAvailability(call.client.id);
       })
       .catch((err) => toast(`Failed to answer: ${err.message}`, 'danger'));
+  }
+
+  async function loadCallAvailability(clientId) {
+    try {
+      const data = await api('GET', `/clients/${clientId}/availability`);
+      if (data) renderAvailabilityInline(data.availability);
+    } catch { /* silent */ }
+  }
+
+  function renderAvailabilityInline(avail) {
+    const bar = el('ac-availability');
+    if (!bar || !avail) return;
+    const labels = {
+      available: { text: 'Available', cls: 'avail-available' },
+      out_of_office: { text: 'Out of Office', cls: 'avail-out' },
+      annual_leave: { text: 'Annual Leave', cls: 'avail-leave' },
+      meeting: { text: 'In a Meeting', cls: 'avail-meeting' },
+    };
+    const info = labels[avail.status] || labels.available;
+    bar.className = `avail-badge-inline ${info.cls}`;
+    bar.textContent = info.text + (avail.note ? ` — ${avail.note}` : '');
+    bar.style.display = '';
   }
 
   function showActiveCallPanel(call) {
@@ -299,6 +318,8 @@ const App = (() => {
     el('status-badge').className = 'status-badge ready';
     el('status-badge').textContent = 'READY';
     el('script-panel').style.display = 'none';
+    const acAvail = el('ac-availability');
+    if (acAvail) acAvail.style.display = 'none';
     if (socket) socket.emit('operator:ready');
   }
 
@@ -307,8 +328,6 @@ const App = (() => {
     api('POST', `/callcontrol/${activeCall.channelId}/hangup`, {})
       .catch((err) => toast(`Hangup failed: ${err.message}`, 'danger'));
   }
-
-  let callOnHold = false;
 
   function toggleHold() {
     if (!activeCall) return;
@@ -345,11 +364,54 @@ const App = (() => {
     el('script-client-name').textContent = call.client.name;
     el('client-greeting').textContent = call.client.greeting || '';
     el('client-script').textContent = call.client.script || 'No script configured for this client.';
+
+    // Info sheets
+    const infoSheets = call.client.info_sheets || [];
+    const sheetsContainer = el('client-info-sheets');
+    if (sheetsContainer) {
+      if (infoSheets.length) {
+        sheetsContainer.innerHTML = infoSheets.map((s, i) => `
+          <div class="info-sheet-card">
+            <div class="info-sheet-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>${escHtml(s.title || `Sheet ${i + 1}`)}</span>
+              <span class="info-sheet-arrow">&#9660;</span>
+            </div>
+            <div class="info-sheet-body">${escHtml(s.content || '')}</div>
+          </div>
+        `).join('');
+      } else {
+        sheetsContainer.innerHTML = '';
+      }
+    }
+
+    // Availability bar inside script panel
+    if (call.client.id) {
+      const availBar = el('client-availability-bar');
+      if (availBar) {
+        api('GET', `/clients/${call.client.id}/availability`).then((data) => {
+          if (!data) return;
+          const avail = data.availability;
+          if (avail.status !== 'available') {
+            const labels = {
+              out_of_office: 'Out of Office',
+              annual_leave: 'Annual Leave',
+              meeting: 'In a Meeting',
+            };
+            availBar.textContent = `Status: ${labels[avail.status] || avail.status}${avail.note ? ` — ${avail.note}` : ''}`;
+            availBar.className = `avail-bar avail-bar-${avail.status.replace('_', '-')}`;
+            availBar.style.display = '';
+          } else {
+            availBar.style.display = 'none';
+          }
+        }).catch(() => {});
+      }
+    }
   }
 
   function prefillMessageForm(call) {
     if (call.client) {
       el('msg-client').value = call.client.id;
+      onClientChange();
     }
     el('msg-caller-phone').value = call.callerIdNum || '';
     el('msg-caller-name').value = call.callerIdName || '';
@@ -362,7 +424,6 @@ const App = (() => {
       if (!data) return;
       clients = data.clients;
 
-      // Populate client selects
       const options = clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
       el('msg-client').innerHTML = '<option value="">— Select Client —</option>' + options;
       el('msg-filter-client').innerHTML = '<option value="">All Clients</option>' + options;
@@ -371,6 +432,63 @@ const App = (() => {
     } catch (err) {
       console.error('loadClients error:', err.message);
     }
+  }
+
+  /* ---- Custom Form Rendering ---- */
+  function onClientChange() {
+    const clientId = el('msg-client').value;
+    const container = el('custom-form-fields');
+    container.innerHTML = '';
+
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return;
+
+    const fields = client.custom_form || [];
+    if (!fields.length) return;
+
+    const divider = document.createElement('div');
+    divider.className = 'custom-form-divider';
+    divider.textContent = 'Additional Information';
+    container.appendChild(divider);
+
+    fields.forEach((field) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'field';
+
+      const label = document.createElement('label');
+      label.textContent = field.label + (field.required ? ' *' : '');
+      wrapper.appendChild(label);
+
+      let input;
+      switch (field.type) {
+        case 'textarea':
+          input = document.createElement('textarea');
+          input.rows = 3;
+          if (field.spellcheck) input.spellcheck = true;
+          break;
+        case 'select':
+          input = document.createElement('select');
+          input.innerHTML = '<option value="">— Select —</option>' +
+            (field.options || []).map((o) => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join('');
+          break;
+        case 'checkbox':
+          input = document.createElement('input');
+          input.type = 'checkbox';
+          wrapper.classList.add('field-inline');
+          break;
+        default:
+          input = document.createElement('input');
+          input.type = field.type || 'text';
+          if (field.type === 'textarea') input.spellcheck = field.spellcheck || false;
+      }
+
+      input.dataset.fieldId = field.id;
+      input.dataset.fieldLabel = field.label;
+      if (field.required) input.required = true;
+      input.className = 'custom-field-input';
+      wrapper.appendChild(input);
+      container.appendChild(wrapper);
+    });
   }
 
   /* ---- Messages ---- */
@@ -405,6 +523,7 @@ const App = (() => {
         <div class="message-item-preview">${escHtml(m.body)}</div>
         <div class="message-item-meta">
           <span class="message-item-time">${relTime(m.created_at)}</span>
+          <span class="urgency-pill urgency-${m.urgency}">${m.urgency}</span>
           <span class="message-item-status status-${m.status}">${m.status}</span>
         </div>
       </div>
@@ -419,7 +538,7 @@ const App = (() => {
       const detail = [
         `Client: ${m.client_name}`,
         `Caller: ${m.caller_name || '—'} ${m.caller_phone ? `(${m.caller_phone})` : ''}${m.caller_company ? ` — ${m.caller_company}` : ''}`,
-        `Urgency: ${m.urgency.toUpperCase()}`,
+        `Priority: ${m.urgency.toUpperCase()}`,
         `Status: ${m.status}`,
         '',
         m.subject ? `Subject: ${m.subject}` : '',
@@ -446,6 +565,18 @@ const App = (() => {
     const body = el('msg-body').value.trim();
     if (!clientId || !body) return;
 
+    // Collect custom form fields
+    const customFields = {};
+    document.querySelectorAll('.custom-field-input').forEach((input) => {
+      const label = input.dataset.fieldLabel;
+      customFields[label] = input.type === 'checkbox' ? input.checked : input.value;
+    });
+
+    const customNotes = Object.entries(customFields)
+      .filter(([, v]) => v !== '' && v !== false)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n');
+
     const payload = {
       client_id: clientId,
       call_log_id: activeCall?.callLogId || null,
@@ -453,7 +584,7 @@ const App = (() => {
       caller_phone: el('msg-caller-phone').value.trim() || null,
       caller_company: el('msg-caller-company').value.trim() || null,
       subject: el('msg-subject').value.trim() || null,
-      body,
+      body: customNotes ? `${body}\n\n--- Additional Info ---\n${customNotes}` : body,
       urgency: el('msg-urgency').value,
       auto_deliver: andDeliver,
     };
@@ -473,9 +604,7 @@ const App = (() => {
     }
   }
 
-  function saveMessageOnly() {
-    submitMessage(false);
-  }
+  function saveMessageOnly() { submitMessage(false); }
 
   function clearMessageForm() {
     el('msg-client').value = '';
@@ -486,6 +615,7 @@ const App = (() => {
     el('msg-body').value = '';
     el('msg-urgency').value = 'normal';
     el('msg-feedback').className = 'feedback hidden';
+    el('custom-form-fields').innerHTML = '';
   }
 
   /* ---- Operators ---- */
@@ -506,7 +636,11 @@ const App = (() => {
   /* ---- Utilities ---- */
   function escHtml(str) {
     if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   function formatTime(date) {
@@ -527,28 +661,19 @@ const App = (() => {
 
   /* ---- Public interface ---- */
   return {
-    logout,
-    pickupCall,
-    hangup,
-    toggleHold,
-    showTransfer,
-    transfer,
-    viewScript,
-    clearMessageForm,
-    saveMessageOnly,
-    loadMessages,
-    showMessageDetail,
-    switchView,
-    // expose api helper for Admin module
+    logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
+    viewScript, clearMessageForm, saveMessageOnly, loadMessages,
+    showMessageDetail, switchView, onClientChange,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
+    _clients: () => clients,
   };
 
 })();
 
 /* ============================================================
-   Admin Module — Client, Contact, and Operator Management
+   Admin Module
    ============================================================ */
 
 const Admin = (() => {
@@ -562,11 +687,14 @@ const Admin = (() => {
   let editingContactId = null;
   let editingOperatorId = null;
 
+  // Form builder state
+  let formFields = [];
+  // Info sheets state
+  let infoSheets = [];
+
   /* ---- Init ---- */
   async function init() {
-    if (!initialized) {
-      initialized = true;
-    }
+    if (!initialized) initialized = true;
     showSection('clients');
   }
 
@@ -578,7 +706,22 @@ const Admin = (() => {
 
     if (name === 'clients') loadClients();
     else if (name === 'operators') loadOperators();
+    else if (name === 'availability') loadAvailabilitySection();
     else if (name === 'reports') loadReports();
+  }
+
+  /* ---- Client Modal Tabs ---- */
+  function showClientTab(name, btn) {
+    document.querySelectorAll('.ctab').forEach((t) => t.style.display = 'none');
+    document.querySelectorAll('.modal-tab').forEach((b) => b.classList.remove('active'));
+    const tab = el(`ctab-${name}`);
+    if (tab) tab.style.display = '';
+    if (btn) btn.classList.add('active');
+
+    // Lazy-load tab content that requires server data
+    if (name === 'contacts' && editingClientId) loadContacts(editingClientId);
+    if (name === 'departments' && editingClientId) loadDepartments(editingClientId);
+    if (name === 'lists' && editingClientId) { loadVip(editingClientId); loadIgnore(editingClientId); }
   }
 
   /* ---- Clients ---- */
@@ -630,17 +773,35 @@ const Admin = (() => {
   async function openClientModal(clientId) {
     editingClientId = clientId || null;
     el('client-modal-title').textContent = clientId ? 'Edit Client' : 'Add Client';
-    el('cf-account').disabled = !!clientId; // account number is immutable after creation
+    el('cf-account').disabled = !!clientId;
+    formFields = [];
+    infoSheets = [];
 
     // Reset form
     el('client-form').reset();
     el('cf-active').checked = true;
-    el('contacts-section').style.display = 'none';
+    el('da-phone-call').checked = true;
+    el('da-email').checked = true;
+    el('da-sms').checked = false;
+
+    // Show extra tabs only when editing
+    const tabsVisible = !!clientId;
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn'].forEach((id) => {
+      const btn = el(id);
+      if (btn) btn.style.display = tabsVisible ? '' : 'none';
+    });
+
+    // Reset to first tab
+    showClientTab('basic', document.querySelector('.modal-tab'));
+
+    // Render opening times grid
+    renderOpeningTimesGrid({});
 
     if (clientId) {
       try {
         const data = await api('GET', `/clients/${clientId}`);
         const c = data.client;
+
         el('cf-account').value = c.account_number;
         el('cf-name').value = c.name;
         el('cf-dids').value = (c.dids || []).join(', ');
@@ -649,12 +810,39 @@ const Admin = (() => {
         el('cf-greeting').value = c.greeting || '';
         el('cf-script').value = c.script || '';
         el('cf-notes').value = c.notes || '';
-        el('contacts-section').style.display = 'block';
-        loadContacts(clientId);
+        el('cf-address').value = c.address || '';
+
+        // Delivery actions
+        const da = c.delivery_actions || { phone_call: true, email: true, sms: false };
+        el('da-phone-call').checked = !!da.phone_call;
+        el('da-email').checked = !!da.email;
+        el('da-sms').checked = !!da.sms;
+
+        // SMTP
+        el('cf-smtp-host').value = c.smtp_host || '';
+        el('cf-smtp-port').value = c.smtp_port || '';
+        el('cf-smtp-user').value = c.smtp_user || '';
+        el('cf-smtp-from').value = c.smtp_from || '';
+        // smtp_pass intentionally blank (placeholder tells user)
+
+        // Opening times
+        renderOpeningTimesGrid(c.opening_times || {});
+
+        // Info sheets
+        infoSheets = Array.isArray(c.info_sheets) ? c.info_sheets : [];
+        renderInfoSheetsList();
+
+        // Custom form
+        formFields = Array.isArray(c.custom_form) ? c.custom_form : [];
+        renderFormBuilder();
+
       } catch (err) {
         toast(`Failed to load client: ${err.message}`, 'danger');
         return;
       }
+    } else {
+      renderFormBuilder();
+      renderInfoSheetsList();
     }
 
     el('client-modal').style.display = 'flex';
@@ -672,6 +860,27 @@ const Admin = (() => {
       const didsRaw = el('cf-dids').value.trim();
       const dids = didsRaw ? didsRaw.split(',').map((d) => d.trim()).filter(Boolean) : [];
 
+      // Collect opening times
+      const openingTimes = {};
+      const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+      days.forEach((day) => {
+        const closedEl = el(`ot-${day}-closed`);
+        const openEl = el(`ot-${day}-open`);
+        const closeEl = el(`ot-${day}-close`);
+        openingTimes[day] = {
+          closed: closedEl ? closedEl.checked : false,
+          open: openEl ? openEl.value : '09:00',
+          close: closeEl ? closeEl.value : '17:30',
+        };
+      });
+
+      const delivery_actions = {
+        phone_call: el('da-phone-call').checked,
+        email: el('da-email').checked,
+        sms: el('da-sms').checked,
+      };
+
+      const smtpPass = el('cf-smtp-pass').value;
       const body = {
         name: el('cf-name').value.trim(),
         dids,
@@ -680,7 +889,17 @@ const Admin = (() => {
         greeting: el('cf-greeting').value.trim() || null,
         script: el('cf-script').value.trim() || null,
         notes: el('cf-notes').value.trim() || null,
+        address: el('cf-address').value.trim() || null,
+        opening_times: openingTimes,
+        info_sheets: infoSheets,
+        custom_form: formFields,
+        delivery_actions,
+        smtp_host: el('cf-smtp-host').value.trim() || null,
+        smtp_port: parseInt(el('cf-smtp-port').value) || null,
+        smtp_user: el('cf-smtp-user').value.trim() || null,
+        smtp_from: el('cf-smtp-from').value.trim() || null,
       };
+      if (smtpPass) body.smtp_pass = smtpPass;
 
       if (editingClientId) {
         await api('PUT', `/clients/${editingClientId}`, body);
@@ -709,6 +928,137 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Opening Times Grid ---- */
+  function renderOpeningTimesGrid(times) {
+    const grid = el('opening-times-grid');
+    if (!grid) return;
+    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const labels = { monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun' };
+    grid.innerHTML = days.map((day) => {
+      const t = times[day] || { closed: false, open: '09:00', close: '17:30' };
+      return `
+        <div class="opening-row">
+          <span class="opening-day">${labels[day]}</span>
+          <label class="toggle" title="Closed">
+            <input type="checkbox" id="ot-${day}-closed" ${t.closed ? 'checked' : ''} onchange="Admin.toggleDayClosed('${day}')" />
+            <span></span>
+          </label>
+          <span style="font-size:0.72rem;color:var(--text-muted)">Closed</span>
+          <input type="time" id="ot-${day}-open" value="${t.open || '09:00'}" ${t.closed ? 'disabled' : ''} />
+          <span style="color:var(--text-muted);font-size:0.8rem">–</span>
+          <input type="time" id="ot-${day}-close" value="${t.close || '17:30'}" ${t.closed ? 'disabled' : ''} />
+        </div>
+      `;
+    }).join('');
+  }
+
+  function toggleDayClosed(day) {
+    const closed = el(`ot-${day}-closed`).checked;
+    el(`ot-${day}-open`).disabled = closed;
+    el(`ot-${day}-close`).disabled = closed;
+  }
+
+  /* ---- Info Sheets ---- */
+  function renderInfoSheetsList() {
+    const container = el('info-sheets-list');
+    if (!container) return;
+    if (!infoSheets.length) {
+      container.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted)">No information sheets added yet.</p>';
+      return;
+    }
+    container.innerHTML = infoSheets.map((s, i) => `
+      <div class="info-sheet-editor">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <input type="text" value="${escHtml(s.title)}" placeholder="Sheet title"
+            oninput="Admin.updateInfoSheet(${i},'title',this.value)"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.85rem" />
+          <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeInfoSheet(${i})">&#10005;</button>
+        </div>
+        <textarea placeholder="Sheet content..." rows="4"
+          oninput="Admin.updateInfoSheet(${i},'content',this.value)"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 8px;font-size:0.82rem;resize:vertical;font-family:inherit">${escHtml(s.content)}</textarea>
+      </div>
+    `).join('');
+  }
+
+  function addInfoSheet() {
+    infoSheets.push({ title: '', content: '' });
+    renderInfoSheetsList();
+  }
+
+  function updateInfoSheet(idx, field, value) {
+    if (infoSheets[idx]) infoSheets[idx][field] = value;
+  }
+
+  function removeInfoSheet(idx) {
+    infoSheets.splice(idx, 1);
+    renderInfoSheetsList();
+  }
+
+  /* ---- Custom Form Builder ---- */
+  function renderFormBuilder() {
+    const container = el('form-builder-list');
+    if (!container) return;
+    if (!formFields.length) {
+      container.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted)">No custom fields added yet.</p>';
+      return;
+    }
+    container.innerHTML = formFields.map((f, i) => `
+      <div class="form-builder-field">
+        <div class="form-builder-row">
+          <select onchange="Admin.updateField(${i},'type',this.value)" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem;min-width:120px">
+            <option value="text"      ${f.type==='text'     ?'selected':''}>Text</option>
+            <option value="textarea"  ${f.type==='textarea' ?'selected':''}>Textarea</option>
+            <option value="select"    ${f.type==='select'   ?'selected':''}>Dropdown</option>
+            <option value="tel"       ${f.type==='tel'      ?'selected':''}>Phone</option>
+            <option value="email"     ${f.type==='email'    ?'selected':''}>Email</option>
+            <option value="checkbox"  ${f.type==='checkbox' ?'selected':''}>Checkbox</option>
+          </select>
+          <input type="text" value="${escHtml(f.label)}" placeholder="Field label"
+            oninput="Admin.updateField(${i},'label',this.value)"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.85rem" />
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-muted);white-space:nowrap">
+            <input type="checkbox" ${f.required?'checked':''} onchange="Admin.updateField(${i},'required',this.checked)" /> Required
+          </label>
+          ${f.type === 'textarea' ? `
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text-muted);white-space:nowrap">
+            <input type="checkbox" ${f.spellcheck?'checked':''} onchange="Admin.updateField(${i},'spellcheck',this.checked)" /> Spellcheck
+          </label>` : ''}
+          <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeField(${i})">&#10005;</button>
+        </div>
+        ${f.type === 'select' ? `
+        <div style="margin-top:6px">
+          <input type="text" value="${escHtml((f.options||[]).join(', '))}" placeholder="Options (comma-separated)"
+            oninput="Admin.updateFieldOptions(${i}, this.value)"
+            style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
+        </div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function addFormField() {
+    formFields.push({ id: `f${Date.now()}`, type: 'text', label: '', required: false, spellcheck: false, options: [] });
+    renderFormBuilder();
+  }
+
+  function updateField(idx, key, value) {
+    if (formFields[idx]) {
+      formFields[idx][key] = value;
+      if (key === 'type') renderFormBuilder(); // re-render to show/hide spellcheck/options
+    }
+  }
+
+  function updateFieldOptions(idx, value) {
+    if (formFields[idx]) {
+      formFields[idx].options = value.split(',').map((o) => o.trim()).filter(Boolean);
+    }
+  }
+
+  function removeField(idx) {
+    formFields.splice(idx, 1);
+    renderFormBuilder();
+  }
+
   /* ---- Contacts ---- */
   async function loadContacts(clientId) {
     const tbody = el('contacts-tbody');
@@ -727,13 +1077,14 @@ const Admin = (() => {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No contacts yet</td></tr>';
       return;
     }
+    const actionLabels = { message: 'Message', transfer: 'Transfer', both: 'Msg+Xfer' };
     tbody.innerHTML = contacts.map((c) => `
       <tr${c.is_private ? ' class="contact-private-row"' : ''}>
         <td>${escHtml(c.name)}${c.is_private ? ' <span class="private-badge">PRIVATE</span>' : ''}</td>
-        <td>${escHtml(c.title || '—')}</td>
+        <td>${escHtml(c.department_name || '—')}</td>
         <td>${escHtml(c.phone || '—')}</td>
         <td>${escHtml(c.email || '—')}${c.notify_email ? ' ✉' : ''}</td>
-        <td>${escHtml(c.sms_number || '—')}${c.notify_sms ? ' ✉' : ''}</td>
+        <td><span class="pill pill-blue">${actionLabels[c.call_action] || c.call_action}</span></td>
         <td>${c.priority}</td>
         <td>
           <button class="btn btn-sm btn-secondary" onclick="Admin.openContactModal('${c.id}')">Edit</button>
@@ -749,6 +1100,23 @@ const Admin = (() => {
     el('contact-form').reset();
     el('ctf-priority').value = 1;
     el('ctf-notify-email').checked = true;
+    el('ctf-call-action').value = 'message';
+    el('ctf-ext-row').style.display = 'none';
+
+    // Load departments into select
+    const deptSelect = el('ctf-department');
+    deptSelect.innerHTML = '<option value="">— None —</option>';
+    if (editingClientId) {
+      try {
+        const depts = await api('GET', `/clients/${editingClientId}/departments`);
+        (depts.departments || []).forEach((d) => {
+          const opt = document.createElement('option');
+          opt.value = d.id;
+          opt.textContent = d.name;
+          deptSelect.appendChild(opt);
+        });
+      } catch { /* no depts yet */ }
+    }
 
     if (contactId && editingClientId) {
       try {
@@ -764,6 +1132,11 @@ const Admin = (() => {
           el('ctf-notify-email').checked = !!contact.notify_email;
           el('ctf-notify-sms').checked = !!contact.notify_sms;
           el('ctf-private').checked = !!contact.is_private;
+          el('ctf-call-action').value = contact.call_action || 'message';
+          el('ctf-transfer-ext').value = contact.transfer_extension || '';
+          el('ctf-message-note').value = contact.message_note || '';
+          if (contact.department_id) deptSelect.value = contact.department_id;
+          onCallActionChange();
         }
       } catch (err) {
         toast(`Failed to load contact: ${err.message}`, 'danger');
@@ -771,6 +1144,11 @@ const Admin = (() => {
     }
 
     el('contact-modal').style.display = 'flex';
+  }
+
+  function onCallActionChange() {
+    const action = el('ctf-call-action').value;
+    el('ctf-ext-row').style.display = (action === 'transfer' || action === 'both') ? 'flex' : 'none';
   }
 
   function closeContactModal() {
@@ -790,6 +1168,10 @@ const Admin = (() => {
       notify_email: el('ctf-notify-email').checked,
       notify_sms: el('ctf-notify-sms').checked,
       is_private: el('ctf-private').checked,
+      department_id: el('ctf-department').value || null,
+      call_action: el('ctf-call-action').value,
+      transfer_extension: el('ctf-transfer-ext').value.trim() || null,
+      message_note: el('ctf-message-note').value.trim() || null,
     };
 
     try {
@@ -813,6 +1195,203 @@ const Admin = (() => {
       await api('DELETE', `/clients/${clientId}/contacts/${contactId}`);
       toast('Contact deleted', 'success');
       loadContacts(clientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Departments ---- */
+  async function loadDepartments(clientId) {
+    const container = el('departments-list');
+    if (!container) return;
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">Loading...</p>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/departments`);
+      const depts = data.departments || [];
+      if (!depts.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No departments yet.</p>';
+        return;
+      }
+      container.innerHTML = depts.map((d) => `
+        <div class="dept-item">
+          <span>${escHtml(d.name)}</span>
+          <button type="button" class="btn btn-sm btn-danger" onclick="Admin.deleteDepartment('${d.id}')">&#10005;</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<p style="color:var(--danger);font-size:0.82rem">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function addDepartment() {
+    const input = el('new-dept-name');
+    const name = input.value.trim();
+    if (!name || !editingClientId) return;
+    try {
+      await api('POST', `/clients/${editingClientId}/departments`, { name });
+      input.value = '';
+      toast('Department added', 'success');
+      loadDepartments(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deleteDepartment(deptId) {
+    if (!confirm('Delete this department? Contacts in it will be unassigned.')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/departments/${deptId}`);
+      toast('Department deleted', 'success');
+      loadDepartments(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- VIP Numbers ---- */
+  async function loadVip(clientId) {
+    const container = el('vip-list');
+    if (!container) return;
+    try {
+      const data = await api('GET', `/clients/${clientId}/vip`);
+      const list = data.vip || [];
+      if (!list.length) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">No VIP numbers yet.</p>'; return; }
+      container.innerHTML = list.map((e) => `
+        <div class="number-list-item">
+          <div>
+            <div style="font-weight:600;font-size:0.85rem">${escHtml(e.phone)}</div>
+            ${e.label ? `<div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(e.label)}</div>` : ''}
+          </div>
+          <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeVip('${e.id}')">&#10005;</button>
+        </div>
+      `).join('');
+    } catch { container.innerHTML = ''; }
+  }
+
+  async function addVip() {
+    const phone = el('new-vip-phone').value.trim();
+    const label = el('new-vip-label').value.trim();
+    if (!phone || !editingClientId) return;
+    try {
+      await api('POST', `/clients/${editingClientId}/vip`, { phone, label: label || null });
+      el('new-vip-phone').value = '';
+      el('new-vip-label').value = '';
+      toast('VIP number added', 'success');
+      loadVip(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function removeVip(entryId) {
+    try {
+      await api('DELETE', `/clients/${editingClientId}/vip/${entryId}`);
+      loadVip(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Ignore Numbers ---- */
+  async function loadIgnore(clientId) {
+    const container = el('ignore-list');
+    if (!container) return;
+    try {
+      const data = await api('GET', `/clients/${clientId}/ignore`);
+      const list = data.ignore || [];
+      if (!list.length) { container.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">No ignored numbers yet.</p>'; return; }
+      container.innerHTML = list.map((e) => `
+        <div class="number-list-item">
+          <div>
+            <div style="font-weight:600;font-size:0.85rem">${escHtml(e.phone)}</div>
+            ${e.label ? `<div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(e.label)}</div>` : ''}
+          </div>
+          <button type="button" class="btn btn-sm btn-danger" onclick="Admin.removeIgnore('${e.id}')">&#10005;</button>
+        </div>
+      `).join('');
+    } catch { container.innerHTML = ''; }
+  }
+
+  async function addIgnore() {
+    const phone = el('new-ignore-phone').value.trim();
+    const label = el('new-ignore-label').value.trim();
+    if (!phone || !editingClientId) return;
+    try {
+      await api('POST', `/clients/${editingClientId}/ignore`, { phone, label: label || null });
+      el('new-ignore-phone').value = '';
+      el('new-ignore-label').value = '';
+      toast('Ignore number added', 'success');
+      loadIgnore(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function removeIgnore(entryId) {
+    try {
+      await api('DELETE', `/clients/${editingClientId}/ignore/${entryId}`);
+      loadIgnore(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Availability Section ---- */
+  async function loadAvailabilitySection() {
+    const container = el('availability-list');
+    if (!container) return;
+    container.innerHTML = '<p class="empty-state">Loading...</p>';
+
+    try {
+      const [clientsData, availData] = await Promise.all([
+        api('GET', '/clients?active=true'),
+        api('GET', '/availability'),
+      ]);
+
+      const clients = clientsData.clients || [];
+      const availMap = {};
+      (availData.availability || []).forEach((a) => { availMap[a.client_id] = a; });
+
+      if (!clients.length) {
+        container.innerHTML = '<p class="empty-state">No active clients.</p>';
+        return;
+      }
+
+      container.innerHTML = clients.map((c) => {
+        const avail = availMap[c.id] || { status: 'available', note: '' };
+        const statuses = ['available', 'out_of_office', 'annual_leave', 'meeting'];
+        const labels = { available: 'Available', out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'Meeting' };
+        return `
+          <div class="avail-card" id="avail-card-${c.id}">
+            <div class="avail-card-name">${escHtml(c.name)}</div>
+            <div class="avail-card-account">${escHtml(c.account_number)}</div>
+            <div class="avail-card-controls">
+              <select class="avail-status-select avail-status-${avail.status}"
+                      onchange="Admin.setAvailability('${c.id}', this.value, document.getElementById('avail-note-${c.id}').value)"
+                      id="avail-select-${c.id}">
+                ${statuses.map((s) => `<option value="${s}" ${avail.status===s?'selected':''}>${labels[s]}</option>`).join('')}
+              </select>
+              <input type="text" id="avail-note-${c.id}" value="${escHtml(avail.note || '')}"
+                placeholder="Optional note..."
+                style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem"
+                onchange="Admin.setAvailability('${c.id}', document.getElementById('avail-select-${c.id}').value, this.value)" />
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="empty-state">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function setAvailability(clientId, status, note) {
+    try {
+      await api('PUT', `/clients/${clientId}/availability`, { status, note: note || null });
+      // Update select styling
+      const select = el(`avail-select-${clientId}`);
+      if (select) {
+        select.className = `avail-status-select avail-status-${status}`;
+      }
     } catch (err) {
       toast(`Error: ${err.message}`, 'danger');
     }
@@ -911,7 +1490,6 @@ const Admin = (() => {
   async function loadReports() {
     const days = el('report-days')?.value || 30;
 
-    // Summary cards
     try {
       const s = await api('GET', '/reports/summary');
       if (s) {
@@ -928,7 +1506,6 @@ const Admin = (() => {
       el('report-summary').innerHTML = '<p class="empty-state">Failed to load summary</p>';
     }
 
-    // Call volume
     try {
       const vol = await api('GET', `/reports/call-volume?days=${days}`);
       const tbody = el('report-volume-tbody');
@@ -949,7 +1526,6 @@ const Admin = (() => {
       el('report-volume-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Error loading data</td></tr>';
     }
 
-    // Operator performance
     try {
       const ops = await api('GET', `/reports/operators?days=${days}`);
       const tbody = el('report-ops-tbody');
@@ -970,7 +1546,6 @@ const Admin = (() => {
       el('report-ops-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Error loading data</td></tr>';
     }
 
-    // Client activity
     try {
       const cl = await api('GET', `/reports/clients?days=${days}`);
       const tbody = el('report-clients-tbody');
@@ -995,10 +1570,18 @@ const Admin = (() => {
 
   /* ---- Public ---- */
   return {
-    init, showSection,
+    init, showSection, showClientTab,
     searchClients,
     openClientModal, closeClientModal, saveClient, toggleClient,
+    toggleDayClosed,
+    addInfoSheet, updateInfoSheet, removeInfoSheet,
+    addFormField, updateField, updateFieldOptions, removeField,
     openContactModal, closeContactModal, saveContact, deleteContact,
+    onCallActionChange,
+    addDepartment, deleteDepartment,
+    addVip, removeVip,
+    addIgnore, removeIgnore,
+    setAvailability,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
     loadReports,
   };
@@ -1006,7 +1589,7 @@ const Admin = (() => {
 })();
 
 /* ============================================================
-   Tasks Module — Operator Tasks / Reminders
+   Tasks Module
    ============================================================ */
 
 const Tasks = (() => {
@@ -1056,14 +1639,8 @@ const Tasks = (() => {
     }).join('');
   }
 
-  function openNew() {
-    el('task-form').reset();
-    el('task-modal').style.display = 'flex';
-  }
-
-  function closeNew() {
-    el('task-modal').style.display = 'none';
-  }
+  function openNew() { el('task-form').reset(); el('task-modal').style.display = 'flex'; }
+  function closeNew() { el('task-modal').style.display = 'none'; }
 
   async function saveNew() {
     const title = el('tf-title').value.trim();

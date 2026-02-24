@@ -198,3 +198,81 @@ CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed_at);
 CREATE OR REPLACE TRIGGER tasks_updated_at
     BEFORE UPDATE ON tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- =============================================================
+-- v2 Feature additions
+-- =============================================================
+
+-- Departments (per client)
+CREATE TABLE IF NOT EXISTS departments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_departments_client ON departments(client_id);
+
+-- VIP numbers (per client) — flag incoming callers
+CREATE TABLE IF NOT EXISTS client_vip_numbers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    phone VARCHAR(30) NOT NULL,
+    label VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, phone)
+);
+CREATE INDEX IF NOT EXISTS idx_vip_client ON client_vip_numbers(client_id);
+
+-- Ignore list (per client) — suppress notifications for these numbers
+CREATE TABLE IF NOT EXISTS client_ignore_numbers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    phone VARCHAR(30) NOT NULL,
+    label VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, phone)
+);
+CREATE INDEX IF NOT EXISTS idx_ignore_client ON client_ignore_numbers(client_id);
+
+-- Client availability (set by client or admin via portal)
+CREATE TABLE IF NOT EXISTS client_availability (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'available'
+        CHECK (status IN ('available', 'out_of_office', 'annual_leave', 'meeting')),
+    note TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_availability_client ON client_availability(client_id);
+
+-- Clients: extended fields
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS opening_times JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS info_sheets JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS custom_form JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS delivery_actions JSONB NOT NULL DEFAULT '{"phone_call":true,"email":true,"sms":false}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS smtp_port INTEGER;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS smtp_pass VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS smtp_from VARCHAR(255);
+
+-- Contacts: department, call action, transfer
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id) ON DELETE SET NULL;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS call_action VARCHAR(20) NOT NULL DEFAULT 'message'
+    CHECK (call_action IN ('message', 'transfer', 'both'));
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS transfer_extension VARCHAR(20);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS message_note TEXT;
+
+-- Messages: rename urgency values to low / normal / high
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_urgency_check;
+ALTER TABLE messages ADD CONSTRAINT messages_urgency_check
+    CHECK (urgency IN ('low', 'normal', 'high'));
+UPDATE messages SET urgency = 'high' WHERE urgency IN ('urgent', 'emergency');
+
+-- Message deliveries: add phone_call channel
+ALTER TABLE message_deliveries DROP CONSTRAINT IF EXISTS message_deliveries_channel_check;
+ALTER TABLE message_deliveries ADD CONSTRAINT message_deliveries_channel_check
+    CHECK (channel IN ('email', 'sms', 'webhook', 'inapp', 'phone_call'));
