@@ -568,6 +568,9 @@ const App = (() => {
     el('sp-links-section').style.display = 'none';
     el('sp-meta').style.display = 'none';
     el('sp-open-badge').style.display = 'none';
+    el('sp-hero-address').style.display = 'none';
+    el('sp-hero-hours').style.display = 'none';
+    el('sp-hours-section').style.display = 'none';
     el('sp-news-section').style.display = 'none';
     el('sp-private-notes-section').style.display = 'none';
     el('sp-caller-history-section').style.display = 'none';
@@ -612,23 +615,69 @@ const App = (() => {
 
     // Open/closed badge
     const openBadge = el('sp-open-badge');
-    if (openBadge && client.opening_times && Object.keys(client.opening_times).length) {
+    const hasHours = !!(client.opening_times && Object.keys(client.opening_times).length);
+    if (openBadge && hasHours) {
       const isOpen = isCurrentlyInHours(client.opening_times, client.timezone);
-      openBadge.textContent = isOpen ? 'Open Now' : 'Closed';
+      openBadge.innerHTML = isOpen ? '&#9679; Open Now' : '&#9679; Closed';
       openBadge.className = `sp-open-badge ${isOpen ? 'sp-open' : 'sp-closed'}`;
       openBadge.style.display = '';
     }
 
-    // Address + account meta
+    // Hero: address + account number
+    const heroAddr = el('sp-hero-address');
+    if (heroAddr) {
+      const parts = [];
+      if (client.account_number) parts.push(`<span class="sp-acct-badge">Acct&nbsp;${escHtml(client.account_number)}</span>`);
+      if (client.address) parts.push(`<span>&#128205; ${escHtml(client.address.replace(/\n/g, ', '))}</span>`);
+      if (parts.length) { heroAddr.innerHTML = parts.join(''); heroAddr.style.display = ''; }
+      else { heroAddr.style.display = 'none'; }
+    }
+
+    // Hero: today's opening hours chip
+    const heroHours = el('sp-hero-hours');
+    if (heroHours) {
+      if (hasHours) {
+        const todayText = getTodayHoursText(client.opening_times, client.timezone);
+        if (todayText) {
+          heroHours.innerHTML = `<span class="sp-hours-today-chip">&#128336; Today: ${escHtml(todayText)}</span>`;
+          heroHours.style.display = '';
+        } else { heroHours.style.display = 'none'; }
+      } else { heroHours.style.display = 'none'; }
+    }
+
+    // Full opening hours table (collapsible section)
+    const hoursSection = el('sp-hours-section');
+    const hoursTableEl = el('sp-hours-table');
+    if (hoursSection && hoursTableEl) {
+      if (hasHours) {
+        const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+        const dayLabels = { monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun' };
+        let todayKey = '';
+        try {
+          const p = new Intl.DateTimeFormat('en-GB', { timeZone: client.timezone || 'Europe/London', weekday: 'long' }).formatToParts(new Date());
+          todayKey = (p.find((x) => x.type === 'weekday')?.value || '').toLowerCase();
+        } catch (_) {}
+        const rows = days.map((day) => {
+          const t = client.opening_times[day];
+          const isToday = day === todayKey;
+          const cls = isToday ? ' class="sp-hrs-today"' : '';
+          if (!t || t.closed) return `<tr${cls}><td class="sp-hrs-day">${dayLabels[day]}</td><td class="sp-hrs-time sp-hrs-closed">Closed</td></tr>`;
+          return `<tr${cls}><td class="sp-hrs-day">${dayLabels[day]}</td><td class="sp-hrs-time">${escHtml(t.open || '09:00')} – ${escHtml(t.close || '17:30')}</td></tr>`;
+        }).join('');
+        hoursTableEl.innerHTML = `<table class="sp-hrs-tbl"><tbody>${rows}</tbody></table>`;
+        hoursSection.style.display = '';
+      } else {
+        hoursSection.style.display = 'none';
+      }
+    }
+
+    // Address + account meta (kept hidden, now shown in hero)
     const meta = el('sp-meta');
     if (meta) {
       const parts = [];
       if (client.account_number) parts.push(`Acct: ${escHtml(client.account_number)}`);
       if (client.address) parts.push(escHtml(client.address.replace(/\n/g, ', ')));
-      if (parts.length) {
-        meta.innerHTML = parts.join(' &bull; ');
-        meta.style.display = '';
-      }
+      if (parts.length) meta.innerHTML = parts.join(' &bull; ');
     }
 
     // Re-render greeting/script from fresh data (with variables)
@@ -833,6 +882,21 @@ const App = (() => {
     return inHours
       ? { text: 'Available',  cls: 'sp-avail-green' }
       : { text: 'Off Hours',  cls: 'sp-avail-amber' };
+  }
+
+  /* ---- Today's opening hours helper ---- */
+  function getTodayHoursText(schedule, timezone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone || 'Europe/London',
+        weekday: 'long',
+      }).formatToParts(new Date());
+      const day = parts.find((p) => p.type === 'weekday').value.toLowerCase();
+      const s = schedule[day];
+      if (!s) return null;
+      if (s.closed) return 'Closed today';
+      return `${s.open || '09:00'} – ${s.close || '17:30'}`;
+    } catch { return null; }
   }
 
   /* ---- Script template rendering ---- */

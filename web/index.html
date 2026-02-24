@@ -128,28 +128,33 @@
 
       <!-- Client Screen Pop / Info -->
       <section class="panel" id="script-panel" style="display:none">
-        <div class="panel-header">
-          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-            <img id="sp-client-logo" src="" alt="" class="sp-client-logo" style="display:none" />
-            <h2 id="script-client-name">Client Script</h2>
-            <span id="sp-did-badge" class="sp-did-badge" style="display:none"></span>
-            <span id="sp-open-badge" class="sp-open-badge" style="display:none"></span>
+
+        <!-- ── Client hero banner ── -->
+        <div class="sp-hero">
+          <img id="sp-client-logo" src="" alt="" class="sp-hero-logo" style="display:none" />
+          <div class="sp-hero-body">
+            <div class="sp-hero-top">
+              <h2 id="script-client-name" class="sp-hero-name">—</h2>
+              <div class="sp-hero-badges">
+                <span id="sp-did-badge" class="sp-did-badge" style="display:none"></span>
+                <span id="sp-open-badge" class="sp-open-badge" style="display:none"></span>
+              </div>
+            </div>
+            <div id="sp-hero-address" class="sp-hero-address" style="display:none"></div>
+            <div id="sp-hero-hours"   class="sp-hero-hours"   style="display:none"></div>
           </div>
         </div>
-        <!-- Client-level availability bar -->
+
+        <!-- Availability bar (out-of-office / leave / meeting) -->
         <div id="client-availability-bar" style="display:none" class="avail-bar"></div>
-        <!-- Address / account meta row -->
+        <!-- sp-meta kept hidden — JS still populates it, content now shown in hero -->
         <div id="sp-meta" class="sp-meta" style="display:none"></div>
 
-        <!-- Operator greeting / script -->
-        <div id="sp-script-section" class="sp-section open">
-          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
-            <span>&#128221; Operator Script</span><span class="sp-arrow">&#9660;</span>
-          </div>
-          <div class="sp-section-body">
-            <div id="client-greeting" class="greeting-box" style="margin:0 0 0 0"></div>
-            <div id="client-script" class="script-box"></div>
-          </div>
+        <!-- ── Operator Script — always visible, prominent ── -->
+        <div id="sp-script-section" class="sp-script-card">
+          <div class="sp-script-label">&#128221; Operator Script</div>
+          <div id="client-greeting" class="greeting-box"></div>
+          <div id="client-script"   class="script-box"></div>
         </div>
 
         <!-- Staff & Contacts -->
@@ -158,6 +163,14 @@
             <span>&#128101; Staff &amp; Contacts</span><span class="sp-arrow">&#9660;</span>
           </div>
           <div class="sp-section-body" id="sp-contacts"></div>
+        </div>
+
+        <!-- Opening Hours (full week) -->
+        <div id="sp-hours-section" class="sp-section" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128336; Opening Hours</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-hours-table"></div>
         </div>
 
         <!-- Information Sheets -->
