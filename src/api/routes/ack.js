@@ -3,6 +3,37 @@
 const router = require('express').Router();
 const pool = require('../../config/database');
 
+/* ---- Rate limiter: max 20 ack lookups per IP per 15 minutes ---- */
+const ackAttempts = new Map();
+const ACK_WINDOW_MS = 15 * 60 * 1000;
+const ACK_MAX       = 20;
+
+function rateLimitAck(req, res, next) {
+  const key = req.ip;
+  const now = Date.now();
+  const entry = ackAttempts.get(key);
+  if (entry) {
+    if (now - entry.firstAttempt > ACK_WINDOW_MS) {
+      ackAttempts.set(key, { count: 1, firstAttempt: now });
+      return next();
+    }
+    if (entry.count >= ACK_MAX) {
+      res.setHeader('Retry-After', Math.ceil((entry.firstAttempt + ACK_WINDOW_MS - now) / 1000));
+      return res.status(429).type('text').send('Too many requests');
+    }
+    entry.count++;
+  } else {
+    ackAttempts.set(key, { count: 1, firstAttempt: now });
+  }
+  // Periodic cleanup to prevent unbounded growth
+  if (ackAttempts.size > 1000) {
+    for (const [k, v] of ackAttempts) {
+      if (now - v.firstAttempt > ACK_WINDOW_MS) ackAttempts.delete(k);
+    }
+  }
+  next();
+}
+
 function ackPage(title, heading, body, statusColour) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -75,7 +106,7 @@ function ackPage(title, heading, body, statusColour) {
 }
 
 // GET /ack/:token — public acknowledgement link (no auth required)
-router.get('/:token', async (req, res, next) => {
+router.get('/:token', rateLimitAck, async (req, res, next) => {
   try {
     const result = await pool.query(
       'SELECT id, acknowledged_at FROM messages WHERE ack_token = $1',

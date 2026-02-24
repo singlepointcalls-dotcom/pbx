@@ -69,8 +69,15 @@ router.get('/reports/:clientId', requireRole('admin', 'supervisor'), async (req,
 // POST /api/billing/reports/:clientId/generate — generate report for a month
 router.post('/reports/:clientId/generate', requireRole('admin'), async (req, res, next) => {
   try {
-    const { year, month } = req.body;
+    const year  = parseInt(req.body.year,  10);
+    const month = parseInt(req.body.month, 10);
     if (!year || !month) return res.status(400).json({ error: 'year and month required' });
+    if (!Number.isInteger(year)  || year  < 2000 || year  > 2100) {
+      return res.status(400).json({ error: 'year must be between 2000 and 2100' });
+    }
+    if (!Number.isInteger(month) || month < 1    || month > 12) {
+      return res.status(400).json({ error: 'month must be between 1 and 12' });
+    }
 
     const startDate = new Date(year, month - 1, 1);
     const endDate   = new Date(year, month, 1);
