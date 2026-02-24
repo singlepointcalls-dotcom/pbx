@@ -20,6 +20,9 @@ const availabilityRoutes = require('./api/routes/availability');
 const portalRoutes = require('./api/routes/portal');
 const settingsRoutes = require('./api/routes/settings');
 const billingRoutes = require('./api/routes/billing');
+const noticeboardRoutes = require('./api/routes/noticeboard');
+const clientNewsRoutes = require('./api/routes/client-news');
+const clientFilesRoutes = require('./api/routes/client-files');
 
 const app = express();
 
@@ -48,6 +51,9 @@ app.use('/api/availability', availabilityRoutes);
 app.use('/api/portal', portalRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/noticeboard', noticeboardRoutes);
+app.use('/api/clients', clientNewsRoutes);     // /api/clients/:id/news
+app.use('/api/clients', clientFilesRoutes);    // /api/clients/:id/files
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

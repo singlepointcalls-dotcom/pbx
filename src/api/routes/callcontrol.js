@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const { requireAuth } = require('../middleware/auth');
-const { answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls } = require('../../asterisk/ari');
+const { answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound } = require('../../asterisk/ari');
 
 router.use(requireAuth);
 
@@ -60,6 +60,18 @@ router.post('/:channelId/hangup', async (req, res, next) => {
   try {
     await hangupCall(req.params.channelId);
     res.json({ message: 'Call hung up' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/callcontrol/originate — outbound call
+router.post('/originate', async (req, res, next) => {
+  try {
+    const { extension, destination, client_id } = req.body;
+    if (!extension || !destination) return res.status(400).json({ error: 'extension and destination are required' });
+    const result = await originateOutbound(extension, destination, client_id || null);
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

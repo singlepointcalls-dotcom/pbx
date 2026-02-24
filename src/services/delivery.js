@@ -56,13 +56,55 @@ function getClientTransporter(client) {
  * Deliver a message to all active contacts for the client.
  * Respects client.delivery_actions to decide which channels to use.
  */
+/* ---- HTML email default template ---- */
+const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif">
+<div style="max-width:600px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+<div style="background:#1a2a4a;color:#fff;padding:16px 24px;font-size:15px;font-weight:700">SinglePoint Calls<span style="margin-left:10px;opacity:.6;font-size:12px;font-weight:400">Answering Service</span></div>
+<div style="padding:24px">
+<div style="font-size:12px;color:#888;margin-bottom:4px">Message for</div>
+<div style="font-size:20px;font-weight:700;color:#1a2a4a;margin-bottom:18px">{{client_name}}</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px">
+<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888;width:110px">Date</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">{{date}}</td></tr>
+<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Priority</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0"><strong>{{urgency}}</strong></td></tr>
+<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">From</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">{{caller_name}} {{caller_phone}} {{caller_company}}</td></tr>
+<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Taken by</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">{{operator_name}}</td></tr>
+{{subject_row}}
+</table>
+<div style="background:#f5f7fa;border-left:4px solid #4f7aff;padding:16px;border-radius:4px;white-space:pre-wrap;font-size:14px;line-height:1.6">{{body}}</div>
+</div>
+<div style="padding:14px 24px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center">Sent by SinglePoint Calls Answering Service</div>
+</div></body></html>`;
+
+function renderTemplate(tmpl, vars) {
+  return tmpl.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] !== undefined ? vars[key] : '');
+}
+
+function buildEmailVars(message) {
+  const dateStr = new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' });
+  return {
+    client_name:    message.client_name || '',
+    caller_name:    message.caller_name || 'Unknown',
+    caller_phone:   message.caller_phone ? `<${message.caller_phone}>` : '',
+    caller_company: message.caller_company ? `— ${message.caller_company}` : '',
+    subject:        message.subject || '',
+    body:           message.body || '',
+    urgency:        (message.urgency || 'normal').toUpperCase(),
+    date:           dateStr,
+    operator_name:  message.operator_name || '',
+    subject_row:    message.subject
+      ? `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Subject</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">${message.subject}</td></tr>`
+      : '',
+  };
+}
+
 async function deliverMessage(messageId) {
   const msgResult = await pool.query(
-    `SELECT m.*, c.name AS client_name,
+    `SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
             c.delivery_actions, c.smtp_host, c.smtp_port,
-            c.smtp_user, c.smtp_pass, c.smtp_from
+            c.smtp_user, c.smtp_pass, c.smtp_from, c.email_template
      FROM messages m
      JOIN clients c ON m.client_id = c.id
+     LEFT JOIN operators o ON m.operator_id = o.id
      WHERE m.id = $1`,
     [messageId]
   );
@@ -186,34 +228,51 @@ async function sendEmail(toAddress, message) {
   const transport = getClientTransporter(message);
   const fromAddress = message.smtp_from || process.env.SMTP_FROM;
 
-  const priorityLabel = message.urgency === 'high' ? '[HIGH PRIORITY] ' : '';
-  const subject = `${priorityLabel}Message for ${message.client_name}: ${message.subject || 'New Message'}`;
+  const urgencyLabel = (message.urgency || 'normal').toUpperCase();
+  const isHigh = message.urgency === 'urgent' || message.urgency === 'emergency';
+  const priorityTag = isHigh ? `[${urgencyLabel}] ` : '';
+  const subject = `${priorityTag}Message for ${message.client_name}: ${message.subject || 'New Message'}`;
 
-  const priorityLine = message.urgency === 'high'
-    ? 'PRIORITY: HIGH\n'
-    : message.urgency === 'low'
-      ? 'PRIORITY: LOW\n'
-      : 'PRIORITY: NORMAL\n';
+  // Render email body from template
+  const vars = buildEmailVars(message);
+  const template = message.email_template || DEFAULT_HTML_TEMPLATE;
+  const html = renderTemplate(template, vars);
 
-  const text = `
-MESSAGE FOR: ${message.client_name}
-${priorityLine}DATE: ${new Date(message.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+  // Plain-text fallback
+  const text = `MESSAGE FOR: ${message.client_name}\nPRIORITY: ${urgencyLabel}\nDATE: ${vars.date}\n\nFROM: ${message.caller_name || 'Unknown'} ${message.caller_phone ? `<${message.caller_phone}>` : ''}${message.caller_company ? ` — ${message.caller_company}` : ''}\n\nMESSAGE:\n${message.body}\n\n---\nSent by SinglePoint Calls Answering Service`;
 
-FROM: ${message.caller_name || 'Unknown'} ${message.caller_phone ? `<${message.caller_phone}>` : ''}${message.caller_company ? ` — ${message.caller_company}` : ''}
+  await transport.sendMail({ from: fromAddress, to: toAddress, subject, text, html });
+}
 
-MESSAGE:
-${message.body}
-
----
-Sent by SinglePoint Calls Answering Service
-  `.trim();
-
-  await transport.sendMail({
-    from: fromAddress,
-    to: toAddress,
-    subject,
-    text,
-  });
+/**
+ * Send a quick email or SMS directly to a single contact (from screen pop).
+ */
+async function sendQuickNotify(contact, channel, subject, body) {
+  if (channel === 'email') {
+    if (!contact.email) throw new Error('Contact has no email address');
+    const transport = getClientTransporter(contact);
+    const from = contact.smtp_from || process.env.SMTP_FROM;
+    await transport.sendMail({
+      from,
+      to: contact.email,
+      subject: subject || `Message from ${contact.client_name || 'SinglePoint Calls'}`,
+      text: body,
+    });
+  } else if (channel === 'sms') {
+    const to = contact.sms_number || contact.phone;
+    if (!to) throw new Error('Contact has no SMS/phone number');
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const from = process.env.TWILIO_FROM_NUMBER;
+    if (!accountSid || !authToken || !from) throw new Error('Twilio not configured');
+    await axios.post(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      new URLSearchParams({ From: from, To: to, Body: body }),
+      { auth: { username: accountSid, password: authToken }, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+  } else {
+    throw new Error(`Unsupported channel: ${channel}`);
+  }
 }
 
 async function sendWebhook(webhook, message) {
@@ -285,4 +344,4 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { deliverMessage };
+module.exports = { deliverMessage, sendQuickNotify };

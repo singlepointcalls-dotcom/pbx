@@ -117,6 +117,31 @@ router.delete('/:clientId/contacts/:contactId', requireRole('admin', 'supervisor
   }
 });
 
+// POST /api/clients/:clientId/contacts/:contactId/notify — quick email or SMS to a contact
+router.post('/:clientId/contacts/:contactId/notify', async (req, res, next) => {
+  try {
+    const { channel, subject, body } = req.body;
+    if (!channel || !body) return res.status(400).json({ error: 'channel and body are required' });
+
+    const result = await pool.query(
+      `SELECT ct.*, cl.smtp_host, cl.smtp_port, cl.smtp_user, cl.smtp_pass, cl.smtp_from,
+              cl.name AS client_name
+       FROM contacts ct
+       JOIN clients cl ON ct.client_id = cl.id
+       WHERE ct.id = $1 AND ct.client_id = $2`,
+      [req.params.contactId, req.params.clientId]
+    );
+    const contact = result.rows[0];
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+    const { sendQuickNotify } = require('../../services/delivery');
+    await sendQuickNotify(contact, channel, subject, body, req.operator);
+    res.json({ sent: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // On-call schedule management
 // GET /api/clients/:clientId/oncall
 router.get('/:clientId/oncall', async (req, res, next) => {

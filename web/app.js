@@ -165,14 +165,17 @@ const App = (() => {
       el('admin-tab').style.display = '';
       const demoBtn = el('demo-btn');
       const portalBtn = el('portal-link-btn');
+      const noticeBtn = el('notice-add-btn');
       if (demoBtn) demoBtn.style.display = '';
       if (portalBtn) portalBtn.style.display = '';
+      if (noticeBtn) noticeBtn.style.display = '';
     }
 
     connectSocket();
     loadClients();
     loadMessages();
     Tasks.load();
+    loadNoticeboard();
   }
 
   /* ---- Demo Mode ---- */
@@ -391,7 +394,13 @@ const App = (() => {
   function handleCallEnded(data) {
     callQueue.delete(data.channelId);
     renderCallQueue();
-    if (activeCall?.channelId === data.channelId) { clearActiveCall(); toast('Call ended', 'info'); }
+    if (activeCall?.channelId === data.channelId) {
+      // Show disposition modal if we had an active call with a call log
+      const callLogId = activeCall.callLogId;
+      clearActiveCall();
+      if (callLogId) showDispositionModal(callLogId);
+      else toast('Call ended', 'info');
+    }
     if (callQueue.size === 0) {
       el('status-badge').className = 'status-badge ready';
       el('status-badge').textContent = 'READY';
@@ -550,27 +559,30 @@ const App = (() => {
       didBadge.style.display = 'none';
     }
 
-    // Render greeting + script immediately from cached call data
-    el('client-greeting').textContent = call.client.greeting || '';
-    el('client-script').textContent = call.client.script || 'No script configured for this client.';
+    // Render greeting + script immediately from cached call data (with variables)
+    el('client-greeting').textContent = renderScript(call.client.greeting || '', call.client.name);
+    el('client-script').textContent = renderScript(call.client.script || 'No script configured for this client.', call.client.name);
 
     // Hide advanced sections until screenpop data arrives
     el('sp-contacts-section').style.display = 'none';
     el('sp-links-section').style.display = 'none';
     el('sp-meta').style.display = 'none';
     el('sp-open-badge').style.display = 'none';
+    el('sp-news-section').style.display = 'none';
+    el('sp-private-notes-section').style.display = 'none';
+    el('sp-caller-history-section').style.display = 'none';
     el('client-info-sheets').innerHTML = '';
 
     // Fetch full screenpop data
     if (call.client.id) {
       api('GET', `/clients/${call.client.id}/screenpop`).then((data) => {
         if (!data) return;
-        renderScreenPop(data, call.did);
+        renderScreenPop(data, call.did, call.callerIdNum);
       }).catch(() => {});
     }
   }
 
-  function renderScreenPop(data, did) {
+  function renderScreenPop(data, did, callerNum) {
     const { client, contacts, availability } = data;
 
     // Client-level availability bar
@@ -607,9 +619,9 @@ const App = (() => {
       }
     }
 
-    // Re-render greeting/script from fresh data
-    el('client-greeting').textContent = client.greeting || '';
-    el('client-script').textContent = client.script || 'No script configured for this client.';
+    // Re-render greeting/script from fresh data (with variables)
+    el('client-greeting').textContent = renderScript(client.greeting || '', client.name);
+    el('client-script').textContent = renderScript(client.script || 'No script configured for this client.', client.name);
 
     // Info sheets
     const sheetsContainer = el('client-info-sheets');
@@ -651,6 +663,80 @@ const App = (() => {
       }
       el('sp-links-section').style.display = '';
     }
+
+    // Private notes (red, operator-only)
+    const pnSection = el('sp-private-notes-section');
+    const pnBody = el('sp-private-notes');
+    if (pnSection && pnBody) {
+      if (client.private_notes) {
+        pnBody.textContent = client.private_notes;
+        pnSection.style.display = '';
+      } else {
+        pnSection.style.display = 'none';
+      }
+    }
+
+    // Client news
+    if (client.id) {
+      loadClientNews(client.id);
+    }
+
+    // Caller history
+    if (callerNum) {
+      loadCallerHistory(callerNum);
+    }
+  }
+
+  async function loadClientNews(clientId) {
+    const section = el('sp-news-section');
+    const container = el('sp-client-news');
+    if (!section || !container) return;
+    try {
+      const data = await api('GET', `/clients/${clientId}/news`);
+      if (!data || !data.news.length) { section.style.display = 'none'; return; }
+      container.innerHTML = data.news.map((n) => `
+        <div class="client-news-item">
+          ${escHtml(n.content)}
+          <div class="news-meta">${n.author_name ? `By ${escHtml(n.author_name)} — ` : ''}${relTime(n.created_at)}</div>
+        </div>
+      `).join('');
+      section.style.display = '';
+    } catch { section.style.display = 'none'; }
+  }
+
+  async function loadCallerHistory(callerNumber) {
+    const section = el('sp-caller-history-section');
+    const container = el('sp-caller-history');
+    if (!section || !container) return;
+    try {
+      const data = await api('GET', `/calls/history/${encodeURIComponent(callerNumber)}`);
+      if (!data || (!data.calls.length && !data.messages.length)) {
+        section.style.display = 'none';
+        return;
+      }
+      let html = '';
+      if (data.calls.length) {
+        html += '<div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:4px">Recent Calls</div>';
+        html += data.calls.slice(0, 10).map((c) => `
+          <div class="caller-history-item">
+            <span class="ch-disp">${escHtml(c.disposition || 'unknown')}</span>
+            <span>${escHtml(c.client_name || '—')}</span>
+            <span class="ch-date">${relTime(c.call_start)}</span>
+          </div>
+        `).join('');
+      }
+      if (data.messages.length) {
+        html += '<div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin:8px 0 4px">Recent Messages</div>';
+        html += data.messages.slice(0, 5).map((m) => `
+          <div class="caller-history-item">
+            <span>${escHtml(m.client_name || '—')}</span>
+            <span class="ch-date">${relTime(m.created_at)}</span>
+          </div>
+        `).join('');
+      }
+      container.innerHTML = html;
+      section.style.display = '';
+    } catch { section.style.display = 'none'; }
   }
 
   function renderScreenPopContacts(contacts, openingTimes, timezone) {
@@ -678,6 +764,12 @@ const App = (() => {
         const extInfo = (c.call_action === 'transfer' || c.call_action === 'both') && c.transfer_extension
           ? `<span class="sp-contact-ext">Ext ${escHtml(c.transfer_extension)}</span>` : '';
         const noteInfo = c.message_note ? `<div class="sp-contact-note">${escHtml(c.message_note)}</div>` : '';
+        const actBtns = [];
+        if (c.phone) actBtns.push(`<button onclick="App.originateToContact('${escHtml(c.phone)}','${escHtml(c.client_id || '')}')">&#128222; Call</button>`);
+        if (c.email) actBtns.push(`<button onclick="App.quickContactCompose('${escHtml(c.id)}','${escHtml(c.client_id || '')}','email','${escHtml(c.email)}','${escHtml(c.name)}')">&#9993; Email</button>`);
+        if (c.sms_number || c.phone) actBtns.push(`<button onclick="App.quickContactCompose('${escHtml(c.id)}','${escHtml(c.client_id || '')}','sms','${escHtml(c.sms_number || c.phone)}','${escHtml(c.name)}')">&#128172; SMS</button>`);
+        const actionsHtml = actBtns.length ? `<div class="sp-contact-actions">${actBtns.join('')}</div>` : '';
+
         return `
           <div class="sp-contact-item${c.is_private ? ' sp-contact-private' : ''}">
             <div class="sp-contact-header">
@@ -691,6 +783,7 @@ const App = (() => {
             </div>
             ${c.phone ? `<div class="sp-contact-phone">&#128222; <a href="tel:${escHtml(c.phone)}">${escHtml(c.phone)}</a></div>` : ''}
             ${noteInfo}
+            ${actionsHtml}
           </div>
         `;
       }).join('');
@@ -727,6 +820,18 @@ const App = (() => {
     return inHours
       ? { text: 'Available',  cls: 'sp-avail-green' }
       : { text: 'Off Hours',  cls: 'sp-avail-amber' };
+  }
+
+  /* ---- Script template rendering ---- */
+  function renderScript(text, clientName) {
+    if (!text) return '';
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+    const operatorName = currentOperator?.full_name || currentOperator?.username || '';
+    return text
+      .replace(/\{\{greeting\}\}/gi, greeting)
+      .replace(/\{\{client\}\}/gi, clientName || '')
+      .replace(/\{\{operator\}\}/gi, operatorName);
   }
 
   function prefillMessageForm(call) {
@@ -807,9 +912,60 @@ const App = (() => {
       input.dataset.fieldLabel = field.label;
       if (field.required) input.required = true;
       input.className = 'custom-field-input';
+
+      // Conditional visibility (show_when support)
+      if (field.show_when) {
+        wrapper.dataset.showWhenField = field.show_when.field;
+        wrapper.dataset.showWhenValue = field.show_when.value;
+        wrapper.style.display = 'none';
+        wrapper.classList.add('conditional-field');
+      }
+
+      // On change, re-evaluate conditional fields
+      input.addEventListener('change', () => checkFormConditions());
+      input.addEventListener('input', () => checkFormConditions());
+
       wrapper.appendChild(input);
       container.appendChild(wrapper);
     });
+    // Initial condition check
+    checkFormConditions();
+  }
+
+  function checkFormConditions() {
+    document.querySelectorAll('.conditional-field').forEach((wrapper) => {
+      const depFieldId = wrapper.dataset.showWhenField;
+      const depValue = wrapper.dataset.showWhenValue;
+      const depInput = document.querySelector(`.custom-field-input[data-field-id="${depFieldId}"]`);
+      if (!depInput) return;
+      const currentVal = depInput.type === 'checkbox' ? String(depInput.checked) : depInput.value;
+      wrapper.style.display = currentVal === depValue ? '' : 'none';
+      const input = wrapper.querySelector('.custom-field-input');
+      if (input && wrapper.style.display === 'none') input.required = false;
+    });
+  }
+
+  /* ---- Call Type + No Charge ---- */
+  function onCallTypeChange() {
+    const callType = el('msg-call-type').value;
+    const bodyField = el('msg-body');
+    const noChargeEl = el('msg-no-charge');
+    const noChargeRow = el('no-charge-row');
+
+    // Standard calls require a message body
+    if (callType === 'standard') {
+      bodyField.required = true;
+      bodyField.closest('.field').style.display = '';
+    } else {
+      bodyField.required = false;
+      // For no_information / sales / wrong_number, body is optional
+      bodyField.closest('.field').style.display = '';
+    }
+
+    // Auto-check no-charge for sales/wrong_number
+    if (callType === 'sales' || callType === 'wrong_number') {
+      noChargeEl.checked = true;
+    }
   }
 
   /* ---- Messages ---- */
@@ -884,7 +1040,9 @@ const App = (() => {
 
     const clientId = el('msg-client').value;
     const body = el('msg-body').value.trim();
-    if (!clientId || !body) return;
+    const callType = el('msg-call-type').value;
+    if (!clientId) return;
+    if (callType === 'standard' && !body) return;
 
     // Collect custom form fields
     const customFields = {};
@@ -907,6 +1065,8 @@ const App = (() => {
       subject: el('msg-subject').value.trim() || null,
       body: customNotes ? `${body}\n\n--- Additional Info ---\n${customNotes}` : body,
       urgency: el('msg-urgency').value,
+      call_type: callType,
+      is_no_charge: el('msg-no-charge').checked,
       auto_deliver: andDeliver,
     };
 
@@ -935,6 +1095,9 @@ const App = (() => {
     el('msg-subject').value = '';
     el('msg-body').value = '';
     el('msg-urgency').value = 'normal';
+    el('msg-call-type').value = 'standard';
+    el('msg-no-charge').checked = false;
+    el('msg-body').required = true;
     el('msg-feedback').className = 'feedback hidden';
     el('custom-form-fields').innerHTML = '';
   }
@@ -977,6 +1140,191 @@ const App = (() => {
     return new Date(isoStr).toLocaleDateString('en-GB');
   }
 
+  /* ---- Noticeboard ---- */
+  async function loadNoticeboard() {
+    try {
+      const data = await api('GET', '/noticeboard');
+      if (!data) return;
+      renderNoticeboard(data.notices);
+    } catch { /* silent */ }
+  }
+
+  function renderNoticeboard(notices) {
+    const container = el('noticeboard-list');
+    if (!container) return;
+    if (!notices.length) {
+      container.innerHTML = '<p class="empty-state">No announcements</p>';
+      return;
+    }
+    container.innerHTML = notices.map((n) => `
+      <div class="notice-item notice-${n.priority}">
+        <div class="notice-title">${escHtml(n.title)}${n.is_pinned ? '<span class="notice-pinned">&#128204;</span>' : ''}</div>
+        <div>${escHtml(n.content)}</div>
+        <div class="notice-meta">${n.author_name ? escHtml(n.author_name) : ''} — ${relTime(n.created_at)}</div>
+      </div>
+    `).join('');
+  }
+
+  let editingNoticeId = null;
+
+  function openNoticeEditor(noticeId) {
+    editingNoticeId = noticeId || null;
+    el('notice-editor-title').textContent = noticeId ? 'Edit Announcement' : 'New Announcement';
+    el('notice-title').value = '';
+    el('notice-content').value = '';
+    el('notice-priority').value = 'normal';
+    el('notice-expires').value = '';
+    el('notice-pinned').checked = false;
+    el('notice-editor-modal').style.display = 'flex';
+  }
+
+  function closeNoticeEditor() {
+    el('notice-editor-modal').style.display = 'none';
+    editingNoticeId = null;
+  }
+
+  async function saveNotice() {
+    const title = el('notice-title').value.trim();
+    const content = el('notice-content').value.trim();
+    if (!title || !content) return;
+    try {
+      const body = {
+        title, content,
+        priority: el('notice-priority').value,
+        expires_at: el('notice-expires').value || null,
+        is_pinned: el('notice-pinned').checked,
+      };
+      if (editingNoticeId) {
+        await api('PUT', `/noticeboard/${editingNoticeId}`, body);
+      } else {
+        await api('POST', '/noticeboard', body);
+      }
+      closeNoticeEditor();
+      toast('Announcement saved', 'success');
+      loadNoticeboard();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Call Disposition ---- */
+  let pendingDispositionCallLogId = null;
+
+  function showDispositionModal(callLogId) {
+    pendingDispositionCallLogId = callLogId;
+    el('disp-type').value = 'answered';
+    el('disp-billable').checked = true;
+    el('disp-notes').value = '';
+    el('disp-followup').checked = false;
+    el('disp-followup-at').style.display = 'none';
+    el('disp-followup-at').value = '';
+    el('disposition-modal').style.display = 'flex';
+  }
+
+  async function saveDisposition() {
+    if (!pendingDispositionCallLogId) return;
+    try {
+      await api('PATCH', `/calls/${pendingDispositionCallLogId}/disposition`, {
+        disposition: el('disp-type').value,
+        is_billable: el('disp-billable').checked,
+        disposition_notes: el('disp-notes').value.trim() || null,
+        follow_up_required: el('disp-followup').checked,
+        follow_up_at: el('disp-followup-at').value || null,
+      });
+      toast('Call disposition saved', 'success');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+    el('disposition-modal').style.display = 'none';
+    pendingDispositionCallLogId = null;
+  }
+
+  function skipDisposition() {
+    el('disposition-modal').style.display = 'none';
+    pendingDispositionCallLogId = null;
+    toast('Call ended', 'info');
+  }
+
+  /* ---- Quick Contact Compose (email/SMS from screen pop) ---- */
+  let quickContactClientId = null;
+  let quickContactId = null;
+
+  function quickContactCompose(contactId, clientId, channel, to, contactName) {
+    quickContactClientId = clientId;
+    quickContactId = contactId;
+    el('qc-title').textContent = `Send ${channel === 'email' ? 'Email' : 'SMS'} to ${contactName}`;
+    el('qc-channel').value = channel;
+    el('qc-to').value = to;
+    el('qc-subject').value = '';
+    el('qc-body').value = '';
+    el('qc-subject-row').style.display = channel === 'email' ? '' : 'none';
+    el('qc-feedback').className = 'feedback hidden';
+    el('quick-contact-modal').style.display = 'flex';
+  }
+
+  function closeQuickContact() {
+    el('quick-contact-modal').style.display = 'none';
+    quickContactClientId = null;
+    quickContactId = null;
+  }
+
+  async function sendQuickContact() {
+    if (!quickContactClientId || !quickContactId) return;
+    const body = el('qc-body').value.trim();
+    if (!body) return;
+    try {
+      await api('POST', `/clients/${quickContactClientId}/contacts/${quickContactId}/notify`, {
+        channel: el('qc-channel').value,
+        subject: el('qc-subject').value.trim() || null,
+        body,
+      });
+      toast('Sent successfully', 'success');
+      closeQuickContact();
+    } catch (err) {
+      const fb = el('qc-feedback');
+      fb.className = 'feedback error';
+      fb.textContent = err.message;
+    }
+  }
+
+  /* ---- Outbound Calls ---- */
+  function openOutbound() {
+    el('outbound-number').value = '';
+    el('outbound-client').innerHTML = '<option value="">— None —</option>' +
+      clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    el('outbound-modal').style.display = 'flex';
+  }
+
+  function closeOutbound() {
+    el('outbound-modal').style.display = 'none';
+  }
+
+  async function makeOutboundCall() {
+    const number = el('outbound-number').value.trim();
+    if (!number) return;
+    const ext = prompt('Your SIP extension (e.g. 1001):');
+    if (!ext) return;
+    try {
+      await api('POST', '/callcontrol/originate', {
+        extension: ext,
+        destination: number,
+        client_id: el('outbound-client').value || null,
+      });
+      toast(`Dialling ${number}...`, 'info');
+      closeOutbound();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  function originateToContact(phone, clientId) {
+    const ext = prompt('Your SIP extension (e.g. 1001):');
+    if (!ext) return;
+    api('POST', '/callcontrol/originate', { extension: ext, destination: phone, client_id: clientId || null })
+      .then(() => toast(`Dialling ${phone}...`, 'info'))
+      .catch((err) => toast(`Error: ${err.message}`, 'danger'));
+  }
+
   /* ---- Bootstrap ---- */
   document.addEventListener('DOMContentLoaded', init);
 
@@ -984,10 +1332,18 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, switchView, onClientChange,
+    showMessageDetail, switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,
     showMyProfile, closeProfile, showPwStrength, changePassword,
     setup2FA, confirm2FA, close2FASetup, disable2FA,
+    // Noticeboard
+    openNoticeEditor, closeNoticeEditor, saveNotice,
+    // Disposition
+    saveDisposition, skipDisposition,
+    // Quick contact
+    quickContactCompose, closeQuickContact, sendQuickContact,
+    // Outbound
+    openOutbound, closeOutbound, makeOutboundCall, originateToContact,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
@@ -1050,6 +1406,8 @@ const Admin = (() => {
     if (name === 'contacts' && editingClientId) loadContacts(editingClientId);
     if (name === 'departments' && editingClientId) loadDepartments(editingClientId);
     if (name === 'lists' && editingClientId) { loadVip(editingClientId); loadIgnore(editingClientId); }
+    if (name === 'files' && editingClientId) loadClientFiles(editingClientId);
+    if (name === 'news' && editingClientId) loadClientNewsAdmin(editingClientId);
     if (name === 'portal' && editingClientId) loadPortalUsers(editingClientId);
   }
 
@@ -1116,7 +1474,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-portal-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -1141,6 +1499,9 @@ const Admin = (() => {
         el('cf-script').value = c.script || '';
         el('cf-notes').value = c.notes || '';
         el('cf-address').value = c.address || '';
+        el('cf-outbound-cli').value = c.outbound_caller_id || '';
+        el('cf-private-notes').value = c.private_notes || '';
+        el('cf-email-template').value = c.email_template || '';
 
         // Delivery actions
         const da = c.delivery_actions || { phone_call: true, email: true, sms: false };
@@ -1234,6 +1595,9 @@ const Admin = (() => {
         smtp_port: parseInt(el('cf-smtp-port').value) || null,
         smtp_user: el('cf-smtp-user').value.trim() || null,
         smtp_from: el('cf-smtp-from').value.trim() || null,
+        outbound_caller_id: el('cf-outbound-cli').value.trim() || null,
+        private_notes: el('cf-private-notes').value.trim() || null,
+        email_template: el('cf-email-template').value.trim() || null,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
 
@@ -1403,6 +1767,18 @@ const Admin = (() => {
             oninput="Admin.updateFieldOptions(${i}, this.value)"
             style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px;font-size:0.82rem" />
         </div>` : ''}
+        <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+          <span style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap">Show when:</span>
+          <select onchange="Admin.updateFieldShowWhen(${i},'field',this.value)" style="font-size:0.78rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:3px 6px">
+            <option value="">Always</option>
+            ${formFields.filter((_,j) => j !== i).map((other) => `<option value="${escHtml(other.id)}" ${f.show_when?.field === other.id ? 'selected' : ''}>${escHtml(other.label || other.id)}</option>`).join('')}
+          </select>
+          ${f.show_when?.field ? `
+          <span style="font-size:0.72rem;color:var(--text-muted)">=</span>
+          <input type="text" value="${escHtml(f.show_when?.value || '')}" placeholder="value"
+            oninput="Admin.updateFieldShowWhen(${i},'value',this.value)"
+            style="width:100px;font-size:0.78rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:3px 6px" />` : ''}
+        </div>
       </div>
     `).join('');
   }
@@ -1422,6 +1798,23 @@ const Admin = (() => {
   function updateFieldOptions(idx, value) {
     if (formFields[idx]) {
       formFields[idx].options = value.split(',').map((o) => o.trim()).filter(Boolean);
+    }
+  }
+
+  function updateFieldShowWhen(idx, key, value) {
+    if (!formFields[idx]) return;
+    if (key === 'field') {
+      if (!value) {
+        delete formFields[idx].show_when;
+      } else {
+        formFields[idx].show_when = formFields[idx].show_when || {};
+        formFields[idx].show_when.field = value;
+      }
+      renderFormBuilder();
+    } else if (key === 'value') {
+      if (formFields[idx].show_when) {
+        formFields[idx].show_when.value = value;
+      }
     }
   }
 
@@ -2135,6 +2528,7 @@ const Admin = (() => {
       const r2fa = el('set-require-2fa');  if (r2fa) r2fa.checked = s.require_2fa === 'true';
       const mpw  = el('set-min-pw');       if (mpw)  mpw.value  = s.min_password_length || '12';
       const sto  = el('set-session-timeout'); if (sto) sto.value = s.session_timeout_hours || '12';
+      const ocli = el('set-outbound-cli'); if (ocli) ocli.value = s.outbound_caller_id || '';
     } catch (err) {
       toast(`Failed to load settings: ${err.message}`, 'danger');
     }
@@ -2147,6 +2541,7 @@ const Admin = (() => {
     const r2fa = el('set-require-2fa');  if (r2fa) settings.require_2fa = String(r2fa.checked);
     const mpw  = el('set-min-pw');       if (mpw)  settings.min_password_length = mpw.value;
     const sto  = el('set-session-timeout'); if (sto) settings.session_timeout_hours = sto.value;
+    const ocli = el('set-outbound-cli'); if (ocli) settings.outbound_caller_id = ocli.value.trim();
     try {
       await api('PUT', '/settings', settings);
       toast('Settings saved', 'success');
@@ -2159,6 +2554,155 @@ const Admin = (() => {
     const url = el('set-freepbx-url')?.value?.trim();
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
     else toast('Enter FreePBX URL first', 'warning');
+  }
+
+  /* ---- Client Files ---- */
+  async function loadClientFiles(clientId) {
+    const tbody = el('client-files-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/files`);
+      if (!data.files.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No files</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.files.map((f) => `
+        <tr>
+          <td><a href="/api/clients/${clientId}/files/${f.id}/download" target="_blank">${escHtml(f.original_name)}</a></td>
+          <td>${f.size_bytes ? Math.round(f.size_bytes / 1024) + ' KB' : '—'}</td>
+          <td>${new Date(f.created_at).toLocaleDateString('en-GB')}</td>
+          <td>${escHtml(f.uploaded_by_name || '—')}</td>
+          <td><button class="btn btn-sm btn-danger" onclick="Admin.deleteFile('${f.id}')">Del</button></td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function uploadFile() {
+    if (!editingClientId) return;
+    const input = el('file-upload-input');
+    if (!input.files.length) return;
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+
+    try {
+      const res = await fetch(`/api/clients/${editingClientId}/files`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('as_token')}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(err.error);
+      }
+      toast('File uploaded', 'success');
+      loadClientFiles(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+    input.value = '';
+  }
+
+  async function deleteFile(fileId) {
+    if (!editingClientId || !confirm('Delete this file?')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/files/${fileId}`);
+      toast('File deleted', 'info');
+      loadClientFiles(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Client News (Admin) ---- */
+  async function loadClientNewsAdmin(clientId) {
+    const container = el('client-news-list');
+    if (!container) return;
+    container.innerHTML = '<p class="empty-state">Loading...</p>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/news`);
+      if (!data.news.length) {
+        container.innerHTML = '<p class="empty-state">No news items</p>';
+        return;
+      }
+      container.innerHTML = data.news.map((n) => `
+        <div class="client-news-item" style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div>${escHtml(n.content)}</div>
+            <div class="news-meta">${n.author_name ? escHtml(n.author_name) : ''} — ${new Date(n.created_at).toLocaleDateString('en-GB')}${n.expires_at ? ` (expires ${new Date(n.expires_at).toLocaleDateString('en-GB')})` : ''}</div>
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="Admin.deleteNews('${n.id}')">Del</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="empty-state">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  function openNewsEditor() {
+    el('news-content').value = '';
+    el('news-expires').value = '';
+    el('client-news-editor').style.display = '';
+  }
+
+  async function saveNews() {
+    if (!editingClientId) return;
+    const content = el('news-content').value.trim();
+    if (!content) return;
+    try {
+      await api('POST', `/clients/${editingClientId}/news`, {
+        content,
+        expires_at: el('news-expires').value || null,
+      });
+      el('client-news-editor').style.display = 'none';
+      toast('News item added', 'success');
+      loadClientNewsAdmin(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deleteNews(newsId) {
+    if (!editingClientId || !confirm('Delete this news item?')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/news/${newsId}`);
+      toast('News item deleted', 'info');
+      loadClientNewsAdmin(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Email Template Preview ---- */
+  function previewEmailTemplate() {
+    const template = el('cf-email-template').value;
+    if (!template) {
+      toast('No custom template to preview. The default template will be used.', 'info');
+      return;
+    }
+    const vars = {
+      client_name: el('cf-name').value || 'Demo Client',
+      caller_name: 'John Smith',
+      caller_phone: '<+447700900123>',
+      caller_company: '— Example Ltd',
+      subject: 'Callback requested',
+      body: 'Please call back regarding the invoice query. Caller said it was urgent.',
+      urgency: 'HIGH',
+      date: new Date().toLocaleString('en-GB'),
+      operator_name: 'Operator',
+      subject_row: '<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;color:#888">Subject</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0">Callback requested</td></tr>',
+    };
+    let html = template;
+    for (const [key, val] of Object.entries(vars)) {
+      html = html.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+    }
+    const win = window.open('', '_blank', 'width=700,height=600');
+    win.document.write(html);
+    win.document.close();
   }
 
   /* ---- Portal Users ---- */
@@ -2251,7 +2795,7 @@ const Admin = (() => {
     toggleDayClosed,
     addInfoSheet, updateInfoSheet, removeInfoSheet,
     addWebLink, updateWebLink, removeWebLink,
-    addFormField, updateField, updateFieldOptions, removeField,
+    addFormField, updateField, updateFieldOptions, updateFieldShowWhen, removeField,
     openContactModal, closeContactModal, saveContact, deleteContact,
     onCallActionChange, onAvailTypeChange, toggleContactAvailDay,
     addDepartment, deleteDepartment,
@@ -2262,6 +2806,9 @@ const Admin = (() => {
     loadReports,
     loadBillingForClient, saveBillingPlan, generateBillingReport, regenerateReport,
     loadSettings, saveSettings, openFreePBX,
+    loadClientFiles, uploadFile, deleteFile,
+    loadClientNewsAdmin, openNewsEditor, saveNews, deleteNews,
+    previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
   };
 

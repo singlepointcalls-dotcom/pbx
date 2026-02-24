@@ -1259,3 +1259,63 @@ body {
   margin-top: 8px;
 }
 .error-msg.hidden { display: none; }
+
+/* ============================================================
+   Noticeboard
+   ============================================================ */
+.noticeboard-list { display: flex; flex-direction: column; gap: 8px; }
+.notice-item {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  border-left: 3px solid var(--border);
+}
+.notice-item.notice-high { border-left-color: var(--warning); background: var(--warning-light); }
+.notice-item.notice-urgent { border-left-color: var(--danger); background: var(--danger-light); }
+.notice-item .notice-title { font-weight: 600; margin-bottom: 3px; }
+.notice-item .notice-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+.notice-item .notice-pinned { font-size: 0.72rem; color: var(--accent); margin-left: 6px; }
+
+/* ============================================================
+   Client News in screen pop
+   ============================================================ */
+.client-news-item {
+  background: var(--warning-light);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+.client-news-item .news-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+
+/* ============================================================
+   Caller History in screen pop
+   ============================================================ */
+.caller-history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+.caller-history-item:last-child { border-bottom: none; }
+.caller-history-item .ch-date { color: var(--text-muted); font-size: 0.72rem; }
+.caller-history-item .ch-disp { font-weight: 500; }
+
+/* ============================================================
+   Screen pop contact action buttons
+   ============================================================ */
+.sp-contact-actions { display: flex; gap: 4px; margin-top: 4px; }
+.sp-contact-actions button {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.sp-contact-actions button:hover { background: var(--accent-light); border-color: var(--accent); }

@@ -87,9 +87,12 @@ router.post('/reports/:clientId/generate', requireRole('admin'), async (req, res
       [req.params.clientId, startDate, endDate]
     );
 
-    // Pull message/admin stats
+    // Pull message/admin stats — exclude no-charge calls (sales, wrong number, etc.)
     const msgStats = await pool.query(
-      `SELECT COUNT(*) AS total_messages FROM messages
+      `SELECT
+         COUNT(*) AS total_messages,
+         COUNT(*) FILTER (WHERE is_no_charge = false AND call_type = 'standard') AS billable_messages
+       FROM messages
        WHERE client_id = $1 AND created_at >= $2 AND created_at < $3`,
       [req.params.clientId, startDate, endDate]
     );
@@ -104,9 +107,10 @@ router.post('/reports/:clientId/generate', requireRole('admin'), async (req, res
     const stats = callStats.rows[0];
     const totalCalls   = parseInt(stats.total_calls);
     const totalMinutes = Math.ceil(parseInt(stats.total_seconds) / 60);
-    const totalMessages = parseInt(msgStats.rows[0].total_messages);
-    // Admin time estimate: 3 minutes per message taken
-    const adminMinutes = totalMessages * 3;
+    const totalMessages    = parseInt(msgStats.rows[0].total_messages);
+    const billableMessages = parseInt(msgStats.rows[0].billable_messages);
+    // Admin time estimate: 3 minutes per billable message
+    const adminMinutes = billableMessages * 3;
 
     let amountDue = plan ? parseFloat(plan.monthly_fee) : 0;
     let breakdown = {};

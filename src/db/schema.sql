@@ -368,5 +368,104 @@ INSERT INTO system_settings (key, value) VALUES
     ('default_timezone', 'Europe/London'),
     ('session_timeout_hours', '12'),
     ('require_2fa', 'false'),
-    ('min_password_length', '12')
+    ('min_password_length', '12'),
+    ('outbound_caller_id', '')
 ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- v4: call types, no-charge, outbound CLI, email templates
+-- ============================================================
+
+-- Clients: outbound caller ID (masks our number on outbound calls)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS outbound_caller_id VARCHAR(30);
+
+-- Clients: per-client HTML/text email template with {{variable}} placeholders
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_template TEXT;
+
+-- Messages: call type classification + no-charge flag for billing exclusion
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS call_type VARCHAR(30) NOT NULL DEFAULT 'standard'
+    CHECK (call_type IN ('standard','no_information','sales','wrong_number','transferred','voicemail'));
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_no_charge BOOLEAN NOT NULL DEFAULT false;
+
+-- v2 availability (already added in previous commit — guards)
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS availability_type VARCHAR(20) NOT NULL DEFAULT 'always';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS availability_schedule JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE clients  ADD COLUMN IF NOT EXISTS web_links JSONB NOT NULL DEFAULT '[]';
+
+-- Call logs: add recording URL, call direction, billable flag
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS recording_url TEXT;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS call_direction VARCHAR(10) NOT NULL DEFAULT 'inbound'
+    CHECK (call_direction IN ('inbound', 'outbound'));
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS is_billable BOOLEAN NOT NULL DEFAULT true;
+
+-- Messages: read receipt tracking
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+-- ============================================================
+-- v5: nCall/EVS7 feature parity — noticeboard, client news,
+--     client files, operator shifts, call disposition notes
+-- ============================================================
+
+-- Noticeboard (company-wide announcements visible on operator home page)
+CREATE TABLE IF NOT EXISTS noticeboard (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    priority VARCHAR(10) NOT NULL DEFAULT 'normal'
+        CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+    created_by UUID REFERENCES operators(id) ON DELETE SET NULL,
+    expires_at TIMESTAMPTZ,
+    is_pinned BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Client news (per-client news items visible during calls)
+CREATE TABLE IF NOT EXISTS client_news (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_by UUID REFERENCES operators(id) ON DELETE SET NULL,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_news_client ON client_news(client_id);
+
+-- Client files (uploaded documents: timesheets, pricing, forms, etc.)
+CREATE TABLE IF NOT EXISTS client_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100),
+    size_bytes INTEGER,
+    description TEXT,
+    uploaded_by UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_files_client ON client_files(client_id);
+
+-- Operator shift schedules
+CREATE TABLE IF NOT EXISTS operator_shifts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_operator_shifts_op ON operator_shifts(operator_id);
+
+-- Call disposition notes (operator notes after each call)
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS disposition_notes TEXT;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS follow_up_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMPTZ;
+
+-- Quick links per client (embedded web pages, local files, bookmarks)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS quick_links JSONB NOT NULL DEFAULT '[]';
+
+-- Client greeting per DID + time-of-day rules
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS greeting_rules JSONB NOT NULL DEFAULT '[]';
+
+-- Clients: private notes (separate from public notes — shown in red, not shared with callers)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS private_notes TEXT;

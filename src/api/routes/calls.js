@@ -84,4 +84,66 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// PATCH /api/calls/:id/disposition — update call disposition, notes, follow-up
+router.patch('/:id/disposition', async (req, res, next) => {
+  try {
+    const { disposition, disposition_notes, follow_up_required, follow_up_at, is_billable } = req.body;
+    const result = await pool.query(
+      `UPDATE call_logs SET
+         disposition       = COALESCE($1, disposition),
+         disposition_notes = COALESCE($2, disposition_notes),
+         follow_up_required = COALESCE($3, follow_up_required),
+         follow_up_at      = COALESCE($4, follow_up_at),
+         is_billable       = COALESCE($5, is_billable)
+       WHERE id = $6
+       RETURNING *`,
+      [disposition, disposition_notes, follow_up_required, follow_up_at, is_billable, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Call not found' });
+    res.json({ call: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// GET /api/calls/follow-ups — calls requiring follow-up
+router.get('/follow-ups/pending', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
+       FROM call_logs cl
+       LEFT JOIN clients c ON cl.client_id = c.id
+       LEFT JOIN operators o ON cl.operator_id = o.id
+       WHERE cl.follow_up_required = true
+         AND cl.disposition != 'follow_up_completed'
+       ORDER BY cl.follow_up_at ASC NULLS LAST`
+    );
+    res.json({ calls: result.rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/calls/history/:callerNumber — call history for a specific caller
+router.get('/history/:callerNumber', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
+       FROM call_logs cl
+       LEFT JOIN clients c ON cl.client_id = c.id
+       LEFT JOIN operators o ON cl.operator_id = o.id
+       WHERE cl.caller_id_num = $1
+       ORDER BY cl.call_start DESC
+       LIMIT 50`,
+      [req.params.callerNumber]
+    );
+    const messages = await pool.query(
+      `SELECT m.*, c.name AS client_name
+       FROM messages m
+       LEFT JOIN clients c ON m.client_id = c.id
+       WHERE m.caller_phone = $1
+       ORDER BY m.created_at DESC
+       LIMIT 50`,
+      [req.params.callerNumber]
+    );
+    res.json({ calls: result.rows, messages: messages.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

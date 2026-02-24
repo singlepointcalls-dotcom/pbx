@@ -302,4 +302,97 @@ async function unholdCall(channelId) {
   console.log(`[ARI] Call unheld: channel=${channelId}`);
 }
 
-module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls };
+/**
+ * Originate an outbound call from an operator to a destination number.
+ * Uses the client's outbound_caller_id if set, otherwise the global setting.
+ */
+async function originateOutbound(operatorExtension, destination, clientId) {
+  if (!ariClient) throw new Error('ARI not connected');
+
+  // Determine caller ID: client override → global setting → default
+  let callerId = process.env.OUTBOUND_CALLER_ID || operatorExtension;
+  if (clientId) {
+    try {
+      const result = await pool.query(
+        'SELECT outbound_caller_id FROM clients WHERE id = $1',
+        [clientId]
+      );
+      if (result.rows[0]?.outbound_caller_id) {
+        callerId = result.rows[0].outbound_caller_id;
+      }
+    } catch (err) {
+      console.warn('[ARI] Could not fetch client outbound_caller_id:', err.message);
+    }
+  }
+
+  // Also check system_settings for global outbound caller id
+  if (!clientId || callerId === operatorExtension) {
+    try {
+      const settingResult = await pool.query(
+        "SELECT value FROM system_settings WHERE key = 'outbound_caller_id'"
+      );
+      if (settingResult.rows[0]?.value) {
+        callerId = settingResult.rows[0].value;
+      }
+    } catch (_) {}
+  }
+
+  // Create a bridge for the two legs
+  const bridge = ariClient.Bridge();
+  await bridge.create({ type: 'mixing' });
+
+  // Originate to operator first
+  const operatorChannel = await ariClient.channels.originate({
+    endpoint: `SIP/${operatorExtension}`,
+    app: process.env.ARI_APP || 'answering-service',
+    appArgs: `outbound,${destination}`,
+    callerId: `Outbound <${callerId}>`,
+    timeout: 30,
+  });
+
+  // When operator answers, originate the outbound leg
+  operatorChannel.on('StasisStart', async () => {
+    await bridge.addChannel({ channel: operatorChannel.id });
+
+    const outboundChannel = await ariClient.channels.originate({
+      endpoint: `SIP/${destination}@trunk`,
+      app: process.env.ARI_APP || 'answering-service',
+      appArgs: `outbound-dest,${operatorChannel.id}`,
+      callerId: `${callerId} <${callerId}>`,
+      timeout: 60,
+    });
+
+    outboundChannel.on('StasisStart', async () => {
+      await bridge.addChannel({ channel: outboundChannel.id });
+      broadcast('call:outbound_connected', {
+        operatorChannelId: operatorChannel.id,
+        outboundChannelId: outboundChannel.id,
+        destination,
+      });
+    });
+
+    outboundChannel.on('StasisEnd', async () => {
+      try { await operatorChannel.hangup(); } catch (_) {}
+      try { await bridge.destroy(); } catch (_) {}
+    });
+
+    // Log the outbound call
+    try {
+      await pool.query(
+        `INSERT INTO call_logs (asterisk_channel_id, client_id, caller_id_num, did, call_start, call_direction)
+         VALUES ($1, $2, $3, $4, NOW(), 'outbound')`,
+        [outboundChannel.id, clientId || null, callerId, destination]
+      );
+    } catch (err) {
+      console.error('[ARI] Failed to log outbound call:', err.message);
+    }
+  });
+
+  operatorChannel.on('StasisEnd', async () => {
+    try { await bridge.destroy(); } catch (_) {}
+  });
+
+  return { bridgeId: bridge.id, operatorChannelId: operatorChannel.id };
+}
+
+module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound };

@@ -104,18 +104,31 @@ router.post('/', async (req, res, next) => {
       subject,
       body,
       urgency = 'normal',
+      call_type = 'standard',
+      is_no_charge = false,
       auto_deliver = false,
     } = req.body;
 
-    if (!client_id || !body) {
-      return res.status(400).json({ error: 'client_id and body are required' });
+    if (!client_id) return res.status(400).json({ error: 'client_id is required' });
+    if (call_type === 'standard' && !body) {
+      return res.status(400).json({ error: 'body is required for standard calls' });
     }
 
+    // Auto no-charge for certain call types
+    const noCharge = is_no_charge || call_type === 'sales' || call_type === 'wrong_number';
+
     const result = await pool.query(
-      `INSERT INTO messages (call_log_id, client_id, operator_id, caller_name, caller_phone, caller_company, subject, body, urgency)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO messages
+         (call_log_id, client_id, operator_id, caller_name, caller_phone,
+          caller_company, subject, body, urgency, call_type, is_no_charge)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
-      [call_log_id, client_id, req.operator.id, caller_name, caller_phone, caller_company, subject, body, urgency]
+      [
+        call_log_id, client_id, req.operator.id,
+        caller_name, caller_phone, caller_company,
+        subject, body || '', urgency,
+        call_type, noCharge,
+      ]
     );
 
     const message = result.rows[0];
@@ -184,6 +197,18 @@ router.get('/:id/deliveries', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// PATCH /api/messages/:id/read — mark message as read
+router.patch('/:id/read', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE messages SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Message not found' });
+    res.json({ message: result.rows[0] });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

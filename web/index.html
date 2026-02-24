@@ -44,6 +44,7 @@
         <button class="nav-tab active" onclick="App.switchView('console')">Console</button>
         <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">Admin</button>
       </nav>
+      <button class="btn btn-sm btn-secondary" onclick="App.openOutbound()" title="Make outbound call">&#128222;</button>
       <button class="btn btn-sm btn-secondary" id="demo-btn" onclick="App.startDemo()" style="display:none" title="Simulate an incoming call">&#9654; Demo</button>
       <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
       <span id="operator-name" class="operator-name"></span>
@@ -108,6 +109,16 @@
         <div id="tasks-list" class="tasks-list"></div>
       </section>
 
+      <section class="panel" id="noticeboard-panel">
+        <div class="panel-header">
+          <h2>&#128227; Noticeboard</h2>
+          <button class="btn btn-sm btn-secondary" id="notice-add-btn" onclick="App.openNoticeEditor()" style="display:none">+</button>
+        </div>
+        <div id="noticeboard-list" class="noticeboard-list">
+          <p class="empty-state">No announcements</p>
+        </div>
+      </section>
+
     </aside>
 
     <!-- Center: Script + Custom Form + Message Form -->
@@ -156,12 +167,36 @@
           </div>
         </div>
 
+        <!-- Client News / Alerts -->
+        <div id="sp-news-section" class="sp-section open" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128240; News &amp; Alerts</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-client-news"></div>
+        </div>
+
+        <!-- Private Notes (red, operator-only) -->
+        <div id="sp-private-notes-section" class="sp-section open" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')" style="color:var(--danger)">
+            <span>&#9888; Private Notes</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-private-notes" style="color:var(--danger);font-weight:600"></div>
+        </div>
+
         <!-- Web Links -->
         <div id="sp-links-section" class="sp-section open" style="display:none">
           <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
             <span>&#127760; Web Links</span><span class="sp-arrow">&#9660;</span>
           </div>
           <div class="sp-section-body" id="sp-web-links"></div>
+        </div>
+
+        <!-- Caller History -->
+        <div id="sp-caller-history-section" class="sp-section" style="display:none">
+          <div class="sp-section-hdr" onclick="this.closest('.sp-section').classList.toggle('open')">
+            <span>&#128337; Caller History</span><span class="sp-arrow">&#9660;</span>
+          </div>
+          <div class="sp-section-body" id="sp-caller-history"></div>
         </div>
       </section>
 
@@ -181,12 +216,29 @@
               </select>
             </div>
             <div class="field">
+              <label>Call Type</label>
+              <select id="msg-call-type" onchange="App.onCallTypeChange()">
+                <option value="standard">Standard Message</option>
+                <option value="no_information">No Information / Hang-up</option>
+                <option value="sales">Sales / Telemarketer</option>
+                <option value="wrong_number">Wrong Number</option>
+                <option value="transferred">Transferred</option>
+                <option value="voicemail">Voicemail</option>
+              </select>
+            </div>
+            <div class="field">
               <label>Priority</label>
               <select id="msg-urgency">
                 <option value="normal">Normal</option>
                 <option value="low">Low</option>
                 <option value="high">High</option>
               </select>
+            </div>
+          </div>
+          <div class="form-row" id="no-charge-row">
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <label class="toggle"><input type="checkbox" id="msg-no-charge" /><span></span></label>
+              <label style="font-size:0.82rem;color:var(--text-muted)">No Charge (exclude from billing)</label>
             </div>
           </div>
           <div class="form-row">
@@ -209,7 +261,7 @@
           </div>
           <div class="field">
             <label>Message *</label>
-            <textarea id="msg-body" rows="4" placeholder="Enter message details..." required spellcheck="true"></textarea>
+            <textarea id="msg-body" rows="4" placeholder="Enter message details..." spellcheck="true"></textarea>
           </div>
 
           <!-- Custom form fields rendered here by App.onClientChange() -->
@@ -387,6 +439,15 @@
         </div>
 
         <div class="settings-card">
+          <h4 class="section-label">Telephony</h4>
+          <div class="field">
+            <label>Default Outbound Caller ID</label>
+            <input type="text" id="set-outbound-cli" placeholder="+441234567890" />
+            <p style="font-size:0.72rem;color:var(--text-muted);margin-top:3px">Shown on outbound calls unless overridden per-client.</p>
+          </div>
+        </div>
+
+        <div class="settings-card">
           <h4 class="section-label">FreePBX Integration</h4>
           <div class="field">
             <label>FreePBX Admin URL</label>
@@ -443,6 +504,8 @@
         <button type="button" class="modal-tab" id="tab-contacts-btn" onclick="Admin.showClientTab('contacts',this)" style="display:none">Contacts</button>
         <button type="button" class="modal-tab" id="tab-depts-btn" onclick="Admin.showClientTab('departments',this)" style="display:none">Departments</button>
         <button type="button" class="modal-tab" id="tab-lists-btn" onclick="Admin.showClientTab('lists',this)" style="display:none">VIP / Ignore</button>
+        <button type="button" class="modal-tab" id="tab-files-btn" onclick="Admin.showClientTab('files',this)" style="display:none">Files</button>
+        <button type="button" class="modal-tab" id="tab-news-btn" onclick="Admin.showClientTab('news',this)" style="display:none">News</button>
         <button type="button" class="modal-tab" id="tab-portal-btn" onclick="Admin.showClientTab('portal',this)" style="display:none">Portal Users</button>
       </div>
 
@@ -481,6 +544,12 @@
             <label class="toggle"><input type="checkbox" id="cf-active" checked /><span></span></label>
           </div>
         </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Outbound Caller ID</label>
+            <input type="text" id="cf-outbound-cli" placeholder="e.g. +441234567890 (leave blank for default)" />
+          </div>
+        </div>
         <div class="field">
           <label>Greeting (shown to operator on call)</label>
           <textarea id="cf-greeting" rows="2" placeholder="Thank you for calling..."></textarea>
@@ -488,10 +557,20 @@
         <div class="field">
           <label>Operator Script</label>
           <textarea id="cf-script" rows="5" placeholder="Step-by-step call-handling instructions..."></textarea>
+          <p style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">
+            Variables: <code>{{greeting}}</code> (time-based Good Morning/Afternoon/Evening),
+            <code>{{client}}</code> (client name),
+            <code>{{operator}}</code> (operator name).
+            Example: "{{greeting}}, {{client}}, {{operator}} speaking, how can I help?"
+          </p>
         </div>
         <div class="field">
           <label>Notes (internal)</label>
           <textarea id="cf-notes" rows="2"></textarea>
+        </div>
+        <div class="field">
+          <label>Private Notes <span style="color:var(--danger);font-weight:normal">(shown in red to operators, not visible to client)</span></label>
+          <textarea id="cf-private-notes" rows="2" placeholder="Confidential notes..." style="border-color:var(--danger)"></textarea>
         </div>
       </div>
 
@@ -571,6 +650,19 @@
           <label>From Address</label>
           <input type="text" id="cf-smtp-from" placeholder="messages@clientdomain.com" />
         </div>
+
+        <h4 class="section-label" style="margin-top:20px">Email Template</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Customise the HTML email template for this client. Leave blank to use the default SinglePoint template.
+          Variables: <code>{{client_name}}</code>, <code>{{caller_name}}</code>, <code>{{caller_phone}}</code>,
+          <code>{{caller_company}}</code>, <code>{{subject}}</code>, <code>{{body}}</code>,
+          <code>{{urgency}}</code>, <code>{{date}}</code>, <code>{{operator_name}}</code>.
+        </p>
+        <div class="field">
+          <label>Custom Email HTML Template</label>
+          <textarea id="cf-email-template" rows="8" placeholder="Leave blank for default template..." style="font-family:monospace;font-size:0.78rem"></textarea>
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.previewEmailTemplate()" style="margin-top:4px">Preview Email</button>
       </div>
 
       <!-- Tab: Custom Form Builder -->
@@ -642,6 +734,46 @@
           </div>
 
         </div>
+      </div>
+
+      <!-- Tab: Client Files -->
+      <div id="ctab-files" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>Client Files</h4>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="file" id="file-upload-input" style="display:none" onchange="Admin.uploadFile()" />
+            <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('file-upload-input').click()">&#128206; Upload File</button>
+          </div>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">Attach files to this client (PDFs, documents, images). Max 10 MB each.</p>
+        <table class="admin-table">
+          <thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th>By</th><th></th></tr></thead>
+          <tbody id="client-files-tbody"><tr><td colspan="5" class="empty-state">No files</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Tab: Client News -->
+      <div id="ctab-news" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>Client News / Announcements</h4>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.openNewsEditor()">+ Add News</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">News items appear to operators when this client's call pops up. Use for temporary notices, instructions, etc.</p>
+        <div id="client-news-editor" style="display:none;margin-bottom:16px">
+          <div class="field">
+            <label>Content</label>
+            <textarea id="news-content" rows="3" placeholder="Type news item..."></textarea>
+          </div>
+          <div class="field">
+            <label>Expires</label>
+            <input type="datetime-local" id="news-expires" />
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button type="button" class="btn btn-sm btn-primary" onclick="Admin.saveNews()">Save</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('client-news-editor').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <div id="client-news-list"></div>
       </div>
 
       <!-- Tab: Portal Users -->
@@ -912,6 +1044,155 @@
         <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ===== Quick Contact Compose Modal (email/SMS from screen pop) ===== -->
+<div id="quick-contact-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeQuickContact()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 id="qc-title">Send to Contact</h3>
+      <button class="modal-close" onclick="App.closeQuickContact()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="field">
+          <label>Channel</label>
+          <select id="qc-channel">
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>To</label>
+          <input type="text" id="qc-to" readonly style="background:var(--bg-dark)" />
+        </div>
+      </div>
+      <div class="field" id="qc-subject-row">
+        <label>Subject</label>
+        <input type="text" id="qc-subject" placeholder="Subject..." />
+      </div>
+      <div class="field">
+        <label>Message *</label>
+        <textarea id="qc-body" rows="4" placeholder="Type your message..." required></textarea>
+      </div>
+      <div id="qc-feedback" class="feedback hidden"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeQuickContact()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.sendQuickContact()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Call Disposition Modal (shown after call ends) ===== -->
+<div id="disposition-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Call Wrap-Up</h3>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px">Classify this call and add any notes.</p>
+      <div class="form-row">
+        <div class="field">
+          <label>Disposition</label>
+          <select id="disp-type">
+            <option value="answered">Answered — Message Taken</option>
+            <option value="answered_no_msg">Answered — No Message</option>
+            <option value="transferred">Transferred</option>
+            <option value="voicemail">Voicemail Left</option>
+            <option value="no_answer">No Answer</option>
+            <option value="abandoned">Caller Abandoned</option>
+            <option value="wrong_number">Wrong Number</option>
+            <option value="sales">Sales / Telemarketer</option>
+          </select>
+        </div>
+        <div class="field" style="flex:0;min-width:100px">
+          <label>Billable</label>
+          <label class="toggle"><input type="checkbox" id="disp-billable" checked /><span></span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="disp-notes" rows="2" placeholder="Optional notes..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <label class="toggle"><input type="checkbox" id="disp-followup" onchange="document.getElementById('disp-followup-at').style.display=this.checked?'block':'none'" /><span></span></label>
+          <label style="font-size:0.82rem">Follow-up required</label>
+        </div>
+        <div class="field">
+          <input type="datetime-local" id="disp-followup-at" style="display:none" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.skipDisposition()">Skip</button>
+      <button class="btn btn-primary" onclick="App.saveDisposition()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Noticeboard Editor Modal ===== -->
+<div id="notice-editor-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeNoticeEditor()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3 id="notice-editor-title">New Announcement</h3>
+      <button class="modal-close" onclick="App.closeNoticeEditor()">&#10005;</button>
+    </div>
+    <form onsubmit="event.preventDefault();App.saveNotice()">
+      <div class="modal-body">
+        <div class="field"><label>Title *</label><input type="text" id="notice-title" required /></div>
+        <div class="field"><label>Content *</label><textarea id="notice-content" rows="4" required></textarea></div>
+        <div class="form-row">
+          <div class="field">
+            <label>Priority</label>
+            <select id="notice-priority">
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Expires</label>
+            <input type="datetime-local" id="notice-expires" />
+          </div>
+        </div>
+        <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <label class="toggle"><input type="checkbox" id="notice-pinned" /><span></span></label>
+          <label style="font-size:0.82rem">Pin to top</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="App.closeNoticeEditor()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== Outbound Call Modal ===== -->
+<div id="outbound-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeOutbound()">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3>Make Outbound Call</h3>
+      <button class="modal-close" onclick="App.closeOutbound()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Number to Dial *</label>
+        <input type="tel" id="outbound-number" placeholder="+441234567890" required />
+      </div>
+      <div class="field">
+        <label>Client (optional, sets caller ID)</label>
+        <select id="outbound-client"><option value="">— None —</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeOutbound()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.makeOutboundCall()">&#128222; Dial</button>
+    </div>
   </div>
 </div>
 

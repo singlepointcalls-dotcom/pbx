@@ -77,7 +77,7 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
       opening_times = {}, info_sheets = [], custom_form = [],
       delivery_actions = { phone_call: true, email: true, sms: false },
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
-      web_links = [],
+      web_links = [], outbound_caller_id, email_template, private_notes,
     } = req.body;
 
     if (!name || !account_number) {
@@ -88,8 +88,9 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
       `INSERT INTO clients
          (name, account_number, dids, script, greeting, timezone, notes,
           address, opening_times, info_sheets, custom_form, delivery_actions,
-          smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, web_links)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, web_links,
+          outbound_caller_id, email_template, private_notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [
         name, account_number, dids, script, greeting, timezone, notes,
@@ -101,6 +102,7 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
         smtp_host || null, smtp_port || null, smtp_user || null,
         smtp_pass || null, smtp_from || null,
         JSON.stringify(web_links),
+        outbound_caller_id || null, email_template || null, private_notes || null,
       ]
     );
     res.status(201).json({ client: result.rows[0] });
@@ -117,7 +119,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       name, dids, script, greeting, timezone, is_active, notes, address,
       opening_times, info_sheets, custom_form, delivery_actions,
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
-      web_links,
+      web_links, outbound_caller_id, email_template, private_notes,
     } = req.body;
 
     const result = await pool.query(
@@ -138,9 +140,12 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          smtp_port        = COALESCE($14, smtp_port),
          smtp_user        = COALESCE($15, smtp_user),
          smtp_pass        = COALESCE($16, smtp_pass),
-         smtp_from        = COALESCE($17, smtp_from),
-         web_links        = COALESCE($18, web_links)
-       WHERE id = $19
+         smtp_from           = COALESCE($17, smtp_from),
+         web_links           = COALESCE($18, web_links),
+         outbound_caller_id  = COALESCE($19, outbound_caller_id),
+         email_template      = COALESCE($20, email_template),
+         private_notes       = COALESCE($21, private_notes)
+       WHERE id = $22
        RETURNING *`,
       [
         name, dids, script, greeting, timezone, is_active, notes, address,
@@ -154,6 +159,9 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         smtp_pass !== undefined ? smtp_pass : null,
         smtp_from !== undefined ? smtp_from : null,
         web_links !== undefined ? JSON.stringify(web_links) : null,
+        outbound_caller_id !== undefined ? (outbound_caller_id || null) : null,
+        email_template     !== undefined ? (email_template || null)     : null,
+        private_notes      !== undefined ? (private_notes || null)      : null,
         req.params.id,
       ]
     );
