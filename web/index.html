@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Answering Service Console</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen" class="screen active">
+  <div class="login-box">
+    <h1>Answering Service</h1>
+    <p class="subtitle">Operator Console</p>
+    <form id="login-form">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- Main Console -->
+<div id="console-screen" class="screen">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">&#9742; Answering Service</span>
+    </div>
+    <div class="topbar-center">
+      <span id="status-badge" class="status-badge ready">READY</span>
+    </div>
+    <div class="topbar-right">
+      <span id="operator-name" class="operator-name"></span>
+      <button class="btn btn-sm" onclick="App.logout()">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+
+    <!-- Left: Call Queue + Active Call -->
+    <aside class="sidebar">
+
+      <section class="panel" id="call-queue-panel">
+        <div class="panel-header">
+          <h2>Call Queue</h2>
+          <span id="queue-count" class="badge">0</span>
+        </div>
+        <div id="call-queue" class="call-list">
+          <p class="empty-state">No calls waiting</p>
+        </div>
+      </section>
+
+      <section class="panel" id="active-call-panel" style="display:none">
+        <div class="panel-header">
+          <h2>Active Call</h2>
+          <span id="call-timer" class="timer">0:00</span>
+        </div>
+        <div id="active-call-info">
+          <div class="caller-info">
+            <div class="caller-name" id="ac-caller-name">—</div>
+            <div class="caller-phone" id="ac-caller-phone">—</div>
+          </div>
+          <div class="client-badge" id="ac-client-name">—</div>
+          <div class="call-actions">
+            <button class="btn btn-danger" onclick="App.hangup()">Hang Up</button>
+            <button class="btn btn-secondary" onclick="App.showTransfer()">Transfer</button>
+          </div>
+          <div id="transfer-panel" class="hidden">
+            <input type="text" id="transfer-ext" placeholder="Extension" />
+            <button class="btn btn-primary btn-sm" onclick="App.transfer()">Transfer</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><h2>Operators Online</h2></div>
+        <div id="operators-list" class="operators-list"></div>
+      </section>
+
+    </aside>
+
+    <!-- Center: Script + Message Form -->
+    <main class="content">
+
+      <!-- Client Script -->
+      <section class="panel" id="script-panel" style="display:none">
+        <div class="panel-header">
+          <h2 id="script-client-name">Client Script</h2>
+          <span id="script-urgency" class="urgency-label"></span>
+        </div>
+        <div id="client-greeting" class="greeting-box"></div>
+        <div id="client-script" class="script-box"></div>
+      </section>
+
+      <!-- Message Form -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Take a Message</h2>
+          <button class="btn btn-sm btn-secondary" onclick="App.clearMessageForm()">Clear</button>
+        </div>
+
+        <form id="message-form">
+          <div class="form-row">
+            <div class="field">
+              <label>Client *</label>
+              <select id="msg-client" required>
+                <option value="">— Select Client —</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Urgency</label>
+              <select id="msg-urgency">
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+                <option value="urgent">Urgent</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>Caller Name</label>
+              <input type="text" id="msg-caller-name" placeholder="John Smith" />
+            </div>
+            <div class="field">
+              <label>Caller Phone</label>
+              <input type="tel" id="msg-caller-phone" placeholder="+1 555 000 0000" />
+            </div>
+            <div class="field">
+              <label>Company</label>
+              <input type="text" id="msg-caller-company" placeholder="Optional" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Subject</label>
+            <input type="text" id="msg-subject" placeholder="Brief subject line" />
+          </div>
+          <div class="field">
+            <label>Message *</label>
+            <textarea id="msg-body" rows="5" placeholder="Enter message details..." required></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="msg-submit">
+              Save &amp; Deliver
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="App.saveMessageOnly()">
+              Save Only
+            </button>
+          </div>
+          <div id="msg-feedback" class="feedback hidden"></div>
+        </form>
+      </section>
+
+    </main>
+
+    <!-- Right: Recent Messages -->
+    <aside class="right-sidebar">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Recent Messages</h2>
+          <button class="btn btn-sm" onclick="App.loadMessages()">&#8635;</button>
+        </div>
+        <div id="messages-filter">
+          <select id="msg-filter-client" onchange="App.loadMessages()">
+            <option value="">All Clients</option>
+          </select>
+          <select id="msg-filter-status" onchange="App.loadMessages()">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="delivered">Delivered</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div id="messages-list" class="messages-list"></div>
+      </section>
+    </aside>
+
+  </div><!-- /main-layout -->
+
+</div><!-- /console-screen -->
+
+<!-- Toast notifications -->
+<div id="toast-container"></div>
+
+<!-- Ringer audio (hidden) -->
+<audio id="ringer" loop>
+  <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA..." type="audio/wav" />
+</audio>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
