@@ -42,10 +42,45 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+/**
+ * Check whether the current moment falls within a client's configured opening_times.
+ * opening_times is a JSONB object keyed by lowercase day name, e.g.:
+ *   { "monday": { "open": "09:00", "close": "17:30" }, "tuesday": { ... }, ... }
+ * Days absent from the object (or with { "closed": true }) are treated as closed.
+ * An empty object means "always open" (no hours configured).
+ */
+function isWithinBusinessHours(openingTimes, timezone) {
+  if (!openingTimes || typeof openingTimes !== 'object' || Object.keys(openingTimes).length === 0) {
+    return true; // no hours configured → always considered open
+  }
+
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone || 'UTC',
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const dayName = parts.find((p) => p.type === 'weekday').value.toLowerCase();
+  const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+  const minute = parseInt(parts.find((p) => p.type === 'minute').value, 10);
+  const currentMinutes = hour * 60 + minute;
+
+  const daySchedule = openingTimes[dayName];
+  if (!daySchedule || daySchedule.closed) return false;
+
+  const [openH, openM] = (daySchedule.open || '00:00').split(':').map(Number);
+  const [closeH, closeM] = (daySchedule.close || '23:59').split(':').map(Number);
+
+  return currentMinutes >= openH * 60 + openM && currentMinutes < closeH * 60 + closeM;
+}
+
 // GET /api/clients/:id/screenpop — full client dossier for operator screen pop
 router.get('/:id/screenpop', async (req, res, next) => {
   try {
-    const [clientResult, contactsResult, availResult] = await Promise.all([
+    const [clientResult, contactsResult, availResult, deptResult] = await Promise.all([
       pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]),
       pool.query(
         `SELECT c.*, d.name AS department_name
@@ -56,12 +91,24 @@ router.get('/:id/screenpop', async (req, res, next) => {
         [req.params.id]
       ),
       pool.query('SELECT * FROM client_availability WHERE client_id = $1', [req.params.id]),
+      pool.query('SELECT * FROM departments WHERE client_id = $1 ORDER BY name ASC', [req.params.id]),
     ]);
     if (!clientResult.rows[0]) return res.status(404).json({ error: 'Client not found' });
+
+    const client = clientResult.rows[0];
+    const manualAvail = availResult.rows[0] || null;
+    const withinHours = isWithinBusinessHours(client.opening_times, client.timezone);
+
     res.json({
-      client: clientResult.rows[0],
+      client,
       contacts: contactsResult.rows,
-      availability: availResult.rows[0] || { status: 'available', note: null },
+      departments: deptResult.rows,
+      availability: {
+        status: manualAvail?.status || (withinHours ? 'available' : 'closed'),
+        note: manualAvail?.note || null,
+        is_open: withinHours,
+        updated_at: manualAvail?.updated_at || null,
+      },
     });
   } catch (err) {
     next(err);
@@ -238,4 +285,5 @@ router.get('/by-did/:did', async (req, res, next) => {
   }
 });
 
+router._isWithinBusinessHours = isWithinBusinessHours;
 module.exports = router;
