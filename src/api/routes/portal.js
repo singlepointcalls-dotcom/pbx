@@ -46,6 +46,10 @@ function rateLimitPortal(req, res, next) {
   next();
 }
 
+// Portal tokens use their own secret so a leaked operator JWT cannot be used here.
+// Set PORTAL_JWT_SECRET in .env; falls back to JWT_SECRET if not configured.
+const PORTAL_JWT_SECRET = () => process.env.PORTAL_JWT_SECRET || process.env.JWT_SECRET;
+
 /* ---- Portal auth middleware ---- */
 function requirePortalAuth(req, res, next) {
   const auth = req.headers.authorization;
@@ -53,7 +57,7 @@ function requirePortalAuth(req, res, next) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
   try {
-    const payload = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(auth.split(' ')[1], PORTAL_JWT_SECRET(), { algorithms: ['HS256'] });
     if (payload.type !== 'portal') return res.status(403).json({ error: 'Forbidden' });
     req.portalUser = payload;
     next();
@@ -85,8 +89,8 @@ router.post('/login', rateLimitPortal, async (req, res, next) => {
 
     const token = jwt.sign(
       { id: user.id, client_id: user.client_id, username: user.username, type: 'portal' },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      PORTAL_JWT_SECRET(),
+      { algorithm: 'HS256', expiresIn: '4h' }
     );
 
     res.json({

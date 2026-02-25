@@ -17,6 +17,23 @@ const nodemailer = require('nodemailer');
 const axios = require('axios');
 const pool = require('../config/database');
 
+/**
+ * Validate an email address against RFC 5321 size limits before passing to nodemailer.
+ * Prevents DoS via crafted addresses that trigger nodemailer's recursive addressparser
+ * (GHSA-rcmh-qjqh-p98v / nodemailer ≤7.0.10).
+ * Local-part ≤64 chars, domain ≤255 chars, total ≤320 chars.
+ */
+function assertValidEmail(email) {
+  if (!email || typeof email !== 'string') throw new Error('Invalid email address');
+  if (email.length > 320) throw new Error(`Email address too long: ${email.length} chars`);
+  const at = email.lastIndexOf('@');
+  if (at < 1) throw new Error('Email address missing @');
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (local.length > 64) throw new Error('Email local-part too long');
+  if (domain.length < 4 || domain.length > 255) throw new Error('Email domain invalid length');
+}
+
 // Global transporter (SinglePoint SMTP) — lazily created
 let globalTransporter = null;
 
@@ -385,6 +402,7 @@ async function sendTelegram(chatId, message) {
 }
 
 async function sendEmail(toAddress, message, ackToken) {
+  assertValidEmail(toAddress);
   const transport = getClientTransporter(message);
   const fromAddress = message.smtp_from || process.env.SMTP_FROM;
 
@@ -420,6 +438,7 @@ async function sendEmail(toAddress, message, ackToken) {
 async function sendQuickNotify(contact, channel, subject, body) {
   if (channel === 'email') {
     if (!contact.email) throw new Error('Contact has no email address');
+    assertValidEmail(contact.email);
     const transport = getClientTransporter(contact);
     const from = contact.smtp_from || process.env.SMTP_FROM;
     await transport.sendMail({
