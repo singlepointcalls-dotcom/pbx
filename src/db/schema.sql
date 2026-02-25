@@ -596,3 +596,43 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_push_endpoint ON push_subscriptions(endpoint);
 CREATE INDEX IF NOT EXISTS idx_push_operator  ON push_subscriptions(operator_id);
 CREATE INDEX IF NOT EXISTS idx_push_portal    ON push_subscriptions(portal_user_id);
+
+-- ============================================================
+-- v7: operator audit log, portal password reset tokens
+-- ============================================================
+
+-- Operator action audit log (GDPR Art. 30 / general compliance)
+-- Append-only — never UPDATE or DELETE rows in this table.
+CREATE TABLE IF NOT EXISTS operator_audit_log (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id   UUID REFERENCES operators(id) ON DELETE SET NULL,
+    operator_name VARCHAR(100),          -- snapshot in case operator is later deleted
+    action        VARCHAR(100) NOT NULL, -- e.g. 'operator.create', 'client.update', 'message.create'
+    resource_type VARCHAR(50),           -- e.g. 'operator', 'client', 'message'
+    resource_id   UUID,
+    details       JSONB,                 -- additional context: changed fields, new values, etc.
+    ip_address    INET,
+    user_agent    TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_operator ON operator_audit_log(operator_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action   ON operator_audit_log(action);
+CREATE INDEX IF NOT EXISTS idx_audit_resource ON operator_audit_log(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_ts       ON operator_audit_log(created_at DESC);
+
+-- Portal password reset tokens (admin-generated; 24h TTL; single use)
+CREATE TABLE IF NOT EXISTS portal_reset_tokens (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    portal_user_id UUID NOT NULL REFERENCES client_portal_users(id) ON DELETE CASCADE,
+    token_hash     VARCHAR(255) NOT NULL UNIQUE, -- bcrypt of random token — never store plaintext
+    expires_at     TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
+    used_at        TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reset_token_user ON portal_reset_tokens(portal_user_id);
+
+-- Additional system setting defaults (ON CONFLICT DO NOTHING — safe to re-run)
+INSERT INTO system_settings (key, value) VALUES
+    ('token_lifetime_hours', '2'),
+    ('portal_token_lifetime_hours', '4')
+ON CONFLICT (key) DO NOTHING;

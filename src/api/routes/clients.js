@@ -80,7 +80,13 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
       web_links = [], outbound_caller_id, email_template, private_notes,
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
       escalation_rules = [], sla_answer_seconds = 30,
+      data_retention_months = 12,
     } = req.body;
+
+    const VALID_RETENTION = [3, 5, 9, 12];
+    if (!VALID_RETENTION.includes(parseInt(data_retention_months))) {
+      return res.status(400).json({ error: 'data_retention_months must be one of 3, 5, 9, 12' });
+    }
 
     if (!name || !account_number) {
       return res.status(400).json({ error: 'name and account_number are required' });
@@ -93,8 +99,8 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
           smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, web_links,
           outbound_caller_id, email_template, private_notes,
           whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
-          escalation_rules, sla_answer_seconds)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+          escalation_rules, sla_answer_seconds, data_retention_months)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        RETURNING *`,
       [
         name, account_number, dids, script, greeting, timezone, notes,
@@ -111,6 +117,7 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
         slack_webhook || null, teams_webhook || null,
         JSON.stringify(escalation_rules),
         sla_answer_seconds,
+        parseInt(data_retention_months),
       ]
     );
     res.status(201).json({ client: result.rows[0] });
@@ -129,8 +136,15 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
       web_links, outbound_caller_id, email_template, private_notes,
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
-      escalation_rules, sla_answer_seconds,
+      escalation_rules, sla_answer_seconds, data_retention_months,
     } = req.body;
+
+    if (data_retention_months !== undefined) {
+      const VALID_RETENTION = [3, 5, 9, 12];
+      if (!VALID_RETENTION.includes(parseInt(data_retention_months))) {
+        return res.status(400).json({ error: 'data_retention_months must be one of 3, 5, 9, 12' });
+      }
+    }
 
     const result = await pool.query(
       `UPDATE clients SET
@@ -159,8 +173,9 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          telegram_chat_id    = COALESCE($24, telegram_chat_id),
          slack_webhook       = COALESCE($25, slack_webhook),
          teams_webhook       = COALESCE($26, teams_webhook),
-         escalation_rules    = COALESCE($27, escalation_rules),
-         sla_answer_seconds  = COALESCE($28, sla_answer_seconds)
+         escalation_rules       = COALESCE($27, escalation_rules),
+         sla_answer_seconds     = COALESCE($28, sla_answer_seconds),
+         data_retention_months  = COALESCE($29, data_retention_months)
        WHERE id = $22
        RETURNING *`,
       [
@@ -185,6 +200,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         teams_webhook    !== undefined ? (teams_webhook || null)    : null,
         escalation_rules !== undefined ? JSON.stringify(escalation_rules) : null,
         sla_answer_seconds !== undefined ? sla_answer_seconds : null,
+        data_retention_months !== undefined ? parseInt(data_retention_months) : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });

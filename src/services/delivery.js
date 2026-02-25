@@ -303,12 +303,14 @@ async function sendSms(toNumber, message) {
   }
 
   const priorityPrefix = message.urgency === 'high' ? 'HIGH PRIORITY: ' : '';
-  const body = [
+  const fullBody = [
     `${priorityPrefix}Message for ${message.client_name}`,
     `From: ${message.caller_name || message.caller_phone || 'Unknown'}`,
     message.subject ? `Re: ${message.subject}` : null,
     message.body,
   ].filter(Boolean).join('\n');
+  // Truncate to 160 chars (single SMS segment) to avoid unexpected multi-part billing
+  const body = fullBody.length > 160 ? fullBody.slice(0, 159) + '\u2026' : fullBody;
 
   await axios.post(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,

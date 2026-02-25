@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validatePassword } = require('./auth');
+const audit = require('../../services/audit');
 
 router.use(requireAuth);
 
@@ -37,6 +38,10 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
        RETURNING id, username, full_name, email, role, is_active, created_at`,
       [username, hash, full_name, email, role]
     );
+    audit.log(req, 'operator.create', {
+      resourceType: 'operator', resourceId: String(result.rows[0].id),
+      details: { username, role, email },
+    });
     res.status(201).json({ operator: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Username or email already exists' });
@@ -65,6 +70,10 @@ router.put('/:id', requireRole('admin'), async (req, res, next) => {
       [full_name, email, role, is_active, hash, req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Operator not found' });
+    audit.log(req, 'operator.update', {
+      resourceType: 'operator', resourceId: req.params.id,
+      details: { fields: Object.keys(req.body).filter((k) => k !== 'password') },
+    });
     res.json({ operator: result.rows[0] });
   } catch (err) {
     next(err);

@@ -7,6 +7,7 @@ const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const pool = require('../../config/database');
 const { requireAuth } = require('../middleware/auth');
+const audit = require('../../services/audit');
 
 /* ---- Simple in-memory rate limiter for auth endpoints ---- */
 const loginAttempts = new Map();
@@ -54,6 +55,37 @@ function validatePassword(password) {
   return null;
 }
 
+/** Read token lifetime from system settings (cached 60 s). Default: 2 h. */
+let _tokenLifetimeCache = { value: 2, ts: 0 };
+async function getTokenLifetimeHours() {
+  if (Date.now() - _tokenLifetimeCache.ts < 60000) return _tokenLifetimeCache.value;
+  try {
+    const r = await pool.query("SELECT value FROM system_settings WHERE key = 'token_lifetime_hours'");
+    const h = parseInt(r.rows[0]?.value, 10);
+    _tokenLifetimeCache = { value: (h >= 1 && h <= 24) ? h : 2, ts: Date.now() };
+  } catch { /* keep cached value */ }
+  return _tokenLifetimeCache.value;
+}
+
+/** Check whether 2FA is required globally (system_settings.require_2fa). */
+let _require2faCache = { value: false, ts: 0 };
+async function isGlobal2FARequired() {
+  if (Date.now() - _require2faCache.ts < 60000) return _require2faCache.value;
+  try {
+    const r = await pool.query("SELECT value FROM system_settings WHERE key = 'require_2fa'");
+    _require2faCache = { value: r.rows[0]?.value === 'true', ts: Date.now() };
+  } catch { /* keep cached */ }
+  return _require2faCache.value;
+}
+
+function signOperatorToken(op, lifetimeHours) {
+  return jwt.sign(
+    { id: op.id, username: op.username, role: op.role },
+    process.env.JWT_SECRET,
+    { algorithm: 'HS256', expiresIn: `${lifetimeHours}h` }
+  );
+}
+
 // POST /api/auth/login
 router.post('/login', rateLimitAuth, async (req, res, next) => {
   try {
@@ -68,35 +100,51 @@ router.post('/login', rateLimitAuth, async (req, res, next) => {
     );
     const operator = result.rows[0];
 
-    if (!operator || !(await bcrypt.compare(password, operator.password_hash))) {
+    // Always run bcrypt even for unknown users (constant-time; prevents timing enumeration)
+    const dummyHash = '$2a$12$notarealthashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const pwOk = await bcrypt.compare(password, operator?.password_hash || dummyHash);
+    if (!operator || !pwOk) {
+      audit.log(req, 'operator.login_failed', {
+        resourceType: 'operator',
+        details: { username, reason: 'invalid_credentials' },
+        actorName: username,
+      });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // If 2FA is enabled, return a short-lived partial token
+    const require2fa = await isGlobal2FARequired();
+    if (require2fa && !operator.totp_enabled) {
+      return res.status(403).json({
+        error: '2FA is required for all operators. Contact your administrator to set up an authenticator app.',
+        requires_2fa_setup: true,
+      });
+    }
+
+    // 2FA second step
     if (operator.totp_enabled && operator.totp_secret) {
       const tempToken = jwt.sign(
         { id: operator.id, phase: '2fa' },
         process.env.JWT_SECRET,
-        { expiresIn: '5m' }
+        { algorithm: 'HS256', expiresIn: '5m' }
       );
       return res.json({ requires_2fa: true, temp_token: tempToken });
     }
 
-    const token = jwt.sign(
-      { id: operator.id, username: operator.username, role: operator.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '12h' }
-    );
+    const lifetimeHours = await getTokenLifetimeHours();
+    const token = signOperatorToken(operator, lifetimeHours);
+
+    req.operator = operator; // set for audit logging
+    audit.log(req, 'operator.login', {
+      resourceType: 'operator', resourceId: String(operator.id),
+    });
 
     res.json({
       token,
+      expiresInHours: lifetimeHours,
       operator: {
-        id: operator.id,
-        username: operator.username,
-        fullName: operator.full_name,
-        email: operator.email,
-        role: operator.role,
-        totp_enabled: operator.totp_enabled,
+        id: operator.id, username: operator.username,
+        fullName: operator.full_name, email: operator.email,
+        role: operator.role, totp_enabled: operator.totp_enabled,
       },
     });
   } catch (err) {
@@ -142,14 +190,18 @@ router.post('/verify-2fa', rateLimitAuth, async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid authentication code' });
     }
 
-    const token = jwt.sign(
-      { id: operator.id, username: operator.username, role: operator.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '12h' }
-    );
+    const lifetimeHours = await getTokenLifetimeHours();
+    const token = signOperatorToken(operator, lifetimeHours);
+
+    req.operator = operator; // set for audit logging
+    audit.log(req, 'operator.login', {
+      resourceType: 'operator', resourceId: String(operator.id),
+      details: { via: '2fa' },
+    });
 
     res.json({
       token,
+      expiresInHours: lifetimeHours,
       operator: {
         id: operator.id,
         username: operator.username,
@@ -167,6 +219,23 @@ router.post('/verify-2fa', rateLimitAuth, async (req, res, next) => {
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
   res.json({ operator: req.operator });
+});
+
+// POST /api/auth/refresh — silently extend an expiring token (no credential re-entry)
+// Call this when the client detects the token is within ~5 min of expiry.
+router.post('/refresh', requireAuth, async (req, res, next) => {
+  try {
+    // Re-check DB to ensure account is still active (catches deactivated accounts)
+    const result = await pool.query(
+      'SELECT id, username, role FROM operators WHERE id = $1 AND is_active = true',
+      [req.operator.id]
+    );
+    if (!result.rows[0]) return res.status(401).json({ error: 'Account is inactive' });
+
+    const lifetimeHours = await getTokenLifetimeHours();
+    const token = signOperatorToken(result.rows[0], lifetimeHours);
+    res.json({ token, expiresInHours: lifetimeHours });
+  } catch (err) { next(err); }
 });
 
 // GET /api/auth/2fa/setup — generate TOTP secret + QR code for current user

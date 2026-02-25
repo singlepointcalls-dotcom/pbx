@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const audit = require('../../services/audit');
 
 router.use(requireAuth);
 
@@ -32,6 +33,10 @@ router.put('/', requireRole('admin'), async (req, res, next) => {
         [key, String(value)]
       );
     }
+    audit.log(req, 'settings.update', {
+      resourceType: 'settings',
+      details: { keys: Object.keys(updates) },
+    });
     res.json({ message: 'Settings saved' });
   } catch (err) { next(err); }
 });
