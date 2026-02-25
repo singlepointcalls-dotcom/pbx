@@ -540,6 +540,7 @@ const App = (() => {
       out_of_office: { text: 'Out of Office', cls: 'avail-out' },
       annual_leave: { text: 'Annual Leave', cls: 'avail-leave' },
       meeting: { text: 'In a Meeting', cls: 'avail-meeting' },
+      closed: { text: 'Closed', cls: 'avail-closed' },
     };
     const info = labels[avail.status] || labels.available;
     bar.className = `avail-badge-inline ${info.cls}`;
@@ -671,7 +672,7 @@ const App = (() => {
     const availBar = el('client-availability-bar');
     if (availBar) {
       if (availability.status !== 'available') {
-        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting' };
+        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting', closed: 'Closed — Outside Business Hours' };
         availBar.textContent = `Status: ${labels[availability.status] || availability.status}${availability.note ? ` — ${availability.note}` : ''}`;
         availBar.className = `avail-bar avail-bar-${availability.status.replace(/_/g, '-')}`;
         availBar.style.display = '';
@@ -680,11 +681,11 @@ const App = (() => {
       }
     }
 
-    // Open/closed badge
+    // Open/closed badge — prefer server-computed is_open when available
     const openBadge = el('sp-open-badge');
     const hasHours = !!(client.opening_times && Object.keys(client.opening_times).length);
     if (openBadge && hasHours) {
-      const isOpen = isCurrentlyInHours(client.opening_times, client.timezone);
+      const isOpen = availability.is_open !== undefined ? availability.is_open : isCurrentlyInHours(client.opening_times, client.timezone);
       openBadge.innerHTML = isOpen ? '&#9679; Open Now' : '&#9679; Closed';
       openBadge.className = `sp-open-badge ${isOpen ? 'sp-open' : 'sp-closed'}`;
       openBadge.style.display = '';
@@ -1588,7 +1589,7 @@ const App = (() => {
 
       // Availability
       if (availability.status !== 'available') {
-        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting' };
+        const labels = { out_of_office: 'Out of Office', annual_leave: 'Annual Leave', meeting: 'In a Meeting', closed: 'Closed — Outside Business Hours' };
         html += `<div class="avail-bar avail-bar-${availability.status.replace(/_/g, '-')}" style="margin-bottom:8px">
           Status: ${labels[availability.status] || availability.status}${availability.note ? ' — ' + escHtml(availability.note) : ''}
         </div>`;

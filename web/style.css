@@ -968,6 +968,8 @@ body {
 .avail-bar-out-of-office { background: var(--warning-light); color: var(--warning); border-left: 3px solid var(--warning); }
 .avail-bar-annual-leave  { background: var(--accent-light);  color: var(--accent);  border-left: 3px solid var(--accent); }
 .avail-bar-meeting       { background: var(--danger-light);  color: var(--danger);  border-left: 3px solid var(--danger); }
+.avail-bar-closed        { background: var(--muted-light, #f0f0f0); color: var(--text-muted); border-left: 3px solid var(--text-muted); }
+.avail-closed            { background: var(--muted-light, #f0f0f0); color: var(--text-muted); }
 
 /* ---- Availability Admin Section ---- */
 .availability-grid {

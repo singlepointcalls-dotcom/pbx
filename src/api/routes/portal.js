@@ -4,6 +4,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../../config/database');
+const { broadcast } = require('../../services/realtime');
 
 /* ---- Shared password validator ---- */
 function validatePassword(password) {
@@ -193,7 +194,9 @@ router.put('/availability', requirePortalAuth, async (req, res, next) => {
        RETURNING *`,
       [req.portalUser.client_id, status || null, note || null]
     );
-    res.json({ availability: result.rows[0] });
+    const avail = result.rows[0];
+    broadcast('client:availability', { client_id: req.portalUser.client_id, availability: avail });
+    res.json({ availability: avail });
   } catch (err) { next(err); }
 });
 
