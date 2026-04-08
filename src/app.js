@@ -30,6 +30,7 @@ const qaRoutes         = require('./api/routes/qa');
 const ackRoutes        = require('./api/routes/ack');
 const pushRoutes       = require('./api/routes/push');
 const auditRoutes      = require('./api/routes/audit-log');
+const knowledgeRoutes  = require('./api/routes/knowledge');
 const { rateLimit }    = require('express-rate-limit');
 
 const app = express();
@@ -130,6 +131,7 @@ app.use('/api/qa',        qaRoutes);
 app.use('/api/ack',       ackRoutes);         // public — no auth
 app.use('/api/push',     pushRoutes);         // Web Push subscription management
 app.use('/api/audit',    auditRoutes);        // Operator audit log (admin/supervisor only)
+app.use('/api/clients', knowledgeRoutes);    // /api/clients/:id/knowledge + /ask
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

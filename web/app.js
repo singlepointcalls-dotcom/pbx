@@ -642,6 +642,7 @@ const App = (() => {
     el('sp-news-section').style.display = 'none';
     el('sp-private-notes-section').style.display = 'none';
     el('sp-caller-history-section').style.display = 'none';
+    el('sp-knowledge-section').style.display = 'none';
     el('client-info-sheets').innerHTML = '';
 
     // Fetch full screenpop data
@@ -814,6 +815,11 @@ const App = (() => {
     if (callerNum) {
       loadCallerHistory(callerNum);
     }
+
+    // Knowledge base
+    if (client.id) {
+      loadKnowledgeArticlesForScreenPop(client.id);
+    }
   }
 
   async function loadClientNews(clientId) {
@@ -866,6 +872,79 @@ const App = (() => {
       container.innerHTML = html;
       section.style.display = '';
     } catch { section.style.display = 'none'; }
+  }
+
+  async function loadKnowledgeArticlesForScreenPop(clientId) {
+    const section = el('sp-knowledge-section');
+    const container = el('sp-knowledge-articles');
+    const answerBox = el('kb-answer-box');
+    const questionInput = el('kb-question-input');
+    if (!section || !container) return;
+
+    // Reset state
+    if (answerBox) answerBox.style.display = 'none';
+    if (questionInput) { questionInput.value = ''; questionInput.dataset.clientId = clientId; }
+
+    try {
+      const data = await api('GET', `/clients/${clientId}/knowledge?include_global=true`);
+      const articles = data.articles || [];
+      if (!articles.length) {
+        section.style.display = 'none';
+        return;
+      }
+      // Group by category
+      const grouped = {};
+      articles.forEach((a) => {
+        const cat = a.category || 'General';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(a);
+      });
+      container.innerHTML = Object.entries(grouped).map(([cat, items]) => `
+        <div class="kb-category-group">
+          <div class="kb-category-label">${escHtml(cat)}</div>
+          ${items.map((a) => `
+            <div class="kb-article-chip" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+              ${escHtml(a.title)}
+            </div>
+            <div class="kb-article-body" style="display:none">${escHtml(a.content)}</div>
+          `).join('')}
+        </div>
+      `).join('');
+      section.style.display = '';
+    } catch { section.style.display = 'none'; }
+  }
+
+  // Called from the screenpop AI ask box
+  async function askKnowledgeBase() {
+    const input = el('kb-question-input');
+    const answerBox = el('kb-answer-box');
+    const askBtn = el('kb-ask-btn');
+    if (!input || !answerBox) return;
+
+    const question = input.value.trim();
+    if (!question) return;
+
+    const clientId = input.dataset.clientId;
+    if (!clientId) { toast('No client context — open a call first', 'danger'); return; }
+
+    askBtn.disabled = true;
+    askBtn.textContent = '…';
+    answerBox.style.display = 'block';
+    answerBox.className = 'kb-answer-box kb-answer-loading';
+    answerBox.innerHTML = '<span class="kb-loading-dots">Thinking</span>';
+
+    try {
+      const data = await api('POST', `/clients/${clientId}/knowledge/ask`, { question });
+      answerBox.className = 'kb-answer-box kb-answer-result';
+      const used = data.articles_used > 0 ? `<div class="kb-answer-meta">${data.articles_used} article${data.articles_used !== 1 ? 's' : ''} referenced</div>` : '';
+      answerBox.innerHTML = `<div class="kb-answer-text">${escHtml(data.answer)}</div>${used}`;
+    } catch (err) {
+      answerBox.className = 'kb-answer-box kb-answer-error';
+      answerBox.innerHTML = `<div class="kb-answer-text">Error: ${escHtml(err.message)}</div>`;
+    } finally {
+      askBtn.disabled = false;
+      askBtn.textContent = 'Ask AI';
+    }
   }
 
   function renderScreenPopContacts(contacts, openingTimes, timezone) {
@@ -2261,6 +2340,8 @@ const App = (() => {
     enablePushNotifications, dismissPushPrompt, togglePushNotifications,
     // Caller ID hint
     onCallerPhoneChanged, confirmCallerPhone,
+    // Knowledge base
+    askKnowledgeBase,
     _api: api,
     _toast: toast,
     _escHtml: escHtml,
@@ -2311,6 +2392,7 @@ const Admin = (() => {
     else if (name === 'settings') loadSettings();
     else if (name === 'performance') loadPerformance();
     else if (name === 'canned') loadCannedResponses();
+    else if (name === 'knowledge') loadKnowledgeSection();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -3926,6 +4008,140 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Knowledge Base ---- */
+  let editingArticleId = null;
+
+  function loadKnowledgeSection() {
+    // Populate client select if empty
+    const sel = el('kb-admin-client-select');
+    if (sel && sel.options.length <= 1) {
+      allClients.forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.id; opt.textContent = c.name;
+        sel.appendChild(opt);
+      });
+    }
+    loadKnowledgeArticles();
+  }
+
+  async function loadKnowledgeArticles() {
+    const tbody = el('kb-tbody');
+    if (!tbody) return;
+    const clientId = el('kb-admin-client-select')?.value || '';
+    const search   = el('kb-admin-search')?.value.trim() || '';
+
+    if (!clientId) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Select a client to view articles.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      let url = `/clients/${clientId}/knowledge?include_global=true`;
+      if (search) url += `&search=${encodeURIComponent(search)}`;
+      const data = await api('GET', url);
+      const rows = data.articles || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No articles yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((a) => `
+        <tr>
+          <td>${escHtml(a.title)}</td>
+          <td>${escHtml(a.client_name || (a.client_id ? '—' : 'Global'))}</td>
+          <td>${escHtml(a.category || '—')}</td>
+          <td style="font-size:0.75rem">${(a.tags || []).map((t) => `<span class="kb-tag">${escHtml(t)}</span>`).join(' ')}</td>
+          <td>${a.is_active ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--text-muted)">Inactive</span>'}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary" onclick="Admin.openKnowledgeModal('${escHtml(a.id)}','${escHtml(clientId)}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="Admin.deleteKnowledgeArticle('${escHtml(a.id)}','${escHtml(clientId)}')">Del</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function openKnowledgeModal(articleId, contextClientId) {
+    editingArticleId = articleId || null;
+    el('kb-modal-title').textContent = articleId ? 'Edit Knowledge Article' : 'Add Knowledge Article';
+    el('kb-modal-title-input').value = '';
+    el('kb-modal-category').value = '';
+    el('kb-modal-tags').value = '';
+    el('kb-modal-content').value = '';
+
+    // Populate client select
+    const clientSel = el('kb-modal-client');
+    if (clientSel.options.length <= 1) {
+      allClients.forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.id; opt.textContent = c.name;
+        clientSel.appendChild(opt);
+      });
+    }
+    clientSel.value = contextClientId || el('kb-admin-client-select')?.value || '';
+
+    if (articleId && contextClientId) {
+      try {
+        const data = await api('GET', `/clients/${contextClientId}/knowledge/${articleId}`);
+        const a = data.article;
+        if (a) {
+          el('kb-modal-title-input').value = a.title;
+          el('kb-modal-category').value    = a.category || '';
+          el('kb-modal-tags').value        = (a.tags || []).join(', ');
+          el('kb-modal-content').value     = a.content;
+          clientSel.value                  = a.client_id || '';
+        }
+      } catch { /* ignore */ }
+    }
+    el('kb-modal').style.display = 'flex';
+  }
+
+  function closeKnowledgeModal() {
+    el('kb-modal').style.display = 'none';
+    editingArticleId = null;
+  }
+
+  async function saveKnowledgeArticle() {
+    const title    = el('kb-modal-title-input').value.trim();
+    const content  = el('kb-modal-content').value.trim();
+    const category = el('kb-modal-category').value.trim() || null;
+    const tagsRaw  = el('kb-modal-tags').value.trim();
+    const tags     = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+    const clientId = el('kb-modal-client').value || null;
+
+    if (!title)   { toast('Title is required', 'danger'); return; }
+    if (!content) { toast('Content is required', 'danger'); return; }
+    if (!clientId) { toast('Please select a client', 'danger'); return; }
+
+    const body = { title, content, category, tags };
+    try {
+      if (editingArticleId) {
+        await api('PUT', `/clients/${clientId}/knowledge/${editingArticleId}`, body);
+        toast('Article updated', 'success');
+      } else {
+        await api('POST', `/clients/${clientId}/knowledge`, body);
+        toast('Article created', 'success');
+      }
+      closeKnowledgeModal();
+      loadKnowledgeArticles();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function deleteKnowledgeArticle(articleId, clientId) {
+    if (!confirm('Delete this knowledge article?')) return;
+    try {
+      await api('DELETE', `/clients/${clientId}/knowledge/${articleId}`);
+      toast('Article deleted', 'info');
+      loadKnowledgeArticles();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -3954,6 +4170,8 @@ const Admin = (() => {
     loadPerformance,
     // Canned
     loadCannedResponses, openCannedModal, closeCannedModal, saveCannedResponse, deleteCannedResponse,
+    // Knowledge Base
+    loadKnowledgeArticles, openKnowledgeModal, closeKnowledgeModal, saveKnowledgeArticle, deleteKnowledgeArticle,
   };
 
 })();
