@@ -1,8 +1,10 @@
 'use strict';
 
+const crypto = require('crypto');
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const pool = require('../../config/database');
 const { broadcast } = require('../../services/realtime');
 
@@ -221,6 +223,103 @@ router.post('/me/password', requirePortalAuth, async (req, res, next) => {
     const hash = await bcrypt.hash(new_password, 12);
     await pool.query('UPDATE client_portal_users SET password_hash = $1 WHERE id = $2', [hash, req.portalUser.id]);
     res.json({ message: 'Password updated' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/password-reset/request — send reset link to portal user email
+// Rate-limited by the same in-memory map used for login; no auth required.
+router.post('/password-reset/request', rateLimitPortal, async (req, res, next) => {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: 'username required' });
+
+    // Always return success to avoid user enumeration
+    const result = await pool.query(
+      'SELECT cpu.*, c.name AS client_name FROM client_portal_users cpu JOIN clients c ON cpu.client_id = c.id WHERE cpu.username = $1 AND cpu.is_active = true',
+      [username]
+    );
+    const user = result.rows[0];
+
+    if (user && user.email) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = await bcrypt.hash(rawToken, 10);
+
+      await pool.query(
+        `INSERT INTO portal_reset_tokens (portal_user_id, token_hash, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+        [user.id, tokenHash]
+      );
+
+      const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+      const resetUrl = `${appUrl}/portal.html?reset=${rawToken}&user=${encodeURIComponent(username)}`;
+
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+        });
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          to: user.email,
+          subject: 'Portal password reset',
+          text: `You requested a password reset for your ${user.client_name} portal account.\n\nClick the link below to set a new password (valid for 24 hours):\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
+          html: `<p>You requested a password reset for your <strong>${user.client_name}</strong> portal account.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in 24 hours. If you did not request this, please ignore this email.</p>`,
+        });
+      } catch (mailErr) {
+        console.error('[Portal] Password reset email failed:', mailErr.message);
+        // Don't expose mail errors to the caller
+      }
+    }
+
+    res.json({ message: 'If that username exists with an email on file, a reset link has been sent.' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/password-reset/confirm — validate token and set new password
+router.post('/password-reset/confirm', async (req, res, next) => {
+  try {
+    const { username, token, new_password } = req.body;
+    if (!username || !token || !new_password) {
+      return res.status(400).json({ error: 'username, token, and new_password are required' });
+    }
+    const pwErr = validatePassword(new_password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+
+    const userResult = await pool.query(
+      'SELECT id FROM client_portal_users WHERE username = $1 AND is_active = true',
+      [username]
+    );
+    const user = userResult.rows[0];
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
+
+    const tokenResult = await pool.query(
+      `SELECT id, token_hash FROM portal_reset_tokens
+       WHERE portal_user_id = $1 AND used_at IS NULL AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 10`,
+      [user.id]
+    );
+
+    let matchedTokenId = null;
+    for (const row of tokenResult.rows) {
+      if (await bcrypt.compare(token, row.token_hash)) {
+        matchedTokenId = row.id;
+        break;
+      }
+    }
+
+    if (!matchedTokenId) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const hash = await bcrypt.hash(new_password, 12);
+    await Promise.all([
+      pool.query('UPDATE client_portal_users SET password_hash = $1 WHERE id = $2', [hash, user.id]),
+      pool.query('UPDATE portal_reset_tokens SET used_at = NOW() WHERE id = $1', [matchedTokenId]),
+    ]);
+
+    res.json({ message: 'Password has been reset. You can now log in.' });
   } catch (err) { next(err); }
 });
 

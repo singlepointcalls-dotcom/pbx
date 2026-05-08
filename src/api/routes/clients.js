@@ -285,5 +285,90 @@ router.get('/by-did/:did', async (req, res, next) => {
   }
 });
 
+// ---- Client Webhook management ----
+
+// GET /api/clients/:id/webhooks
+router.get('/:id/webhooks', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, client_id, url, is_active, created_at FROM client_webhooks WHERE client_id = $1 ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    res.json({ webhooks: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/clients/:id/webhooks
+router.post('/:id/webhooks', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { url, secret } = req.body;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    let parsedUrl;
+    try { parsedUrl = new URL(url); } catch {
+      return res.status(400).json({ error: 'url is not a valid URL' });
+    }
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({ error: 'url must use http or https' });
+    }
+
+    // Verify the client exists
+    const clientCheck = await pool.query('SELECT id FROM clients WHERE id = $1', [req.params.id]);
+    if (!clientCheck.rows[0]) return res.status(404).json({ error: 'Client not found' });
+
+    const result = await pool.query(
+      `INSERT INTO client_webhooks (client_id, url, secret)
+       VALUES ($1, $2, $3)
+       RETURNING id, client_id, url, is_active, created_at`,
+      [req.params.id, url, secret || null]
+    );
+    res.status(201).json({ webhook: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/clients/:id/webhooks/:webhookId
+router.put('/:id/webhooks/:webhookId', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { url, is_active } = req.body;
+    const updateSecret = 'secret' in req.body;
+
+    if (url !== undefined) {
+      let parsedUrl;
+      try { parsedUrl = new URL(url); } catch {
+        return res.status(400).json({ error: 'url is not a valid URL' });
+      }
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return res.status(400).json({ error: 'url must use http or https' });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE client_webhooks SET
+         url       = COALESCE($1, url),
+         secret    = CASE WHEN $2 THEN $3::text ELSE secret END,
+         is_active = COALESCE($4, is_active)
+       WHERE id = $5 AND client_id = $6
+       RETURNING id, client_id, url, is_active, created_at`,
+      [url || null, updateSecret, req.body.secret || null,
+       is_active !== undefined ? is_active : null,
+       req.params.webhookId, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Webhook not found' });
+    res.json({ webhook: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/clients/:id/webhooks/:webhookId
+router.delete('/:id/webhooks/:webhookId', requireRole('admin'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM client_webhooks WHERE id = $1 AND client_id = $2 RETURNING id',
+      [req.params.webhookId, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Webhook not found' });
+    res.json({ message: 'Webhook deleted' });
+  } catch (err) { next(err); }
+});
+
 router._isWithinBusinessHours = isWithinBusinessHours;
 module.exports = router;
