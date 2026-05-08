@@ -1,0 +1,157 @@
+name: Build & Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RESOURCE_GROUP: pbx-rg
+  APP_NAME: pbx
+
+jobs:
+  # ── Tests ────────────────────────────────────────────────────────────────────
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm test
+
+  # ── Build & push image ───────────────────────────────────────────────────────
+  build:
+    name: Build & push Docker image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build metadata
+        id: meta
+        run: |
+          SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:${SHA}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        run: |
+          docker build -t "${{ steps.meta.outputs.image }}" \
+                       -t "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:latest" .
+          docker push "${{ steps.meta.outputs.image }}"
+          docker push "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.APP_NAME }}:latest"
+
+  # ── Infrastructure ───────────────────────────────────────────────────────────
+  infra:
+    name: Deploy infrastructure (Bicep)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create resource group (idempotent)
+        run: |
+          az group create \
+            --name "${{ env.RESOURCE_GROUP }}" \
+            --location uksouth \
+            --output none
+
+      - name: Deploy Bicep template
+        run: |
+          az deployment group create \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters \
+                appName="${{ env.APP_NAME }}" \
+                containerImage="${{ needs.build.outputs.image }}" \
+                dbAdminUser="${{ secrets.DB_ADMIN_USER }}" \
+                dbAdminPassword="${{ secrets.DB_ADMIN_PASSWORD }}" \
+                jwtSecret="${{ secrets.JWT_SECRET }}" \
+                portalJwtSecret="${{ secrets.PORTAL_JWT_SECRET }}" \
+                ariHost="${{ secrets.ARI_HOST }}" \
+                ariPassword="${{ secrets.ARI_PASSWORD }}" \
+                smtpHost="${{ secrets.SMTP_HOST }}" \
+                smtpPort="${{ secrets.SMTP_PORT }}" \
+                smtpUser="${{ secrets.SMTP_USER }}" \
+                smtpPassword="${{ secrets.SMTP_PASSWORD }}" \
+                smtpFrom="${{ secrets.SMTP_FROM }}" \
+                twilioSid="${{ secrets.TWILIO_ACCOUNT_SID }}" \
+                twilioToken="${{ secrets.TWILIO_AUTH_TOKEN }}" \
+                twilioFrom="${{ secrets.TWILIO_FROM_NUMBER }}" \
+                appUrl="${{ secrets.APP_URL }}" \
+            --output none
+
+  # ── Database migrations ──────────────────────────────────────────────────────
+  migrate:
+    name: Run DB migrations
+    runs-on: ubuntu-latest
+    needs: infra
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci --omit=dev
+
+      - name: Run migrations via Container App Job
+        run: |
+          az containerapp job create \
+            --name pbx-migrate \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --environment pbx-env \
+            --image "${{ needs.build.outputs.image }}" \
+            --replica-timeout 300 \
+            --replica-retry-limit 1 \
+            --trigger-type Manual \
+            --command "node" \
+            --args "src/db/migrate.js" \
+            --env-vars \
+                DB_HOST=secretref:db-host \
+                DB_PORT=5432 \
+                DB_NAME=answering_service \
+                DB_USER=secretref:db-user \
+                DB_PASSWORD=secretref:db-password \
+                DB_SSL=true \
+            2>/dev/null || true
+          az containerapp job start \
+            --name pbx-migrate \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --output none
