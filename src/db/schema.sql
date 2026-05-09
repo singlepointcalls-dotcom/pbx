@@ -795,3 +795,65 @@ INSERT INTO script_templates (industry, name, greeting, script, is_system) VALUE
  true)
 ON CONFLICT DO NOTHING;
 
+-- ============================================================
+-- v13: Knowledge base, DNC list, CRM config, inbound email log
+-- ============================================================
+
+-- Per-client knowledge base articles (FAQs, procedures, reference)
+CREATE TABLE IF NOT EXISTS knowledge_articles (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID REFERENCES clients(id) ON DELETE CASCADE,  -- NULL = global
+    title       VARCHAR(500) NOT NULL,
+    body        TEXT NOT NULL,
+    category    VARCHAR(100),
+    tags        TEXT[] NOT NULL DEFAULT '{}',
+    is_published BOOLEAN NOT NULL DEFAULT true,
+    created_by  UUID REFERENCES operators(id) ON DELETE SET NULL,
+    updated_by  UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_client    ON knowledge_articles(client_id);
+CREATE INDEX IF NOT EXISTS idx_kb_category  ON knowledge_articles(client_id, category);
+CREATE INDEX IF NOT EXISTS idx_kb_published ON knowledge_articles(is_published);
+CREATE INDEX IF NOT EXISTS idx_kb_fts       ON knowledge_articles
+    USING gin(to_tsvector('english', title || ' ' || body));
+
+-- Do Not Call list (per-client or global)
+CREATE TABLE IF NOT EXISTS dnc_numbers (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id  UUID REFERENCES clients(id) ON DELETE CASCADE,  -- NULL = global
+    phone      VARCHAR(50) NOT NULL,
+    reason     VARCHAR(255),
+    added_by   UUID REFERENCES operators(id) ON DELETE SET NULL,
+    expires_at TIMESTAMPTZ,  -- NULL = permanent
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_dnc_client_phone ON dnc_numbers(COALESCE(client_id::text,'global'), phone);
+CREATE INDEX IF NOT EXISTS idx_dnc_phone ON dnc_numbers(phone);
+
+-- CRM config per client (type + opaque JSONB to store creds without extra columns)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_type      VARCHAR(50);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_config    JSONB;
+-- Inbound email address for this client (e.g. demo001@answers.spcalls.co.uk)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS inbound_email VARCHAR(500);
+
+-- Inbound email log (emails received via webhook, converted to messages)
+CREATE TABLE IF NOT EXISTS inbound_emails (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id     UUID REFERENCES clients(id) ON DELETE SET NULL,
+    message_id    UUID REFERENCES messages(id) ON DELETE SET NULL,
+    from_address  VARCHAR(500) NOT NULL,
+    to_address    VARCHAR(500) NOT NULL,
+    subject       VARCHAR(1000),
+    body_text     TEXT,
+    provider      VARCHAR(30) NOT NULL DEFAULT 'generic',
+    provider_id   VARCHAR(500),
+    raw_headers   JSONB,
+    processed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_inbound_email_client ON inbound_emails(client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inbound_email_from   ON inbound_emails(from_address);
+
+

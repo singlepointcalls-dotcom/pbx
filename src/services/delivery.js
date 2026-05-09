@@ -207,6 +207,8 @@ async function sendHaloPsaTicket(message, client) {
   );
 }
 
+const { pushMessageToCrm } = require('./crm');
+
 async function deliverMessage(messageId) {
   const msgResult = await pool.query(
     `SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
@@ -215,6 +217,7 @@ async function deliverMessage(messageId) {
             c.whatsapp_number, c.slack_webhook, c.teams_webhook, c.telegram_chat_id,
             c.halo_psa_url, c.halo_oauth_client_id, c.halo_oauth_client_secret,
             c.halo_customer_id, c.halo_ticket_type_id,
+            c.crm_type, c.crm_config,
             c.id AS client_row_id
      FROM messages m
      JOIN clients c ON m.client_id = c.id
@@ -377,6 +380,20 @@ async function deliverMessage(messageId) {
   const inappDeliveryId = await createDeliveryRecord(messageId, null, 'inapp', null);
   await updateDelivery(inappDeliveryId, 'sent');
   deliveryResults.push({ channel: 'inapp', status: 'sent' });
+
+  // CRM push (fire-and-forget — crm failures do not affect message status)
+  if (message.crm_type && message.crm_config) {
+    const crmClient = {
+      id: message.client_row_id,
+      crm_type: message.crm_type,
+      crm_config: message.crm_config,
+    };
+    pushMessageToCrm(message, crmClient).then((result) => {
+      if (result) deliveryResults.push({ channel: 'crm', crm: message.crm_type, status: 'sent' });
+    }).catch((err) => {
+      console.warn(`CRM push failed for message ${messageId}:`, err.message);
+    });
+  }
 
   // Web Push — notify portal users of this client and all online operators
   const pushBody = message.caller_name

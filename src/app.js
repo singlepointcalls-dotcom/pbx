@@ -35,6 +35,10 @@ const smsRoutes           = require('./api/routes/sms');
 const callbackRoutes      = require('./api/routes/callbacks');
 const scriptRoutes        = require('./api/routes/scripts');
 const whatsappRoutes      = require('./api/routes/whatsapp');
+const aiRoutes            = require('./api/routes/ai');
+const emailInboundRoutes  = require('./api/routes/email-inbound');
+const knowledgeRoutes     = require('./api/routes/knowledge');
+const dncRoutes           = require('./api/routes/dnc');
 const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
@@ -139,7 +143,11 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/sms',          smsRoutes);
 app.use('/api/callbacks',    callbackRoutes);
 app.use('/api/scripts',      scriptRoutes);
-app.use('/api/whatsapp',     whatsappRoutes);  // public webhook + auth routes
+app.use('/api/whatsapp',     whatsappRoutes);
+app.use('/api/ai',          aiRoutes);
+app.use('/api/email/inbound', emailInboundRoutes); // public — no auth (verified by provider sig)
+app.use('/api/knowledge',   knowledgeRoutes);
+app.use('/api/dnc',         dncRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
