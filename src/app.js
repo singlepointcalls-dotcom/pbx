@@ -39,6 +39,13 @@ const aiRoutes            = require('./api/routes/ai');
 const emailInboundRoutes  = require('./api/routes/email-inbound');
 const knowledgeRoutes     = require('./api/routes/knowledge');
 const dncRoutes           = require('./api/routes/dnc');
+const operatorSkillsRoutes = require('./api/routes/operator-skills');
+const routingRulesRoutes   = require('./api/routes/routing-rules');
+const transcriptionRoutes  = require('./api/routes/transcription');
+const portalApiKeysRoutes  = require('./api/routes/portal-api-keys');
+const didRoutes            = require('./api/routes/dids');
+const analyticsRoutes      = require('./api/routes/analytics');
+const leaderboardRoutes    = require('./api/routes/leaderboard');
 const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
@@ -148,6 +155,13 @@ app.use('/api/ai',          aiRoutes);
 app.use('/api/email/inbound', emailInboundRoutes); // public — no auth (verified by provider sig)
 app.use('/api/knowledge',   knowledgeRoutes);
 app.use('/api/dnc',         dncRoutes);
+app.use('/api/operator-skills', operatorSkillsRoutes);
+app.use('/api/routing-rules',   routingRulesRoutes);
+app.use('/api/transcription',   transcriptionRoutes);
+app.use('/api/portal/api-keys', portalApiKeysRoutes);
+app.use('/api/dids',            didRoutes);
+app.use('/api/analytics',       analyticsRoutes);
+app.use('/api/leaderboard',     leaderboardRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));

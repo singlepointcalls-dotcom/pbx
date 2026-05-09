@@ -108,4 +108,26 @@ router.post('/generate-script', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/ai/translate — translate text to target language
+router.post('/translate', async (req, res, next) => {
+  try {
+    const { text, target_language = 'en' } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const translated = await ai.translateText(text, target_language);
+    if (!translated) return res.status(503).json({ error: 'AI not available' });
+    res.json({ translated, target_language });
+  } catch (err) { next(err); }
+});
+
+// POST /api/ai/detect-language — detect ISO 639-1 language of text
+router.post('/detect-language', async (req, res, next) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const lang = await ai.detectLanguage(text);
+    if (!lang) return res.status(503).json({ error: 'AI not available' });
+    res.json({ language: lang });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

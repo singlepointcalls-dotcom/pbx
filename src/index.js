@@ -8,6 +8,7 @@ const { initSocketIO } = require('./services/realtime');
 const { connectARI } = require('./asterisk/ari');
 const { startEscalationService } = require('./services/escalation');
 const { startRetentionService }  = require('./services/retention');
+const { startImapPolling }       = require('./services/email-imap');
 const pushService                = require('./services/push');
 
 const PORT = parseInt(process.env.PORT || '3000');

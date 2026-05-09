@@ -150,4 +150,46 @@ async function generateScript(clientInfo) {
   }
 }
 
-module.exports = { summariseMessage, classifyMessage, suggestReply, detectSentiment, extractEntities, generateScript };
+/**
+ * Translate text to a target language (ISO code, e.g. 'en', 'es', 'fr', 'pl').
+ * Returns the translated string or null on failure.
+ */
+async function translateText(text, targetLang = 'en') {
+  const ai = getClient();
+  if (!ai) return null;
+  try {
+    const resp = await ai.messages.create({
+      model: MODEL,
+      max_tokens: Math.min(1000, text.length * 3),
+      system: `You are a professional translator. Translate the user's text to ${targetLang}. Preserve names, numbers, and formatting. Output the translation only — no preamble.`,
+      messages: [{ role: 'user', content: text }],
+    });
+    return resp.content[0]?.text?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect the language of a piece of text. Returns ISO 639-1 code or null.
+ */
+async function detectLanguage(text) {
+  const ai = getClient();
+  if (!ai) return null;
+  try {
+    const resp = await ai.messages.create({
+      model: MODEL,
+      max_tokens: 10,
+      system: 'Reply with the ISO 639-1 two-letter language code only. No other text.',
+      messages: [{ role: 'user', content: text.slice(0, 500) }],
+    });
+    return (resp.content[0]?.text?.trim() || '').toLowerCase().slice(0, 2) || null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = {
+  summariseMessage, classifyMessage, suggestReply, detectSentiment,
+  extractEntities, generateScript, translateText, detectLanguage,
+};

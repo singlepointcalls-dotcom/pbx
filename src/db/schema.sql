@@ -856,4 +856,71 @@ CREATE TABLE IF NOT EXISTS inbound_emails (
 CREATE INDEX IF NOT EXISTS idx_inbound_email_client ON inbound_emails(client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_inbound_email_from   ON inbound_emails(from_address);
 
+-- ============================================================
+-- v14: Skills, routing rules, voicemail transcripts, DIDs, API keys
+-- ============================================================
+
+-- Operator skills (e.g. languages, certifications, verticals)
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS skills           TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(20) DEFAULT 'en';
+
+-- Voicemail transcript on call_logs
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS recording_transcript TEXT;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS transcript_summary   TEXT;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS transcribed_at       TIMESTAMPTZ;
+
+-- Geographic / area-code routing rules
+CREATE TABLE IF NOT EXISTS routing_rules (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            VARCHAR(255) NOT NULL,
+    match_area_code VARCHAR(20),    -- e.g. '01604' (UK Northampton) or '+44'
+    match_country   VARCHAR(10),    -- ISO country code, e.g. 'GB', 'US'
+    match_did       VARCHAR(50),    -- match by called DID
+    client_id       UUID REFERENCES clients(id) ON DELETE CASCADE,
+    target_skills   TEXT[] NOT NULL DEFAULT '{}',
+    priority        INTEGER NOT NULL DEFAULT 100,  -- lower = higher priority
+    is_active       BOOLEAN NOT NULL DEFAULT true,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_routing_priority ON routing_rules(priority) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_routing_area     ON routing_rules(match_area_code);
+CREATE INDEX IF NOT EXISTS idx_routing_did      ON routing_rules(match_did);
+
+-- DID (number) management — central registry of every phone number this service answers
+CREATE TABLE IF NOT EXISTS did_numbers (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    number            VARCHAR(50) NOT NULL UNIQUE,
+    label             VARCHAR(255),
+    client_id         UUID REFERENCES clients(id) ON DELETE SET NULL,
+    greeting_override TEXT,
+    routing_profile   VARCHAR(100),
+    provider          VARCHAR(50),       -- 'twilio', 'sipgate', 'gradwell', etc.
+    provider_sid      VARCHAR(255),      -- provider's number SID
+    monthly_cost      DECIMAL(10,2),
+    is_active         BOOLEAN NOT NULL DEFAULT true,
+    notes             TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_did_client ON did_numbers(client_id);
+CREATE INDEX IF NOT EXISTS idx_did_active ON did_numbers(is_active);
+
+-- API keys for client portal users (programmatic access to their own data)
+CREATE TABLE IF NOT EXISTS portal_api_keys (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    portal_user_id  UUID NOT NULL REFERENCES client_portal_users(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    key_hash        VARCHAR(255) NOT NULL UNIQUE,  -- bcrypt of plaintext key
+    key_prefix      VARCHAR(20) NOT NULL,          -- first 8 chars shown in UI
+    scopes          JSONB NOT NULL DEFAULT '["messages:read"]',
+    last_used_at    TIMESTAMPTZ,
+    expires_at      TIMESTAMPTZ,                   -- NULL = never expires
+    revoked_at      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_portal_key_user ON portal_api_keys(portal_user_id);
+CREATE INDEX IF NOT EXISTS idx_portal_key_active ON portal_api_keys(portal_user_id) WHERE revoked_at IS NULL;
+
+
 
