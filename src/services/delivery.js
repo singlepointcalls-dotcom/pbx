@@ -310,15 +310,7 @@ async function deliverMessage(messageId) {
   return deliveryResults;
 }
 
-async function sendSms(toNumber, message) {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
-
-  if (!accountSid || !authToken || !from) {
-    throw new Error('Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)');
-  }
-
+function formatSmsBody(message) {
   const priorityPrefix = message.urgency === 'high' ? 'HIGH PRIORITY: ' : '';
   const fullBody = [
     `${priorityPrefix}Message for ${message.client_name}`,
@@ -327,11 +319,38 @@ async function sendSms(toNumber, message) {
     message.body,
   ].filter(Boolean).join('\n');
   // Truncate to 160 chars (single SMS segment) to avoid unexpected multi-part billing
-  const body = fullBody.length > 160 ? fullBody.slice(0, 159) + '\u2026' : fullBody;
+  return fullBody.length > 160 ? fullBody.slice(0, 159) + '\u2026' : fullBody;
+}
+
+async function sendSmsViaWebexInteract(toNumber, message) {
+  const apiKey = process.env.WEBEX_INTERACT_API_KEY;
+  const senderId = process.env.WEBEX_INTERACT_SENDER_ID;
+  if (!apiKey || !senderId) {
+    throw new Error('WEBEX_INTERACT_API_KEY and WEBEX_INTERACT_SENDER_ID must both be set');
+  }
+  await axios.post(
+    'https://api.webexinteract.com/v1/sms',
+    { from: senderId, to: [{ phone: [toNumber] }], message_body: formatSmsBody(message) },
+    { headers: { 'X-AUTH-KEY': apiKey, 'Content-Type': 'application/json' }, timeout: 10000 }
+  );
+}
+
+async function sendSms(toNumber, message) {
+  if (process.env.WEBEX_INTERACT_API_KEY) {
+    return sendSmsViaWebexInteract(toNumber, message);
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = process.env.TWILIO_FROM_NUMBER;
+
+  if (!accountSid || !authToken || !from) {
+    throw new Error('Twilio credentials not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)');
+  }
 
   await axios.post(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    new URLSearchParams({ From: from, To: toNumber, Body: body }),
+    new URLSearchParams({ From: from, To: toNumber, Body: formatSmsBody(message) }),
     {
       auth: { username: accountSid, password: authToken },
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
