@@ -645,3 +645,153 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_oauth_client_id VARCHAR(255);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_oauth_client_secret TEXT;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_customer_id INTEGER;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_ticket_type_id INTEGER;
+
+-- ============================================================
+-- v9: Appointment scheduling
+-- ============================================================
+CREATE TABLE IF NOT EXISTS appointments (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id        UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    message_id       UUID REFERENCES messages(id) ON DELETE SET NULL,
+    operator_id      UUID REFERENCES operators(id) ON DELETE SET NULL,
+    caller_name      VARCHAR(255),
+    caller_phone     VARCHAR(50),
+    caller_email     VARCHAR(255),
+    appointment_at   TIMESTAMPTZ NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 30,
+    service_type     VARCHAR(255),
+    notes            TEXT,
+    status           VARCHAR(30) NOT NULL DEFAULT 'confirmed'
+                         CHECK (status IN ('confirmed','cancelled','completed','no_show','rescheduled')),
+    reminder_sent_at TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_appt_client  ON appointments(client_id, appointment_at);
+CREATE INDEX IF NOT EXISTS idx_appt_status  ON appointments(status);
+CREATE INDEX IF NOT EXISTS idx_appt_at      ON appointments(appointment_at);
+
+-- ============================================================
+-- v10: Two-way SMS inbox
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sms_messages (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id           UUID REFERENCES clients(id) ON DELETE SET NULL,
+    direction           VARCHAR(10) NOT NULL CHECK (direction IN ('inbound','outbound')),
+    from_number         VARCHAR(50) NOT NULL,
+    to_number           VARCHAR(50) NOT NULL,
+    body                TEXT NOT NULL,
+    provider            VARCHAR(30) NOT NULL DEFAULT 'twilio',
+    provider_message_id VARCHAR(255),
+    status              VARCHAR(30) NOT NULL DEFAULT 'received'
+                            CHECK (status IN ('received','read','replied','sent','failed')),
+    operator_id         UUID REFERENCES operators(id) ON DELETE SET NULL,
+    related_message_id  UUID REFERENCES messages(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sms_client  ON sms_messages(client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sms_from    ON sms_messages(from_number, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sms_thread  ON sms_messages(from_number, to_number);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sms_provider_id ON sms_messages(provider, provider_message_id)
+    WHERE provider_message_id IS NOT NULL;
+
+-- ============================================================
+-- v11: Outbound callback campaigns
+-- ============================================================
+CREATE TABLE IF NOT EXISTS callback_campaigns (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id              UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name                   VARCHAR(255) NOT NULL,
+    description            TEXT,
+    status                 VARCHAR(30) NOT NULL DEFAULT 'draft'
+                               CHECK (status IN ('draft','active','paused','completed','cancelled')),
+    script                 TEXT,
+    from_number            VARCHAR(50),
+    max_attempts           INTEGER NOT NULL DEFAULT 3,
+    retry_interval_minutes INTEGER NOT NULL DEFAULT 60,
+    created_by             UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_campaign_client ON callback_campaigns(client_id);
+
+CREATE TABLE IF NOT EXISTS callback_records (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id     UUID NOT NULL REFERENCES callback_campaigns(id) ON DELETE CASCADE,
+    phone_number    VARCHAR(50) NOT NULL,
+    caller_name     VARCHAR(255),
+    notes           TEXT,
+    status          VARCHAR(30) NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','in_progress','completed','failed','opted_out')),
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
+    next_attempt_at TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    outcome_notes   TEXT,
+    operator_id     UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cbrecord_campaign ON callback_records(campaign_id, status);
+CREATE INDEX IF NOT EXISTS idx_cbrecord_next     ON callback_records(next_attempt_at)
+    WHERE status = 'pending';
+
+-- ============================================================
+-- v12: Script template library
+-- ============================================================
+CREATE TABLE IF NOT EXISTS script_templates (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    industry         VARCHAR(100) NOT NULL,
+    name             VARCHAR(255) NOT NULL,
+    greeting         TEXT,
+    script           TEXT NOT NULL,
+    custom_form      JSONB NOT NULL DEFAULT '[]',
+    delivery_actions JSONB NOT NULL DEFAULT '{"email":true,"sms":false,"phone_call":true}',
+    is_system        BOOLEAN NOT NULL DEFAULT false,
+    created_by       UUID REFERENCES operators(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_template_industry ON script_templates(industry);
+
+-- Seed built-in industry templates (idempotent)
+INSERT INTO script_templates (industry, name, greeting, script, is_system) VALUES
+('medical',
+ 'GP Surgery / Medical Practice',
+ 'Thank you for calling {{client_name}}. You''re through to the out-of-hours answering service.',
+ E'Please take:\n- Patient full name\n- Date of birth\n- Contact number\n- Symptom / reason for calling\n- Whether they consider this urgent or can wait\n\nFor life-threatening emergencies: advise caller to dial 999 immediately.\nFor urgent (non-999): page the on-call GP and pass the message.\nFor routine: take message, advise callback within 2 working hours.',
+ true),
+('legal',
+ 'Law Firm / Solicitors',
+ 'Good {{time_of_day}}, you have reached {{client_name}}. Our office is currently closed. I''m taking messages on their behalf.',
+ E'Please take:\n- Caller full name\n- Company / organisation (if applicable)\n- Contact number and best time to call\n- Matter reference number (if known)\n- Nature of enquiry (brief description)\n- Urgency: routine / today / urgent\n\nDo NOT give legal advice.\nFor urgent matters involving court deadlines or custody: escalate to on-call solicitor immediately.',
+ true),
+('property',
+ 'Estate Agency / Property Management',
+ 'Hello, you''re through to the answering service for {{client_name}}.',
+ E'Please take:\n- Caller full name\n- Contact number\n- Property address or reference (if applicable)\n- Nature of enquiry:\n  □ Viewing request\n  □ Maintenance / repair\n  □ Rent / payment query\n  □ General enquiry\n\nFor maintenance emergencies (gas leak, flood, no heating in winter): contact the on-call maintenance team immediately.',
+ true),
+('veterinary',
+ 'Veterinary Practice',
+ 'Thank you for calling {{client_name}} out-of-hours service.',
+ E'Please take:\n- Owner full name and contact number\n- Pet name, species and breed\n- Description of the problem\n- How long the animal has been unwell\n- Whether the animal is conscious and breathing normally\n\nFor life-threatening emergencies (difficulty breathing, collapse, suspected poisoning, road accident): direct to the nearest emergency vet or advise on-call vet immediately.\nFor non-emergency: take message, advise callback within 1 hour.',
+ true),
+('funeral',
+ 'Funeral Directors',
+ 'Good {{time_of_day}}, you''ve reached the answering service for {{client_name}}. I''m sorry for your loss.',
+ E'Please take:\n- Caller name and relationship to the deceased\n- Contact telephone number\n- Name of the deceased (if known)\n- Location of the deceased (home / hospital / care home)\n- Whether a doctor has been called / death certified\n\nBe compassionate and patient. Do not rush the caller.\nAlert the on-call funeral director immediately for all first calls.',
+ true),
+('finance',
+ 'Financial Services / IFA',
+ 'Thank you for calling {{client_name}}. Our office is currently closed.',
+ E'Please take:\n- Caller full name\n- Contact number\n- Client / policy reference (if known)\n- Nature of enquiry (general / urgent)\n\nDo NOT give financial advice.\nDo NOT discuss account balances or policy values.\nFor fraud or suspected unauthorised transactions: escalate to on-call compliance officer immediately.',
+ true),
+('utilities',
+ 'Utilities / Energy Provider',
+ 'You''ve reached the out-of-hours service for {{client_name}}.',
+ E'Please take:\n- Customer name and account number\n- Contact telephone number\n- Service address / postcode\n- Nature of fault or enquiry\n\nFor gas emergencies: advise caller to call National Gas Emergency Service on 0800 111 999 immediately.\nFor power outages: advise caller to check their area on the network operator''s website.',
+ true),
+('it_support',
+ 'IT Support / Managed Services',
+ 'Thank you for calling {{client_name}} support line.',
+ E'Please take:\n- Caller full name and company\n- Contact number\n- Ticket / asset reference (if known)\n- Description of the issue\n- Severity: P1 (system down / business critical) / P2 (major impact) / P3 (minor)\n\nFor P1 incidents: page on-call engineer immediately and escalate to account manager.\nFor P2/P3: take message and advise response within SLA.',
+ true)
+ON CONFLICT DO NOTHING;
+

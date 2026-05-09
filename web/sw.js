@@ -1,16 +1,44 @@
 /* ============================================================
    SinglePoint Calls — Service Worker
-   Handles Web Push notifications for both the operator console
-   and the client portal.
+   Handles Web Push notifications and offline caching (PWA).
    ============================================================ */
 'use strict';
 
-const CACHE_NAME = 'spc-v1';
+const CACHE_NAME = 'spc-v2';
+const STATIC_SHELL = ['/', '/app.js', '/manifest.json'];
 
-// ── Install / activate ─────────────────────────────────────
-self.addEventListener('install', () => self.skipWaiting());
+// ── Install: cache static shell for offline ────────────────
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((c) => c.addAll(STATIC_SHELL)).catch(() => {})
+  );
+  self.skipWaiting();
+});
+
+// ── Activate: purge old caches ─────────────────────────────
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+// ── Fetch: network-first for API, cache-first for static ───
+self.addEventListener('fetch', (e) => {
+  const { pathname } = new URL(e.request.url);
+  if (pathname.startsWith('/api/') || pathname.startsWith('/socket.io/')) return;
+  if (e.request.method !== 'GET') return;
+
+  e.respondWith(
+    caches.match(e.request).then((cached) => {
+      const fromNetwork = fetch(e.request).then((res) => {
+        if (res.ok) caches.open(CACHE_NAME).then((c) => c.put(e.request, res.clone()));
+        return res;
+      });
+      return cached || fromNetwork;
+    })
+  );
 });
 
 // ── Push event ─────────────────────────────────────────────

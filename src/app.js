@@ -29,8 +29,13 @@ const chatRoutes       = require('./api/routes/chat');
 const qaRoutes         = require('./api/routes/qa');
 const ackRoutes        = require('./api/routes/ack');
 const pushRoutes       = require('./api/routes/push');
-const auditRoutes      = require('./api/routes/audit-log');
-const { rateLimit }    = require('express-rate-limit');
+const auditRoutes         = require('./api/routes/audit-log');
+const appointmentRoutes   = require('./api/routes/appointments');
+const smsRoutes           = require('./api/routes/sms');
+const callbackRoutes      = require('./api/routes/callbacks');
+const scriptRoutes        = require('./api/routes/scripts');
+const whatsappRoutes      = require('./api/routes/whatsapp');
+const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
 
@@ -128,8 +133,13 @@ app.use('/api/wallboard', wallboardRoutes);
 app.use('/api/chat',      chatRoutes);
 app.use('/api/qa',        qaRoutes);
 app.use('/api/ack',       ackRoutes);         // public — no auth
-app.use('/api/push',     pushRoutes);         // Web Push subscription management
-app.use('/api/audit',    auditRoutes);        // Operator audit log (admin/supervisor only)
+app.use('/api/push',         pushRoutes);
+app.use('/api/audit',        auditRoutes);
+app.use('/api/appointments', appointmentRoutes);
+app.use('/api/sms',          smsRoutes);
+app.use('/api/callbacks',    callbackRoutes);
+app.use('/api/scripts',      scriptRoutes);
+app.use('/api/whatsapp',     whatsappRoutes);  // public webhook + auth routes
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
