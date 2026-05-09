@@ -636,3 +636,12 @@ INSERT INTO system_settings (key, value) VALUES
     ('token_lifetime_hours', '2'),
     ('portal_token_lifetime_hours', '4')
 ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- v8: HaloPSA per-client ticketing integration
+-- ============================================================
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_psa_url VARCHAR(500);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_oauth_client_id VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_oauth_client_secret TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_customer_id INTEGER;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS halo_ticket_type_id INTEGER;

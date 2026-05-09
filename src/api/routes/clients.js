@@ -7,6 +7,15 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 // All client routes require authentication
 router.use(requireAuth);
 
+function maskClientSecrets(client) {
+  if (!client) return client;
+  return {
+    ...client,
+    smtp_pass: client.smtp_pass ? '***' : null,
+    halo_oauth_client_secret: client.halo_oauth_client_secret ? '***' : null,
+  };
+}
+
 // GET /api/clients
 router.get('/', async (req, res, next) => {
   try {
@@ -25,7 +34,7 @@ router.get('/', async (req, res, next) => {
     query += ' ORDER BY name ASC';
 
     const result = await pool.query(query, params);
-    res.json({ clients: result.rows });
+    res.json({ clients: result.rows.map(maskClientSecrets) });
   } catch (err) {
     next(err);
   }
@@ -36,7 +45,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const result = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
-    res.json({ client: result.rows[0] });
+    res.json({ client: maskClientSecrets(result.rows[0]) });
   } catch (err) {
     next(err);
   }
@@ -100,7 +109,7 @@ router.get('/:id/screenpop', async (req, res, next) => {
     const withinHours = isWithinBusinessHours(client.opening_times, client.timezone);
 
     res.json({
-      client,
+      client: maskClientSecrets(client),
       contacts: contactsResult.rows,
       departments: deptResult.rows,
       availability: {
@@ -128,6 +137,8 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
       escalation_rules = [], sla_answer_seconds = 30,
       data_retention_months = 12,
+      halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
+      halo_customer_id, halo_ticket_type_id,
     } = req.body;
 
     const VALID_RETENTION = [3, 5, 9, 12];
@@ -146,8 +157,10 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
           smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, web_links,
           outbound_caller_id, email_template, private_notes,
           whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
-          escalation_rules, sla_answer_seconds, data_retention_months)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+          escalation_rules, sla_answer_seconds, data_retention_months,
+          halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
+          halo_customer_id, halo_ticket_type_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
        RETURNING *`,
       [
         name, account_number, dids, script, greeting, timezone, notes,
@@ -165,9 +178,11 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
         JSON.stringify(escalation_rules),
         sla_answer_seconds,
         parseInt(data_retention_months),
+        halo_psa_url || null, halo_oauth_client_id || null, halo_oauth_client_secret || null,
+        halo_customer_id || null, halo_ticket_type_id || null,
       ]
     );
-    res.status(201).json({ client: result.rows[0] });
+    res.status(201).json({ client: maskClientSecrets(result.rows[0]) });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Account number already exists' });
     next(err);
@@ -184,6 +199,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       web_links, outbound_caller_id, email_template, private_notes,
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
       escalation_rules, sla_answer_seconds, data_retention_months,
+      halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
+      halo_customer_id, halo_ticket_type_id,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -222,7 +239,12 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          teams_webhook       = COALESCE($26, teams_webhook),
          escalation_rules       = COALESCE($27, escalation_rules),
          sla_answer_seconds     = COALESCE($28, sla_answer_seconds),
-         data_retention_months  = COALESCE($29, data_retention_months)
+         data_retention_months  = COALESCE($29, data_retention_months),
+         halo_psa_url           = COALESCE($30, halo_psa_url),
+         halo_oauth_client_id   = COALESCE($31, halo_oauth_client_id),
+         halo_oauth_client_secret = COALESCE($32, halo_oauth_client_secret),
+         halo_customer_id       = COALESCE($33, halo_customer_id),
+         halo_ticket_type_id    = COALESCE($34, halo_ticket_type_id)
        WHERE id = $22
        RETURNING *`,
       [
@@ -248,10 +270,15 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         escalation_rules !== undefined ? JSON.stringify(escalation_rules) : null,
         sla_answer_seconds !== undefined ? sla_answer_seconds : null,
         data_retention_months !== undefined ? parseInt(data_retention_months) : null,
+        halo_psa_url             !== undefined ? (halo_psa_url || null)             : null,
+        halo_oauth_client_id     !== undefined ? (halo_oauth_client_id || null)     : null,
+        halo_oauth_client_secret !== undefined ? (halo_oauth_client_secret || null) : null,
+        halo_customer_id         !== undefined ? (halo_customer_id || null)         : null,
+        halo_ticket_type_id      !== undefined ? (halo_ticket_type_id || null)      : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
-    res.json({ client: result.rows[0] });
+    res.json({ client: maskClientSecrets(result.rows[0]) });
   } catch (err) {
     next(err);
   }

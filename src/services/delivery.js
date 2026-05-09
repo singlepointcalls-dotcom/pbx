@@ -34,6 +34,9 @@ function assertValidEmail(email) {
   if (domain.length < 4 || domain.length > 255) throw new Error('Email domain invalid length');
 }
 
+// Per-client HaloPSA OAuth2 token cache — avoids a token round-trip on every message
+const haloPsaTokenCache = new Map(); // clientId → { token: string, expiresAt: number }
+
 // Global transporter (SinglePoint SMTP) — lazily created
 let globalTransporter = null;
 
@@ -138,12 +141,81 @@ async function ensureAckToken(messageId) {
   return token;
 }
 
+async function getHaloPsaToken(client) {
+  const cached = haloPsaTokenCache.get(client.id);
+  if (cached && cached.expiresAt > Date.now() + 30000) return cached.token;
+
+  const res = await axios.post(
+    `${client.halo_psa_url}/auth/token`,
+    new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: client.halo_oauth_client_id,
+      client_secret: client.halo_oauth_client_secret,
+      scope: 'all',
+    }),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10000 }
+  );
+
+  const { access_token, expires_in } = res.data;
+  haloPsaTokenCache.set(client.id, {
+    token: access_token,
+    expiresAt: Date.now() + (expires_in - 60) * 1000,
+  });
+  return access_token;
+}
+
+async function sendHaloPsaTicket(message, client) {
+  if (!client.halo_psa_url || !client.halo_oauth_client_id || !client.halo_oauth_client_secret) {
+    throw new Error('HaloPSA credentials not configured for this client');
+  }
+
+  const token = await getHaloPsaToken(client);
+
+  const callerLine = [message.caller_name, message.caller_phone, message.caller_company]
+    .filter(Boolean).join(' — ');
+  const details = [
+    `Caller: ${callerLine || 'Unknown'}`,
+    message.subject ? `Subject: ${message.subject}` : null,
+    `Priority: ${(message.urgency || 'normal').toUpperCase()}`,
+    `Taken by: ${message.operator_name || 'Operator'}`,
+    '',
+    message.body,
+  ].filter((l) => l !== null).join('\n');
+
+  const summary = message.subject
+    ? `${message.subject} — ${message.caller_name || message.caller_phone || 'Unknown'}`
+    : `Phone message: ${message.caller_name || message.caller_phone || 'Unknown'}`;
+
+  const ticketBody = [{
+    tickettypeid: client.halo_ticket_type_id || 1,
+    client_id: client.halo_customer_id || undefined,
+    summary,
+    details,
+    priority_id: message.urgency === 'high' ? 1 : 3,
+  }];
+
+  await axios.post(
+    `${client.halo_psa_url}/api/Tickets`,
+    ticketBody,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 15000,
+    }
+  );
+}
+
 async function deliverMessage(messageId) {
   const msgResult = await pool.query(
     `SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
             c.delivery_actions, c.smtp_host, c.smtp_port,
             c.smtp_user, c.smtp_pass, c.smtp_from, c.email_template,
-            c.whatsapp_number, c.slack_webhook, c.teams_webhook, c.telegram_chat_id
+            c.whatsapp_number, c.slack_webhook, c.teams_webhook, c.telegram_chat_id,
+            c.halo_psa_url, c.halo_oauth_client_id, c.halo_oauth_client_secret,
+            c.halo_customer_id, c.halo_ticket_type_id,
+            c.id AS client_row_id
      FROM messages m
      JOIN clients c ON m.client_id = c.id
      LEFT JOIN operators o ON m.operator_id = o.id
@@ -264,6 +336,27 @@ async function deliverMessage(messageId) {
     } catch (err) {
       await updateDelivery(deliveryId, 'failed', err.message);
       deliveryResults.push({ channel: 'teams', status: 'failed', error: err.message });
+    }
+  }
+
+  // HaloPSA ticket
+  if (da.halopsa && message.halo_psa_url && message.halo_oauth_client_id) {
+    const deliveryId = await createDeliveryRecord(messageId, null, 'halopsa', message.halo_psa_url);
+    try {
+      const haloClient = {
+        id: message.client_row_id,
+        halo_psa_url: message.halo_psa_url,
+        halo_oauth_client_id: message.halo_oauth_client_id,
+        halo_oauth_client_secret: message.halo_oauth_client_secret,
+        halo_customer_id: message.halo_customer_id,
+        halo_ticket_type_id: message.halo_ticket_type_id,
+      };
+      await sendHaloPsaTicket(message, haloClient);
+      await updateDelivery(deliveryId, 'sent');
+      deliveryResults.push({ channel: 'halopsa', status: 'sent' });
+    } catch (err) {
+      await updateDelivery(deliveryId, 'failed', err.message);
+      deliveryResults.push({ channel: 'halopsa', status: 'failed', error: err.message });
     }
   }
 
