@@ -1069,3 +1069,18 @@ CREATE INDEX IF NOT EXISTS idx_report_schedules_next_run ON report_schedules(nex
 
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS csat_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- ============================================================
+-- v21 — Custom form data in messages, operator performance targets
+-- ============================================================
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS form_data JSONB;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'operator';
+
+CREATE TABLE IF NOT EXISTS operator_targets (
+  operator_id       UUID PRIMARY KEY REFERENCES operators(id) ON DELETE CASCADE,
+  calls_per_day     INT NOT NULL DEFAULT 0,
+  messages_per_day  INT NOT NULL DEFAULT 0,
+  qa_score_target   INT NOT NULL DEFAULT 0 CHECK (qa_score_target BETWEEN 0 AND 100),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);

@@ -117,6 +117,7 @@
             <option value="delivered">Delivered</option>
             <option value="failed">Failed</option>
           </select>
+          <button class="p-btn p-btn-primary" onclick="Portal.openComposeMessage()">+ New Message</button>
         </div>
       </div>
       <div id="p-messages-list" class="p-msg-list"></div>
@@ -126,6 +127,35 @@
         <button class="p-btn p-btn-sm" id="p-msg-next" onclick="Portal.msgPage(1)">Next &#8594;</button>
       </div>
     </section>
+
+    <!-- Compose Message Overlay -->
+    <div id="p-compose-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)Portal.closeComposeMessage()">
+      <div style="background:var(--p-bg);border-radius:12px;padding:24px;width:min(480px,90vw);box-shadow:0 4px 24px rgba(0,0,0,0.3)">
+        <h2 style="margin:0 0 16px">Send Message to Your Team</h2>
+        <div style="display:grid;gap:12px">
+          <div>
+            <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Subject (optional)</label>
+            <input id="p-compose-subject" type="text" class="p-input" placeholder="e.g. Urgent query about account" style="width:100%" />
+          </div>
+          <div>
+            <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Message *</label>
+            <textarea id="p-compose-body" class="p-input" rows="5" placeholder="Describe your enquiry..." style="width:100%;resize:vertical"></textarea>
+          </div>
+          <div>
+            <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Priority</label>
+            <select id="p-compose-urgency" class="p-select">
+              <option value="low">Low</option>
+              <option value="normal" selected>Normal</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="p-btn" onclick="Portal.closeComposeMessage()">Cancel</button>
+            <button class="p-btn p-btn-primary" onclick="Portal.sendPortalMessage()">Send Message</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Call History -->
     <section id="p-calls" class="p-section">

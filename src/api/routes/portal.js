@@ -170,6 +170,42 @@ router.get('/messages', requirePortalAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/portal/messages — portal user submits an enquiry to operators
+router.post('/messages', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { subject, body, urgency = 'normal', form_data } = req.body;
+    if (!body || body.trim().length < 3) {
+      return res.status(400).json({ error: 'body is required (min 3 characters)' });
+    }
+    const validUrgency = ['low', 'normal', 'urgent'];
+    if (!validUrgency.includes(urgency)) return res.status(400).json({ error: 'Invalid urgency' });
+
+    const portalUser = req.portalUser;
+    const result = await pool.query(
+      `INSERT INTO messages
+         (client_id, caller_name, caller_phone, subject, body, urgency, status, call_type, source, form_data)
+       VALUES ($1,$2,$3,$4,$5,$6,'pending','portal_message','portal',$7)
+       RETURNING id, subject, body, urgency, status, created_at`,
+      [
+        portalUser.client_id,
+        portalUser.name || portalUser.email,
+        null,
+        subject || 'Portal enquiry',
+        body.trim(),
+        urgency,
+        form_data ? JSON.stringify(form_data) : null,
+      ]
+    );
+    const message = result.rows[0];
+
+    // Real-time broadcast to operators
+    const { broadcast } = require('../../services/realtime');
+    broadcast('message:new', { messageId: message.id, clientId: portalUser.client_id, source: 'portal' });
+
+    res.status(201).json({ message });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/calls
 router.get('/calls', requirePortalAuth, async (req, res, next) => {
   try {

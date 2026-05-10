@@ -269,6 +269,33 @@ const Portal = (() => {
     loadMessages();
   }
 
+  function openComposeMessage() {
+    const overlay = el('p-compose-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    el('p-compose-subject').value = '';
+    el('p-compose-body').value = '';
+    el('p-compose-urgency').value = 'normal';
+  }
+
+  function closeComposeMessage() {
+    const overlay = el('p-compose-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  async function sendPortalMessage() {
+    const subject = el('p-compose-subject').value.trim();
+    const body = el('p-compose-body').value.trim();
+    const urgency = el('p-compose-urgency').value;
+    if (!body) return toast('Please enter your message', 'error');
+    try {
+      await api('POST', '/portal/messages', { subject, body, urgency });
+      toast('Message sent to your answering team');
+      closeComposeMessage();
+      msgOffset = 0;
+      loadMessages();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
   function renderMsgList(container, messages, limit) {
     if (!container) return;
     const items = limit ? messages.slice(0, limit) : messages;
@@ -740,8 +767,8 @@ const Portal = (() => {
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    nav, logout, loadMessages, msgPage, loadCalls, loadBilling, loadAvailability,
-    setAvailability, saveAvailNote, downloadReport,
+    nav, logout, loadMessages, msgPage, openComposeMessage, closeComposeMessage, sendPortalMessage,
+    loadCalls, loadBilling, loadAvailability, setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
     showForgot, showLogin, doForgot, doReset,

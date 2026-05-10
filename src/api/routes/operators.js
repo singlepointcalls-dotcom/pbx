@@ -229,4 +229,68 @@ router.get('/performance', requireRole('admin', 'supervisor'), async (req, res, 
   } catch (err) { next(err); }
 });
 
+// GET /api/operators/:id/targets — get performance targets for an operator
+router.get('/:id/targets', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT ot.*, o.full_name, o.username
+       FROM operator_targets ot
+       JOIN operators o ON ot.operator_id = o.id
+       WHERE ot.operator_id = $1`,
+      [req.params.id]
+    );
+    res.json({ targets: result.rows[0] || null });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/operators/:id/targets — create or update performance targets
+router.put('/:id/targets', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { calls_per_day = 0, messages_per_day = 0, qa_score_target = 0 } = req.body;
+    if (qa_score_target < 0 || qa_score_target > 100) {
+      return res.status(400).json({ error: 'qa_score_target must be between 0 and 100' });
+    }
+    const result = await pool.query(
+      `INSERT INTO operator_targets (operator_id, calls_per_day, messages_per_day, qa_score_target, updated_at)
+       VALUES ($1,$2,$3,$4,NOW())
+       ON CONFLICT (operator_id) DO UPDATE SET
+         calls_per_day    = EXCLUDED.calls_per_day,
+         messages_per_day = EXCLUDED.messages_per_day,
+         qa_score_target  = EXCLUDED.qa_score_target,
+         updated_at       = NOW()
+       RETURNING *`,
+      [req.params.id, calls_per_day, messages_per_day, qa_score_target]
+    );
+    audit.log(req, 'operator.targets_update', {
+      resourceType: 'operator', resourceId: req.params.id,
+      details: { calls_per_day, messages_per_day, qa_score_target },
+    });
+    res.json({ targets: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// GET /api/operators/targets/all — all operators with targets + today's progress
+router.get('/targets/all', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT o.id, o.full_name, o.username,
+              COALESCE(ot.calls_per_day, 0)    AS target_calls,
+              COALESCE(ot.messages_per_day, 0) AS target_messages,
+              COALESCE(ot.qa_score_target, 0)  AS target_qa,
+              COUNT(DISTINCT cl.id) FILTER (WHERE cl.call_start >= CURRENT_DATE AND cl.call_answered IS NOT NULL) AS today_calls,
+              COUNT(DISTINCT m.id)  FILTER (WHERE m.created_at  >= CURRENT_DATE) AS today_messages,
+              ROUND(AVG(q.overall) FILTER (WHERE q.created_at >= CURRENT_DATE)) AS today_qa
+       FROM operators o
+       LEFT JOIN operator_targets ot ON ot.operator_id = o.id
+       LEFT JOIN call_logs cl ON cl.operator_id = o.id
+       LEFT JOIN messages m ON m.operator_id = o.id
+       LEFT JOIN call_qa_scores q ON q.call_log_id = cl.id
+       WHERE o.is_active = true
+       GROUP BY o.id, o.full_name, o.username, ot.calls_per_day, ot.messages_per_day, ot.qa_score_target
+       ORDER BY o.full_name`
+    );
+    res.json({ targets: result.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

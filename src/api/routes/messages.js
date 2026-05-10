@@ -118,6 +118,7 @@ router.post('/', async (req, res, next) => {
       call_type = 'standard',
       is_no_charge = false,
       auto_deliver = false,
+      form_data,
     } = req.body;
 
     if (!client_id) return res.status(400).json({ error: 'client_id is required' });
@@ -131,14 +132,15 @@ router.post('/', async (req, res, next) => {
     const result = await pool.query(
       `INSERT INTO messages
          (call_log_id, client_id, operator_id, caller_name, caller_phone,
-          caller_company, subject, body, urgency, call_type, is_no_charge)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          caller_company, subject, body, urgency, call_type, is_no_charge, form_data)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         call_log_id, client_id, req.operator.id,
         caller_name, caller_phone, caller_company,
         subject, body || '', urgency,
         call_type, noCharge,
+        form_data ? JSON.stringify(form_data) : null,
       ]
     );
 

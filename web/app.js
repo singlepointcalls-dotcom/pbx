@@ -1387,6 +1387,19 @@ const App = (() => {
       ].join('');
       el('msg-detail-body').textContent = m.body || '(no body)';
 
+      // Display custom form_data if present
+      const formDataEl = el('msg-detail-form-data');
+      if (formDataEl) {
+        const fd = m.form_data;
+        if (fd && typeof fd === 'object' && Object.keys(fd).length) {
+          formDataEl.style.display = 'block';
+          formDataEl.innerHTML = '<div style="font-size:0.78rem;font-weight:600;margin-bottom:6px;color:var(--text-muted)">Additional Form Data:</div>' +
+            Object.entries(fd).map(([k, v]) => `<div style="margin-bottom:3px"><strong>${escHtml(k)}:</strong> ${escHtml(String(v))}</div>`).join('');
+        } else {
+          formDataEl.style.display = 'none';
+        }
+      }
+
       // Load delivery log
       try {
         const del = await api('GET', `/messages/${messageId}/deliveries`);
@@ -1501,6 +1514,7 @@ const App = (() => {
       call_type: callType,
       is_no_charge: el('msg-no-charge').checked,
       auto_deliver: andDeliver,
+      form_data: Object.keys(customFields).length ? customFields : undefined,
     };
 
     try {
@@ -4371,6 +4385,83 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Performance Targets ---- */
+  let _targetsVisible = false;
+
+  function toggleTargetsPanel() {
+    _targetsVisible = !_targetsVisible;
+    const panel = el('targets-panel');
+    if (panel) {
+      panel.style.display = _targetsVisible ? 'block' : 'none';
+      if (_targetsVisible) loadTargets();
+    }
+  }
+
+  async function loadTargets() {
+    const tbody = el('targets-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Loading...</td></tr>';
+    try {
+      const { targets } = await api('GET', '/operators/targets/all');
+      if (!targets.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No operators found</td></tr>';
+        return;
+      }
+      tbody.innerHTML = targets.map((t) => {
+        const callPct  = t.target_calls   > 0 ? Math.min(100, Math.round(t.today_calls    / t.target_calls   * 100)) : null;
+        const msgPct   = t.target_messages > 0 ? Math.min(100, Math.round(t.today_messages / t.target_messages * 100)) : null;
+        const qaPct    = t.target_qa > 0 ? Math.min(100, Math.round((t.today_qa || 0) / t.target_qa * 100)) : null;
+        const prog = (val, target, pct) => target > 0
+          ? `<div style="font-weight:600">${val || 0}/${target}</div><div style="background:var(--border);border-radius:4px;height:4px;width:60px;margin-top:3px"><div style="background:${pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444'};width:${pct}%;height:4px;border-radius:4px"></div></div>`
+          : `<span style="color:var(--text-muted)">—</span>`;
+        return `<tr>
+          <td>${escHtml(t.full_name)}</td>
+          <td>${t.target_calls || '—'}</td>
+          <td>${prog(t.today_calls, t.target_calls, callPct)}</td>
+          <td>${t.target_messages || '—'}</td>
+          <td>${prog(t.today_messages, t.target_messages, msgPct)}</td>
+          <td>${t.target_qa || '—'}</td>
+          <td>${prog(t.today_qa, t.target_qa, qaPct)}</td>
+          <td><button class="btn btn-secondary btn-sm" onclick="Admin.openTargetsModal('${t.id}','${escHtml(t.full_name)}')">Edit</button></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function openTargetsModal(operatorId, name) {
+    el('targets-operator-id').value = operatorId;
+    el('targets-operator-name').textContent = name;
+    el('targets-calls').value = 0;
+    el('targets-msgs').value = 0;
+    el('targets-qa').value = 0;
+    try {
+      const { targets } = await api('GET', `/operators/${operatorId}/targets`);
+      if (targets) {
+        el('targets-calls').value = targets.calls_per_day || 0;
+        el('targets-msgs').value = targets.messages_per_day || 0;
+        el('targets-qa').value = targets.qa_score_target || 0;
+      }
+    } catch (_) {}
+    el('targets-modal').style.display = 'flex';
+  }
+
+  function closeTargetsModal() { el('targets-modal').style.display = 'none'; }
+
+  async function saveTargets() {
+    const id = el('targets-operator-id').value;
+    const calls = parseInt(el('targets-calls').value) || 0;
+    const msgs = parseInt(el('targets-msgs').value) || 0;
+    const qa = parseInt(el('targets-qa').value) || 0;
+    try {
+      await api('PUT', `/operators/${id}/targets`, { calls_per_day: calls, messages_per_day: msgs, qa_score_target: qa });
+      toast('Targets saved', 'success');
+      closeTargetsModal();
+      loadTargets();
+    } catch (err) { toast(err.message, 'danger'); }
+  }
+
   /* ---- Canned Responses ---- */
   let editingCannedId = null;
 
@@ -4505,6 +4596,8 @@ const Admin = (() => {
     uploadLogo, removeLogo,
     // Performance
     loadPerformance,
+    // Targets
+    toggleTargetsPanel, loadTargets, openTargetsModal, closeTargetsModal, saveTargets,
     // Canned
     loadCannedResponses, openCannedModal, closeCannedModal, saveCannedResponse, deleteCannedResponse,
   };

@@ -752,12 +752,25 @@
     <div id="admin-performance" class="admin-section" style="display:none">
       <div class="admin-toolbar">
         <h2>&#127942; Operator Performance</h2>
-        <select id="perf-days" onchange="Admin.loadPerformance()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.8rem">
-          <option value="7">Last 7 days</option>
-          <option value="30" selected>Last 30 days</option>
-          <option value="90">Last 90 days</option>
-        </select>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="perf-days" onchange="Admin.loadPerformance()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:0.8rem">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="Admin.toggleTargetsPanel()">&#127919; Targets</button>
+        </div>
       </div>
+
+      <!-- Targets panel -->
+      <div id="targets-panel" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:16px">
+        <h3 style="margin:0 0 10px;font-size:0.95rem">Performance Targets (today's progress)</h3>
+        <table class="admin-table" id="targets-table">
+          <thead><tr><th>Operator</th><th>Calls Target</th><th>Today</th><th>Messages Target</th><th>Today</th><th>QA Target</th><th>Today</th><th></th></tr></thead>
+          <tbody id="targets-tbody"><tr><td colspan="8" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
       <table class="admin-table" id="performance-table">
         <thead><tr>
           <th>Operator</th><th>Calls Answered</th><th>Calls Missed</th>
@@ -765,6 +778,24 @@
         </tr></thead>
         <tbody id="performance-tbody"><tr><td colspan="6" class="empty-state">Select period to load</td></tr></tbody>
       </table>
+    </div>
+
+    <!-- Targets Edit Modal -->
+    <div id="targets-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)Admin.closeTargetsModal()">
+      <div class="modal" style="max-width:380px">
+        <div class="modal-header"><h3>Set Performance Targets</h3><button onclick="Admin.closeTargetsModal()">&times;</button></div>
+        <div class="modal-body">
+          <input type="hidden" id="targets-operator-id" />
+          <p id="targets-operator-name" style="font-weight:600;margin-bottom:12px"></p>
+          <div class="field"><label>Calls per Day Target</label><input type="number" id="targets-calls" min="0" value="0" /></div>
+          <div class="field"><label>Messages per Day Target</label><input type="number" id="targets-msgs" min="0" value="0" /></div>
+          <div class="field"><label>QA Score Target (0-100)</label><input type="number" id="targets-qa" min="0" max="100" value="0" /></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="Admin.closeTargetsModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="Admin.saveTargets()">Save Targets</button>
+        </div>
+      </div>
     </div>
 
     <!-- Canned Responses Section -->
@@ -1937,6 +1968,7 @@
         <button class="btn btn-sm btn-secondary" onclick="App.aiSuggestReply()" id="ai-suggest-btn" title="AI suggested reply">&#128196; Suggest Reply</button>
       </div>
       <div id="ai-output" style="display:none;background:var(--bg-dark);border-radius:8px;padding:10px 12px;font-size:0.85rem;line-height:1.5;margin-bottom:12px;border-left:3px solid var(--primary)"></div>
+      <div id="msg-detail-form-data" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.82rem;margin-bottom:10px;line-height:1.6"></div>
       <div id="msg-detail-deliveries" style="font-size:0.8rem;color:var(--text-muted)"></div>
     </div>
     <div class="modal-footer">
