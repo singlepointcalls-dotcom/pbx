@@ -581,9 +581,19 @@ const App = (() => {
       }
     });
     socket.on('operators:list', (data) => renderOperators(data.operators));
-    socket.on('message:new', () => loadMessages());
+    socket.on('message:new', () => { loadMessages(); playMessageAlert(); });
     socket.on('chat:message', (msg) => appendChatMessage(msg));
     socket.on('operator:status_change', () => {}); // wallboard handles its own polling
+    socket.on('sms:inbound', () => {
+      if (typeof SMSInbox !== 'undefined') SMSInbox.loadThreads();
+    });
+    socket.on('whatsapp:inbound', () => {
+      if (typeof WAInbox !== 'undefined') WAInbox.load();
+    });
+    socket.on('appointment:created', () => {
+      if (typeof AppointmentsPanel !== 'undefined') AppointmentsPanel.load();
+    });
+    socket.on('messages:bulk_acknowledged', () => loadMessages());
     socket.on('client:availability', (data) => {
       // Update active call panel if it's for the current call's client
       if (activeCall?.client?.id === data.client_id) {
@@ -601,9 +611,11 @@ const App = (() => {
     toast(`Incoming call${data.client ? ` — ${data.client.name}` : ''}: ${data.callerIdNum}`, 'warning', 8000);
     el('status-badge').className = 'status-badge ringing';
     el('status-badge').textContent = 'RINGING';
+    startRinging();
   }
 
   function handleCallAnswered(data) {
+    stopRinging();
     if (callQueue.has(data.channelId)) {
       callQueue.delete(data.channelId);
       renderCallQueue();
@@ -619,6 +631,7 @@ const App = (() => {
   }
 
   function handleCallEnded(data) {
+    stopRinging();
     callQueue.delete(data.channelId);
     renderCallQueue();
     if (activeCall?.channelId === data.channelId) {
@@ -2065,20 +2078,46 @@ const App = (() => {
     closeAudioSettings();
   }
 
+  let _ringInterval = null;
+
+  function _playTone(freqs, durationMs, type = 'sine') {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = 0.25;
+      gainNode.connect(ctx.destination);
+      freqs.forEach((freq) => {
+        const osc = ctx.createOscillator();
+        osc.type = type;
+        osc.frequency.value = freq;
+        osc.connect(gainNode);
+        osc.start();
+        osc.stop(ctx.currentTime + durationMs / 1000);
+      });
+      setTimeout(() => ctx.close(), durationMs + 100);
+    } catch { /* audio blocked by browser policy */ }
+  }
+
+  function startRinging() {
+    if (_ringInterval) return;
+    _playTone([660, 880], 800);
+    _ringInterval = setInterval(() => _playTone([660, 880], 800), 3000);
+  }
+
+  function stopRinging() {
+    if (_ringInterval) { clearInterval(_ringInterval); _ringInterval = null; }
+  }
+
+  function playMessageAlert() {
+    _playTone([880, 1100], 250);
+  }
+
   function testAudio() {
     const output = el('audio-output-device').value;
     const statusEl = el('audio-test-status');
     statusEl.textContent = 'Playing...';
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      osc.frequency.value = 440;
-      osc.connect(ctx.destination);
-      osc.start();
-      setTimeout(() => { osc.stop(); ctx.close(); statusEl.textContent = 'Done'; }, 1000);
-    } catch {
-      statusEl.textContent = 'Audio test failed';
-    }
+    _playTone([440], 1000);
+    setTimeout(() => { if (statusEl) statusEl.textContent = 'Done'; }, 1200);
   }
 
   /* ---- Dark Mode ---- */
