@@ -141,6 +141,71 @@ const App = (() => {
     el('twofa-modal').style.display = 'none';
   }
 
+  function showForgotPassword(e) {
+    if (e) e.preventDefault();
+    el('login-form').style.display = 'none';
+    el('reset-step').style.display = 'none';
+    el('forgot-step').style.display = 'block';
+    setTimeout(() => { const u = el('forgot-username'); if (u) u.focus(); }, 80);
+  }
+
+  function showLogin() {
+    el('forgot-step').style.display = 'none';
+    el('reset-step').style.display = 'none';
+    el('login-form').style.display = 'block';
+    el('login-error').classList.add('hidden');
+    setTimeout(() => { const u = el('username'); if (u) u.focus(); }, 80);
+  }
+
+  async function doForgotPassword() {
+    const username = (el('forgot-username')?.value || '').trim();
+    const errEl = el('forgot-error');
+    const okEl  = el('forgot-success');
+    errEl.classList.add('hidden');
+    okEl.classList.add('hidden');
+    if (!username) { errEl.textContent = 'Enter your username'; errEl.classList.remove('hidden'); return; }
+    try {
+      const r = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      }).then((res) => res.json());
+      if (r.error) throw new Error(r.error);
+      okEl.textContent = 'If that username exists, a reset link has been sent to the associated email address.';
+      okEl.classList.remove('hidden');
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  async function doResetPassword() {
+    const token_  = (el('reset-token')?.value || '').trim();
+    const username = (el('reset-username')?.value || '').trim();
+    const newPw   = el('reset-password')?.value || '';
+    const errEl   = el('reset-error');
+    const okEl    = el('reset-success');
+    errEl.classList.add('hidden');
+    okEl.classList.add('hidden');
+    if (!token_ || !username || !newPw) {
+      errEl.textContent = 'All fields are required'; errEl.classList.remove('hidden'); return;
+    }
+    try {
+      const r = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token_, username, new_password: newPw }),
+      }).then((res) => res.json());
+      if (r.error) throw new Error(r.error);
+      okEl.textContent = 'Password reset! You can now sign in.';
+      okEl.classList.remove('hidden');
+      setTimeout(showLogin, 2000);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+    }
+  }
+
   function _finishLogin(data) {
     token = data.token;
     currentOperator = data.operator;
@@ -2230,6 +2295,7 @@ const App = (() => {
     showMessageDetail, switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,
     showMyProfile, closeProfile, showPwStrength, changePassword,
+    showForgotPassword, showLogin, doForgotPassword, doResetPassword,
     setup2FA, confirm2FA, close2FASetup, disable2FA,
     // Noticeboard
     openNoticeEditor, closeNoticeEditor, saveNotice,
@@ -2324,6 +2390,9 @@ const Admin = (() => {
     else if (name === 'routing') RoutingPanel.load();
     else if (name === 'audit') AuditPanel.load();
     else if (name === 'knowledge') KnowledgeAdmin.load();
+    else if (name === 'skills') SkillsPanel.load();
+    else if (name === 'dnc') DncPanel.load();
+    else if (name === 'transcription') TranscriptionPanel.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -4911,4 +4980,268 @@ const KnowledgeAdmin = (() => {
   }
 
   return { load, delete: deleteArticle };
+})();
+
+/* ============================================================
+   SkillsPanel — Operator Skills Admin
+   ============================================================ */
+const SkillsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const escHtml = (...a) => App._escHtml(...a);
+  const el = (id) => document.getElementById(id);
+
+  let _operators = [];
+  let _catalog = [];
+
+  async function load() {
+    const container = el('admin-skills');
+    if (!container) return;
+    try {
+      const [catData, opsData] = await Promise.all([
+        api('GET', '/operator-skills/catalog'),
+        api('GET', '/operators'),
+      ]);
+      _catalog = catData.skills || [];
+      _operators = (opsData.operators || []).filter((o) => o.is_active !== false);
+      renderCatalog();
+      renderOperators();
+    } catch (err) { toast(`Skills error: ${err.message}`, 'danger'); }
+  }
+
+  function renderCatalog() {
+    const tbody = el('skills-catalog-tbody');
+    if (!tbody) return;
+    if (!_catalog.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No skills defined yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _catalog.map((skill) => {
+      const count = _operators.filter((o) => (o.skills || []).includes(skill)).length;
+      return `<tr>
+        <td>${escHtml(skill)}</td>
+        <td>${count}</td>
+        <td><button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer"
+          onclick="SkillsPanel.removeSkillFromAll('${escHtml(skill)}')">Remove All</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderOperators() {
+    const tbody = el('skills-operators-tbody');
+    if (!tbody) return;
+    if (!_operators.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No operators</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _operators.map((op) => {
+      const skills = (op.skills || []).join(', ') || '—';
+      return `<tr>
+        <td>${escHtml(op.full_name)}</td>
+        <td>${escHtml(skills)}</td>
+        <td>${escHtml(op.preferred_language || 'en')}</td>
+        <td><button class="btn btn-sm btn-secondary" onclick="SkillsPanel.editOperator('${op.id}')">Edit</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function addSkill() {
+    const name = (prompt('New skill name (e.g. "Spanish", "Medical", "Level-2 Tech"):') || '').trim();
+    if (!name) return;
+    if (_catalog.includes(name)) { toast('Skill already exists', 'info'); return; }
+    // Skills live on operators; add to first admin if no one has it yet
+    toast(`Skill "${name}" will appear once assigned to an operator`, 'info');
+  }
+
+  async function editOperator(operatorId) {
+    const op = _operators.find((o) => o.id === operatorId);
+    if (!op) return;
+    const current = (op.skills || []).join(', ');
+    const input = prompt(`Skills for ${op.full_name} (comma-separated):\n\nAll catalog skills: ${_catalog.join(', ') || 'none'}`, current);
+    if (input === null) return;
+    const newSkills = input.split(',').map((s) => s.trim()).filter(Boolean);
+    const langInput = prompt(`Preferred language code for ${op.full_name} (e.g. en, es, fr):`, op.preferred_language || 'en');
+    if (langInput === null) return;
+    try {
+      await api('PUT', `/operator-skills/${operatorId}`, { skills: newSkills, preferred_language: langInput.trim() || 'en' });
+      toast('Skills updated', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function removeSkillFromAll(skill) {
+    if (!confirm(`Remove skill "${skill}" from all operators?`)) return;
+    try {
+      await Promise.all(
+        _operators
+          .filter((o) => (o.skills || []).includes(skill))
+          .map((o) => api('PUT', `/operator-skills/${o.id}`, { skills: (o.skills || []).filter((s) => s !== skill) }))
+      );
+      toast(`Skill "${skill}" removed`, 'info');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, addSkill, editOperator, removeSkillFromAll };
+})();
+
+/* ============================================================
+   DncPanel — Do Not Call List Admin
+   ============================================================ */
+const DncPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const escHtml = (...a) => App._escHtml(...a);
+  const el = (id) => document.getElementById(id);
+
+  async function load() {
+    if (!el('admin-dnc')) return;
+    const tbody = el('dnc-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/dnc');
+      render(data.numbers || []);
+    } catch (err) { toast(`DNC error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('dnc-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No numbers on DNC list</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td><code>${escHtml(r.phone)}</code></td>
+      <td>${escHtml(r.reason || '—')}</td>
+      <td>${escHtml(r.added_by_name || '—')}</td>
+      <td>${r.expires_at ? new Date(r.expires_at).toLocaleDateString() : 'Never'}</td>
+      <td>${new Date(r.created_at).toLocaleDateString()}</td>
+      <td><button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer"
+        onclick="DncPanel.remove('${r.id}')">Remove</button></td>
+    </tr>`).join('');
+  }
+
+  async function add() {
+    const phone = (prompt('Phone number to add to DNC list:') || '').trim();
+    if (!phone) return;
+    const reason = (prompt('Reason (optional):') || '').trim();
+    try {
+      await api('POST', '/dnc', { phone, reason: reason || undefined });
+      toast('Number added to DNC list', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function remove(id) {
+    if (!confirm('Remove this number from the DNC list?')) return;
+    try {
+      await api('DELETE', `/dnc/${id}`);
+      toast('Number removed', 'info');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function check() {
+    const input = el('dnc-check-input');
+    const phone = (input?.value || '').trim();
+    const resultEl = el('dnc-check-result');
+    if (!phone || !resultEl) return;
+    try {
+      const data = await api('POST', '/dnc/check', { phone });
+      if (data.on_dnc) {
+        resultEl.innerHTML = `<span style="color:#e74c3c;font-weight:600">&#128683; On DNC list</span> — Reason: ${escHtml(data.reason || 'none')}`;
+      } else {
+        resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">&#10003; Not on DNC list</span>`;
+      }
+    } catch (err) { resultEl.textContent = `Error: ${err.message}`; }
+  }
+
+  return { load, add, remove, check };
+})();
+
+/* ============================================================
+   TranscriptionPanel — Call Transcription Admin
+   ============================================================ */
+const TranscriptionPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const escHtml = (...a) => App._escHtml(...a);
+  const el = (id) => document.getElementById(id);
+
+  async function load() {
+    if (!el('admin-transcription')) return;
+    const tbody = el('transcription-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/calls?limit=100&has_recording=true');
+      render((data.calls || data.logs || []).filter((c) => c.recording_url));
+    } catch (err) { toast(`Transcription error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('transcription-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No calls with recordings found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const date = new Date(r.started_at || r.created_at).toLocaleString();
+      const dur = r.duration ? `${Math.floor(r.duration / 60)}m ${r.duration % 60}s` : '—';
+      const hasTranscript = !!r.recording_transcript;
+      const statusHtml = hasTranscript
+        ? `<span style="color:#27ae60">&#10003; Done</span> <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="TranscriptionPanel.showDetail('${r.id}')">View</button>`
+        : `<span style="color:#999">Pending</span>`;
+      return `<tr>
+        <td>${date}</td>
+        <td>${escHtml(r.client_name || r.client_id || '—')}</td>
+        <td>${escHtml(r.caller_number || '—')}</td>
+        <td>${dur}</td>
+        <td>${statusHtml}</td>
+        <td>${!hasTranscript ? `<button class="btn btn-sm btn-primary" onclick="TranscriptionPanel.transcribe('${r.id}', this)">Transcribe</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function transcribe(callLogId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const r = await api('POST', `/transcription/call/${callLogId}`);
+      toast(r.status === 'already_transcribed' ? 'Already transcribed' : 'Transcription complete', 'success');
+      load();
+    } catch (err) {
+      toast(`Transcription failed: ${err.message}`, 'danger');
+      if (btn) { btn.disabled = false; btn.textContent = 'Transcribe'; }
+    }
+  }
+
+  async function batchTranscribe() {
+    try {
+      const r = await api('POST', '/transcription/batch', { limit: 10 });
+      toast(`Batch transcription: ${r.transcribed} call(s) processed`, 'success');
+      load();
+    } catch (err) { toast(`Batch error: ${err.message}`, 'danger'); }
+  }
+
+  async function showDetail(callLogId) {
+    try {
+      const r = await api('GET', `/transcription/call/${callLogId}`);
+      const detailEl = el('transcription-detail');
+      if (!detailEl) return;
+      el('transcription-detail-title').textContent = `Transcript — ${new Date(r.transcribed_at || Date.now()).toLocaleString()}`;
+      el('transcription-text').textContent = r.recording_transcript || '(empty)';
+      const summaryEl = el('transcription-summary');
+      if (summaryEl) summaryEl.textContent = r.transcript_summary ? `Summary: ${r.transcript_summary}` : '';
+      detailEl.style.display = 'block';
+      detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  function closeDetail() {
+    const d = el('transcription-detail');
+    if (d) d.style.display = 'none';
+  }
+
+  return { load, transcribe, batchTranscribe, showDetail, closeDetail };
 })();
