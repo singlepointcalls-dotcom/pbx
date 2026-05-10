@@ -632,5 +632,50 @@ router.get('/:id/holidays/today', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/clients/:id/timeline — recent calls + messages + appointments (chronological)
+router.get('/:id/timeline', async (req, res, next) => {
+  try {
+    const { limit = 50 } = req.query;
+    const [calls, messages, appointments] = await Promise.all([
+      pool.query(
+        `SELECT 'call' AS type, cl.id, cl.call_start AS ts,
+                cl.caller_id_name AS title, cl.caller_id_num AS subtitle,
+                cl.disposition AS status, op.full_name AS operator_name
+         FROM call_logs cl
+         LEFT JOIN operators op ON cl.operator_id = op.id
+         WHERE cl.client_id = $1
+         ORDER BY cl.call_start DESC LIMIT $2`,
+        [req.params.id, parseInt(limit)]
+      ),
+      pool.query(
+        `SELECT 'message' AS type, m.id, m.created_at AS ts,
+                COALESCE(m.subject, 'Message') AS title,
+                m.caller_name AS subtitle,
+                m.status, op.full_name AS operator_name
+         FROM messages m
+         LEFT JOIN operators op ON m.operator_id = op.id
+         WHERE m.client_id = $1
+         ORDER BY m.created_at DESC LIMIT $2`,
+        [req.params.id, parseInt(limit)]
+      ),
+      pool.query(
+        `SELECT 'appointment' AS type, a.id, a.starts_at AS ts,
+                a.title, a.contact_name AS subtitle,
+                a.status, NULL AS operator_name
+         FROM appointments a
+         WHERE a.client_id = $1
+         ORDER BY a.starts_at DESC LIMIT $2`,
+        [req.params.id, parseInt(limit)]
+      ),
+    ]);
+
+    const timeline = [...calls.rows, ...messages.rows, ...appointments.rows]
+      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .slice(0, parseInt(limit));
+
+    res.json({ timeline });
+  } catch (err) { next(err); }
+});
+
 router._isWithinBusinessHours = isWithinBusinessHours;
 module.exports = router;

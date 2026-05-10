@@ -1356,6 +1356,7 @@
         <button type="button" class="modal-tab" id="tab-msgtpl-btn" onclick="Admin.showClientTab('msgtpl',this)" style="display:none">&#128196; Msg Templates</button>
         <button type="button" class="modal-tab" id="tab-holidays-btn" onclick="Admin.showClientTab('holidays',this)" style="display:none">&#128197; Holidays</button>
         <button type="button" class="modal-tab" id="tab-crm-btn" onclick="Admin.showClientTab('crm',this)" style="display:none">&#128279; CRM</button>
+        <button type="button" class="modal-tab" id="tab-history-btn" onclick="Admin.showClientTab('history',this)" style="display:none">&#128336; History</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -1864,6 +1865,14 @@
         </p>
       </div>
 
+      <!-- Tab: History timeline -->
+      <div id="ctab-history" class="modal-body ctab" style="display:none">
+        <h4 style="margin-bottom:12px">&#128336; Recent Activity</h4>
+        <div id="client-history-list" style="max-height:440px;overflow-y:auto">
+          <p class="empty-state">Loading…</p>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="Admin.closeClientModal()">Cancel</button>
         <button type="submit" class="btn btn-primary" id="cf-submit">Save Client</button>
@@ -2240,6 +2249,11 @@
           <button class="btn btn-sm btn-primary" style="align-self:flex-end" onclick="App.sendMsgReply()">Send</button>
         </div>
       </div>
+    </div>
+    <!-- Related messages from same caller -->
+    <div id="msg-detail-related-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">&#128222; Other messages from this caller</div>
+      <div id="msg-detail-related" style="max-height:160px;overflow-y:auto;font-size:0.8rem"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeMsgDetail()">Close</button>

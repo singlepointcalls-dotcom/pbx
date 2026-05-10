@@ -1570,6 +1570,27 @@ const App = (() => {
           dl.innerHTML = tagData.tags.map((t) => `<option value="${escHtml(t)}">`).join('');
         }
       } catch { /* ignore */ }
+
+      // Related messages from same caller phone
+      const relWrap = el('msg-detail-related-wrap');
+      const relEl   = el('msg-detail-related');
+      if (relWrap && relEl && m.caller_phone) {
+        relWrap.style.display = '';
+        try {
+          const relData = await api('GET', `/messages?caller_phone=${encodeURIComponent(m.caller_phone)}&limit=6`);
+          const related = (relData.messages || []).filter((r) => r.id !== messageId);
+          relEl.innerHTML = related.length
+            ? related.map((r) => `
+              <div style="padding:4px 0;border-bottom:1px solid var(--border);cursor:pointer;display:flex;gap:8px;align-items:center" onclick="App.showMessageDetail('${r.id}')">
+                <span class="pill pill-${r.urgency === 'high' ? 'red' : 'blue'}" style="font-size:0.68rem">${r.urgency}</span>
+                <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.subject || r.body?.slice(0,60) || '—')}</span>
+                <span style="color:var(--text-muted);flex-shrink:0">${new Date(r.created_at).toLocaleDateString('en-GB')}</span>
+              </div>`).join('')
+            : '<p style="color:var(--text-muted)">No other messages from this caller</p>';
+        } catch { relEl.innerHTML = ''; }
+      } else if (relWrap) {
+        relWrap.style.display = 'none';
+      }
     } catch (err) {
       el('msg-detail-body').textContent = 'Error: ' + err.message;
     }
@@ -3079,6 +3100,7 @@ const Admin = (() => {
     if (name === 'msgtpl' && editingClientId) loadMsgTemplates();
     if (name === 'holidays' && editingClientId) loadHolidays();
     if (name === 'crm') onCrmTypeChange();
+    if (name === 'history' && editingClientId) loadClientTimeline(editingClientId);
   }
 
   /* ---- Clients ---- */
@@ -3145,7 +3167,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn', 'tab-holidays-btn', 'tab-crm-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn', 'tab-holidays-btn', 'tab-crm-btn', 'tab-history-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -4449,6 +4471,36 @@ const Admin = (() => {
   }
 
   /* ---- Client News (Admin) ---- */
+  async function loadClientTimeline(clientId) {
+    const container = el('client-history-list');
+    if (!container) return;
+    container.innerHTML = '<p class="empty-state">Loading…</p>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/timeline?limit=60`);
+      const items = data.timeline || [];
+      if (!items.length) { container.innerHTML = '<p class="empty-state">No recent activity</p>'; return; }
+      const icons = { call: '&#128222;', message: '&#128220;', appointment: '&#128197;' };
+      const statusColors = { answered: '#27ae60', no_answer: '#e74c3c', pending: '#f39c12', acknowledged: '#27ae60', scheduled: '#3498db', cancelled: '#e74c3c' };
+      container.innerHTML = items.map((item) => `
+        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);align-items:flex-start">
+          <div style="font-size:1.1rem;min-width:24px;text-align:center">${icons[item.type] || '?'}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:0.85rem;font-weight:600">${escHtml(item.title || '—')}</div>
+            ${item.subtitle ? `<div style="font-size:0.78rem;color:var(--text-muted)">${escHtml(item.subtitle)}</div>` : ''}
+            <div style="font-size:0.75rem;color:var(--text-muted);display:flex;gap:8px;margin-top:2px">
+              <span>${new Date(item.ts).toLocaleString('en-GB')}</span>
+              ${item.status ? `<span style="color:${statusColors[item.status] || '#888'}">${item.status}</span>` : ''}
+              ${item.operator_name ? `<span>by ${escHtml(item.operator_name)}</span>` : ''}
+            </div>
+          </div>
+          <span class="pill" style="font-size:0.68rem;flex-shrink:0">${item.type}</span>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="empty-state">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
   async function loadClientNewsAdmin(clientId) {
     const container = el('client-news-list');
     if (!container) return;
@@ -5140,6 +5192,7 @@ const Admin = (() => {
     loadSettings, saveSettings, openFreePBX,
     loadClientFiles, uploadFile, deleteFile,
     loadClientNewsAdmin, openNewsEditor, saveNews, deleteNews,
+    loadClientTimeline,
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
     loadWebhooks, addWebhook, testWebhook, deleteWebhook,

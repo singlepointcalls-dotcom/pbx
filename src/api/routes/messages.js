@@ -11,7 +11,7 @@ router.use(requireAuth);
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, status, urgency, from, to, tag, assigned_to, limit = 50, offset = 0 } = req.query;
+    const { client_id, status, urgency, from, to, tag, assigned_to, caller_phone, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
              ao.full_name AS assigned_to_name
@@ -55,6 +55,10 @@ router.get('/', async (req, res, next) => {
     } else if (assigned_to) {
       params.push(assigned_to);
       query += ` AND m.assigned_to = $${params.length}`;
+    }
+    if (caller_phone) {
+      params.push(caller_phone);
+      query += ` AND m.caller_phone = $${params.length}`;
     }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET

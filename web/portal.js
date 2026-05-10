@@ -767,6 +767,7 @@ const Portal = (() => {
             ${c.mobile ? ` &middot; ${escHtml(c.mobile)} (mob)` : ''}
           </div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.82rem;color:#555">
+            <label><input type="checkbox" ${c.is_oncall ? 'checked' : ''} onchange="Portal.toggleOnCall('${c.id}', this.checked)"> <strong style="color:var(--p-primary,#1a3a5c)">On Call</strong></label>
             <label><input type="checkbox" ${c.notify_email ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_email', this.checked)"> Email</label>
             <label><input type="checkbox" ${c.notify_sms ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_sms', this.checked)"> SMS</label>
             <label><input type="checkbox" ${c.notify_whatsapp ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_whatsapp', this.checked)"> WhatsApp</label>
@@ -784,15 +785,20 @@ const Portal = (() => {
   async function updateContactPref(contactId, field, value) {
     try {
       await api('PUT', `/portal/contacts/${contactId}`, { [field]: value });
-      // Show brief toast feedback
       const msg = `${field.replace('notify_', '')} notifications ${value ? 'enabled' : 'disabled'}`;
-      const toast = document.createElement('div');
-      toast.textContent = msg;
-      toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#27ae60;color:#fff;padding:8px 14px;border-radius:6px;z-index:9999;font-size:0.88rem';
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 2500);
+      toast(msg, 'success');
     } catch (err) {
-      alert('Failed to update: ' + err.message);
+      toast('Failed to update: ' + err.message, 'error');
+    }
+  }
+
+  async function toggleOnCall(contactId, value) {
+    try {
+      await api('PUT', `/portal/contacts/${contactId}`, { is_oncall: value });
+      toast(value ? 'Contact marked ON CALL' : 'On-call status removed', 'success');
+      loadContacts();
+    } catch (err) {
+      toast('Failed to update on-call status: ' + err.message, 'error');
     }
   }
 
@@ -1031,7 +1037,7 @@ const Portal = (() => {
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
     showForgot, showLogin, doForgot, doReset,
     // Contacts
-    loadContacts, updateContactPref, openContactRequest, closeContactRequest, submitContactRequest,
+    loadContacts, updateContactPref, toggleOnCall, openContactRequest, closeContactRequest, submitContactRequest,
     // Appointments
     loadAppointments, openNewAppt, closeNewAppt, saveNewAppt, cancelAppointment,
     // Knowledge
