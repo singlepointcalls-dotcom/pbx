@@ -16,6 +16,7 @@ const pool = require('../config/database');
 const { broadcast } = require('../services/realtime');
 const { transcribeCall } = require('../services/transcription');
 const { sendCsatSurvey } = require('../api/routes/csat');
+const { _isWithinBusinessHours: isWithinBusinessHours } = require('../api/routes/clients');
 
 let ariClient = null;
 
@@ -123,6 +124,47 @@ async function handleStasisStart(event, channel) {
       }
     } catch (err) {
       console.warn('[ARI] DNC check failed (proceeding with call):', err.message);
+    }
+  }
+
+  // Business hours + holiday check
+  if (client) {
+    try {
+      let isOpen = isWithinBusinessHours(client.opening_times, client.timezone);
+
+      // Check for a holiday override (closure_type = 'closed' means fully closed today)
+      if (isOpen) {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const holidayResult = await pool.query(
+          `SELECT closure_type FROM client_holidays
+           WHERE client_id = $1 AND holiday_date = $2 LIMIT 1`,
+          [client.id, today]
+        );
+        if (holidayResult.rows[0]?.closure_type === 'closed') {
+          isOpen = false;
+          console.log(`[ARI] Holiday closure for client=${client.id}, rejecting channel=${channelId}`);
+        }
+      }
+
+      if (!isOpen) {
+        console.log(`[ARI] Out of hours: client=${client.id} channel=${channelId}`);
+        await pool.query(
+          `INSERT INTO call_logs (asterisk_channel_id, client_id, caller_id_num, caller_id_name, did, call_start, call_end, disposition)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 'out_of_hours')`,
+          [channelId, client.id, callerIdNum, callerIdName, did]
+        );
+        broadcast('call:out_of_hours', {
+          channelId,
+          callerIdNum,
+          callerIdName,
+          clientId: client.id,
+          clientName: client.name,
+        });
+        try { await channel.hangup(); } catch { /* best-effort */ }
+        return;
+      }
+    } catch (err) {
+      console.warn('[ARI] Business hours check failed (proceeding with call):', err.message);
     }
   }
 

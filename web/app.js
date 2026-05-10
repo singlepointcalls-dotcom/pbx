@@ -1448,8 +1448,8 @@ const App = (() => {
     }
 
     container.innerHTML = messages.map((m) => `
-      <div class="message-item" data-msg-id="${m.id}" onclick="App.showMessageDetail('${m.id}')">
-        <div class="message-item-client">${escHtml(m.client_name || '—')}</div>
+      <div class="message-item${!m.read_at ? ' message-unread' : ''}" data-msg-id="${m.id}" onclick="App.showMessageDetail('${m.id}')">
+        <div class="message-item-client">${escHtml(m.client_name || '—')}${!m.read_at ? ' <span style="display:inline-block;width:7px;height:7px;background:#3b82f6;border-radius:50%;margin-left:4px;vertical-align:middle" title="Unread"></span>' : ''}</div>
         <div class="message-item-caller">${escHtml(m.caller_name || m.caller_phone || 'Unknown')}</div>
         <div class="message-item-preview">${escHtml(m.body)}</div>
         <div class="message-item-meta">
@@ -1487,6 +1487,8 @@ const App = (() => {
       if (!data) return;
       const m = data.message;
       _detailMessageBody = m.body || '';
+      // Mark as read (fire-and-forget)
+      if (!m.read_at) api('PATCH', `/messages/${messageId}/read`, {}).catch(() => {});
       el('msg-detail-title').textContent = m.subject || 'Message';
       const aiClass = m.ai_classification;
       el('msg-detail-meta').innerHTML = [
@@ -5389,6 +5391,39 @@ const Admin = (() => {
     _csvDownload(url, 'calls.csv');
   }
 
+  async function loadSlaCompliance() {
+    const days = el('report-days')?.value || 30;
+    const wrap = el('sla-compliance-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+    try {
+      const data = await api('GET', `/reports/sla-compliance?days=${days}`);
+      const clients = data?.clients || [];
+      if (!clients.length) { wrap.innerHTML = '<p class="empty-state">No data.</p>'; return; }
+      wrap.innerHTML = `<table class="admin-table">
+        <thead><tr>
+          <th>Client</th><th>SLA Target</th><th>Total Msgs</th><th>Acknowledged</th>
+          <th>Within SLA</th><th>SLA %</th><th>Avg Ack (min)</th><th>Unacked</th>
+        </tr></thead>
+        <tbody>
+          ${clients.map((c) => {
+            const slaClass = c.sla_pct === null ? '' : c.sla_pct >= 90 ? 'style="color:#27ae60"' : c.sla_pct >= 70 ? 'style="color:#f39c12"' : 'style="color:#e74c3c"';
+            return `<tr>
+              <td>${escHtml(c.client_name)}</td>
+              <td>${c.sla_minutes} min</td>
+              <td>${c.total_messages}</td>
+              <td>${c.acknowledged}</td>
+              <td>${c.within_sla}</td>
+              <td ${slaClass}><strong>${c.sla_pct !== null ? c.sla_pct + '%' : '—'}</strong></td>
+              <td>${c.avg_ack_minutes !== null ? c.avg_ack_minutes : '—'}</td>
+              <td${parseInt(c.unacknowledged) > 0 ? ' style="color:#e74c3c"' : ''}>${c.unacknowledged}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+    } catch (err) { wrap.innerHTML = `<p style="color:#e74c3c">${escHtml(err.message)}</p>`; }
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -5407,7 +5442,7 @@ const Admin = (() => {
     addIgnore, removeIgnore,
     setAvailability,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
-    loadReports, loadCallLog,
+    loadReports, loadCallLog, loadSlaCompliance,
     loadBillingForClient, saveBillingPlan, generateBillingReport, regenerateReport,
     loadSettings, saveSettings, openFreePBX,
     loadClientFiles, uploadFile, deleteFile,

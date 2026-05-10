@@ -211,4 +211,52 @@ router.delete('/schedules/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/reports/sla-compliance?days=30&client_id=
+// Per-client SLA compliance: messages within SLA window vs. breached
+router.get('/sla-compliance', async (req, res, next) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 365);
+    const clientFilter = req.query.client_id ? 'AND m.client_id = $2' : '';
+    const params = [days];
+    if (req.query.client_id) params.push(req.query.client_id);
+
+    const result = await pool.query(
+      `SELECT
+         c.id AS client_id,
+         c.name AS client_name,
+         COALESCE(c.sla_minutes, 60) AS sla_minutes,
+         COUNT(m.id) AS total_messages,
+         COUNT(m.id) FILTER (WHERE m.acknowledged_at IS NOT NULL) AS acknowledged,
+         COUNT(m.id) FILTER (
+           WHERE m.acknowledged_at IS NOT NULL
+             AND EXTRACT(EPOCH FROM (m.acknowledged_at - m.created_at))/60 <= COALESCE(c.sla_minutes, 60)
+         ) AS within_sla,
+         COUNT(m.id) FILTER (
+           WHERE m.acknowledged_at IS NOT NULL
+             AND EXTRACT(EPOCH FROM (m.acknowledged_at - m.created_at))/60 > COALESCE(c.sla_minutes, 60)
+         ) AS breached_sla,
+         COUNT(m.id) FILTER (WHERE m.acknowledged_at IS NULL) AS unacknowledged,
+         ROUND(AVG(
+           EXTRACT(EPOCH FROM (m.acknowledged_at - m.created_at))/60
+         ) FILTER (WHERE m.acknowledged_at IS NOT NULL), 1) AS avg_ack_minutes
+       FROM clients c
+       LEFT JOIN messages m ON m.client_id = c.id
+         AND m.created_at >= NOW() - ($1 || ' days')::INTERVAL
+       WHERE c.is_active = true ${clientFilter}
+       GROUP BY c.id, c.name, c.sla_minutes
+       ORDER BY c.name ASC`,
+      params
+    );
+
+    const rows = result.rows.map((r) => ({
+      ...r,
+      sla_pct: r.acknowledged > 0
+        ? Math.round((parseInt(r.within_sla) / parseInt(r.acknowledged)) * 100)
+        : null,
+    }));
+
+    res.json({ days, clients: rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

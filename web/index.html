@@ -689,6 +689,13 @@
         <thead><tr><th>Time</th><th>Client</th><th>Caller</th><th>DID</th><th>Duration</th><th>Disposition</th><th>Operator</th><th>Recording</th><th>QA</th><th></th></tr></thead>
         <tbody id="calllog-tbody"><tr><td colspan="10" class="empty-state">Click Refresh to load</td></tr></tbody>
       </table>
+      <h3 class="report-section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
+        SLA Compliance
+        <button class="btn btn-sm btn-secondary" onclick="Admin.loadSlaCompliance()">&#8635; Refresh</button>
+      </h3>
+      <div id="sla-compliance-wrap">
+        <p class="empty-state">Click Refresh to load SLA compliance data.</p>
+      </div>
     </div>
 
     <!-- Billing Section -->
