@@ -721,7 +721,9 @@ const App = (() => {
     const call = callQueue.get(channelId);
     if (!call) return;
 
-    const ext = prompt('Your SIP extension (e.g. 1001):');
+    // Use stored SIP extension from operator profile, or prompt if not set
+    const storedExt = currentOperator?.sip_extension;
+    const ext = storedExt || prompt('Your SIP extension (e.g. 1001):');
     if (!ext) return;
 
     api('POST', `/callcontrol/${channelId}/answer`, { extension: ext })

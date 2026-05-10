@@ -145,8 +145,9 @@ router.post('/login', rateLimitAuth, async (req, res, next) => {
       expiresInHours: lifetimeHours,
       operator: {
         id: operator.id, username: operator.username,
-        fullName: operator.full_name, email: operator.email,
-        role: operator.role, totp_enabled: operator.totp_enabled,
+        fullName: operator.full_name, display_name: operator.display_name,
+        email: operator.email, role: operator.role,
+        totp_enabled: operator.totp_enabled, sip_extension: operator.sip_extension,
       },
     });
   } catch (err) {

@@ -128,6 +128,23 @@ async function handleStasisStart(event, channel) {
     }
   }
 
+  // VIP caller check — flag but don't block
+  let isVip = false;
+  if (client && callerIdNum && callerIdNum !== 'Unknown') {
+    try {
+      const vipResult = await pool.query(
+        `SELECT label FROM client_vip_numbers WHERE client_id = $1 AND phone = $2 LIMIT 1`,
+        [client.id, callerIdNum]
+      );
+      if (vipResult.rows.length > 0) {
+        isVip = true;
+        console.log(`[ARI] VIP caller: ${callerIdNum} for client=${client.id} (${vipResult.rows[0].label || 'VIP'})`);
+      }
+    } catch (err) {
+      console.warn('[ARI] VIP check failed (proceeding):', err.message);
+    }
+  }
+
   // Business hours + holiday check
   if (client) {
     try {
@@ -303,6 +320,7 @@ async function handleStasisStart(event, channel) {
     callerIdNum,
     callerIdName,
     did,
+    isVip,
     queueEntryId,
     client: client
       ? { id: client.id, name: client.name, account_number: client.account_number, script: client.script, greeting: client.greeting }
