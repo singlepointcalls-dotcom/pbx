@@ -200,7 +200,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
       escalation_rules, sla_answer_seconds, sla_abandon_threshold, data_retention_months,
       halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
-      halo_customer_id, halo_ticket_type_id,
+      halo_customer_id, halo_ticket_type_id, csat_enabled,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -245,7 +245,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          halo_oauth_client_id   = COALESCE($31, halo_oauth_client_id),
          halo_oauth_client_secret = COALESCE($32, halo_oauth_client_secret),
          halo_customer_id       = COALESCE($33, halo_customer_id),
-         halo_ticket_type_id    = COALESCE($34, halo_ticket_type_id)
+         halo_ticket_type_id    = COALESCE($34, halo_ticket_type_id),
+         csat_enabled           = COALESCE($36, csat_enabled)
        WHERE id = $22
        RETURNING *`,
       [
@@ -277,6 +278,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         halo_customer_id         !== undefined ? (halo_customer_id || null)         : null,
         halo_ticket_type_id      !== undefined ? (halo_ticket_type_id || null)      : null,
         sla_abandon_threshold    !== undefined ? parseInt(sla_abandon_threshold)    : null,
+        csat_enabled             !== undefined ? !!csat_enabled                     : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });

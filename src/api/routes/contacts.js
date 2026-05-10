@@ -9,13 +9,19 @@ router.use(requireAuth);
 // GET /api/clients/:clientId/contacts
 router.get('/:clientId/contacts', async (req, res, next) => {
   try {
+    const params = [req.params.clientId];
+    let tagFilter = '';
+    if (req.query.tag) {
+      params.push(req.query.tag.toLowerCase());
+      tagFilter = `AND $${params.length} = ANY(c.tags)`;
+    }
     const result = await pool.query(
       `SELECT c.*, d.name AS department_name
        FROM contacts c
        LEFT JOIN departments d ON c.department_id = d.id
-       WHERE c.client_id = $1
+       WHERE c.client_id = $1 ${tagFilter}
        ORDER BY c.priority ASC, c.name ASC`,
-      [req.params.clientId]
+      params
     );
     res.json({ contacts: result.rows });
   } catch (err) {
@@ -272,6 +278,21 @@ router.post('/:clientId/contacts/import', requireRole('admin', 'supervisor'), as
     }
 
     res.json({ imported, skipped, errors });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/clients/:clientId/contacts/:contactId/tags — set contact tags
+router.patch('/:clientId/contacts/:contactId/tags', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags must be an array of strings' });
+    const cleaned = tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean);
+    const result = await pool.query(
+      `UPDATE contacts SET tags = $1 WHERE id = $2 AND client_id = $3 RETURNING id, tags`,
+      [cleaned, req.params.contactId, req.params.clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ contact: result.rows[0] });
   } catch (err) { next(err); }
 });
 

@@ -11,6 +11,7 @@ const { startRetentionService }  = require('./services/retention');
 const { startImapPolling }           = require('./services/email-imap');
 const { startCallbackExecutor }      = require('./services/callback-executor');
 const { startAppointmentReminders }  = require('./services/appointment-reminders');
+const { startReportScheduler }       = require('./services/report-scheduler');
 const pushService                    = require('./services/push');
 
 const PORT = parseInt(process.env.PORT || '3000');
@@ -48,6 +49,9 @@ startCallbackExecutor();
 
 // Start appointment reminder email scheduler
 startAppointmentReminders();
+
+// Start scheduled report email service
+startReportScheduler();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

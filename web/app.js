@@ -2705,6 +2705,8 @@ const Admin = (() => {
     else if (name === 'dnc') DncPanel.load();
     else if (name === 'transcription') TranscriptionPanel.load();
     else if (name === 'whatsapp') WAInbox.load();
+    else if (name === 'csat') CsatPanel.load();
+    else if (name === 'schedules') SchedulesPanel.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -2842,6 +2844,7 @@ const Admin = (() => {
         el('cf-escalate-mins').value = escRules.length ? (escRules[0].after_minutes || 0) : 0;
         el('cf-sla-seconds').value   = c.sla_answer_seconds || 30;
         if (el('cf-sla-abandon')) el('cf-sla-abandon').value = c.sla_abandon_threshold || 3;
+        if (el('cf-csat-enabled')) el('cf-csat-enabled').checked = !!c.csat_enabled;
 
         // SMTP
         el('cf-smtp-host').value = c.smtp_host || '';
@@ -2946,6 +2949,7 @@ const Admin = (() => {
         escalation_rules,
         sla_answer_seconds:    parseInt(el('cf-sla-seconds').value) || 30,
         sla_abandon_threshold: parseInt(el('cf-sla-abandon')?.value) || 3,
+        csat_enabled: el('cf-csat-enabled')?.checked ?? false,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
 
@@ -6137,4 +6141,149 @@ const WAInbox = (() => {
   }
 
   return { load, openThread, sendReply, loadThreads, openCompose };
+})();
+
+/* ============================================================
+   CsatPanel — Customer Satisfaction survey results
+   ============================================================ */
+const CsatPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  function stars(n) {
+    if (!n) return '<span style="color:var(--text-muted)">—</span>';
+    return '&#11088;'.repeat(n) + '&#9734;'.repeat(5 - n);
+  }
+
+  async function load() {
+    const clientSel = el('csat-filter-client');
+    if (clientSel && clientSel.options.length <= 1) {
+      try {
+        const { clients } = await api('GET', '/clients');
+        clients.forEach((c) => {
+          const o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          clientSel.appendChild(o);
+        });
+      } catch (_) {}
+    }
+
+    const clientId = clientSel?.value || '';
+    const qs = clientId ? `?client_id=${clientId}` : '';
+
+    try {
+      const { responses, stats } = await api('GET', `/csat/responses${qs}`);
+      el('csat-avg').textContent = stats.avg_rating ?? '—';
+      el('csat-responded').textContent = stats.responded ?? '0';
+      el('csat-total').textContent = stats.total ?? '0';
+
+      const tbody = el('csat-tbody');
+      if (!responses.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No CSAT responses yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = responses.map((r) => `
+        <tr>
+          <td>${escHtml(r.client_name || '—')}</td>
+          <td>${escHtml(r.caller_id_name || r.phone)}</td>
+          <td>${new Date(r.sent_at).toLocaleString()}</td>
+          <td>${r.responded_at ? new Date(r.responded_at).toLocaleString() : '<em>Pending</em>'}</td>
+          <td>${stars(r.rating)}</td>
+          <td>${escHtml(r.comment || '—')}</td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      el('csat-tbody').innerHTML = `<tr><td colspan="6" class="empty-state">${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   SchedulesPanel — scheduled report email management
+   ============================================================ */
+const SchedulesPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    // Populate client dropdown in the form
+    const sfClient = el('sf-client');
+    if (sfClient && sfClient.options.length <= 1) {
+      try {
+        const { clients } = await api('GET', '/clients');
+        clients.forEach((c) => {
+          const o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          sfClient.appendChild(o);
+        });
+      } catch (_) {}
+    }
+
+    try {
+      const { schedules } = await api('GET', '/reports/schedules');
+      const tbody = el('schedules-tbody');
+      if (!schedules.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No scheduled reports configured</td></tr>';
+        return;
+      }
+      tbody.innerHTML = schedules.map((s) => `
+        <tr>
+          <td><strong>${escHtml(s.report_type)}</strong></td>
+          <td>${escHtml(s.frequency)}</td>
+          <td style="font-size:0.8rem">${escHtml((s.recipients || []).join(', '))}</td>
+          <td>${escHtml(s.client_name || 'All')}</td>
+          <td>${s.last_sent_at ? new Date(s.last_sent_at).toLocaleString() : '—'}</td>
+          <td>${new Date(s.next_run_at).toLocaleString()}</td>
+          <td><label class="toggle-switch" style="display:inline-flex">
+            <input type="checkbox" ${s.is_active ? 'checked' : ''} onchange="SchedulesPanel.toggleActive('${s.id}', this.checked)">
+            <span class="toggle-slider"></span>
+          </label></td>
+          <td><button class="btn btn-danger btn-sm" onclick="SchedulesPanel.del('${s.id}')">Delete</button></td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      el('schedules-tbody').innerHTML = `<tr><td colspan="8" class="empty-state">${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function openNew() { el('schedule-form').style.display = 'block'; }
+  function closeNew() { el('schedule-form').style.display = 'none'; }
+
+  async function save() {
+    const type = el('sf-type').value;
+    const freq = el('sf-freq').value;
+    const clientId = el('sf-client').value;
+    const raw = el('sf-recipients').value;
+    const recipients = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!recipients.length) return toast('Enter at least one recipient email', 'error');
+    try {
+      await api('POST', '/reports/schedules', { report_type: type, frequency: freq, recipients, client_id: clientId || undefined });
+      toast('Schedule created');
+      closeNew();
+      load();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  async function toggleActive(id, active) {
+    try {
+      await api('PATCH', `/reports/schedules/${id}`, { is_active: active });
+      toast(active ? 'Schedule enabled' : 'Schedule paused');
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this schedule?')) return;
+    try {
+      await api('DELETE', `/reports/schedules/${id}`);
+      toast('Schedule deleted');
+      load();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  return { load, openNew, closeNew, save, toggleActive, del };
 })();

@@ -140,4 +140,75 @@ router.get('/clients', async (req, res, next) => {
   }
 });
 
+// ── Scheduled reports ──────────────────────────────────────────────────────
+
+// GET /api/reports/schedules
+router.get('/schedules', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT rs.*, c.name AS client_name, o.full_name AS created_by_name
+       FROM report_schedules rs
+       LEFT JOIN clients c ON rs.client_id = c.id
+       LEFT JOIN operators o ON rs.created_by = o.id
+       ORDER BY rs.created_at DESC`
+    );
+    res.json({ schedules: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/reports/schedules
+router.post('/schedules', async (req, res, next) => {
+  try {
+    const { report_type, frequency, recipients, client_id } = req.body;
+    if (!report_type || !frequency || !recipients?.length) {
+      return res.status(400).json({ error: 'report_type, frequency, and recipients are required' });
+    }
+    const validTypes = ['calls', 'messages', 'performance', 'sla'];
+    const validFreq = ['daily', 'weekly', 'monthly'];
+    if (!validTypes.includes(report_type)) return res.status(400).json({ error: 'Invalid report_type' });
+    if (!validFreq.includes(frequency)) return res.status(400).json({ error: 'Invalid frequency' });
+
+    // Calculate first run time
+    const nextRun = new Date();
+    if (frequency === 'daily') nextRun.setDate(nextRun.getDate() + 1);
+    else if (frequency === 'weekly') nextRun.setDate(nextRun.getDate() + 7);
+    else nextRun.setMonth(nextRun.getMonth() + 1);
+    nextRun.setHours(8, 0, 0, 0); // send at 08:00
+
+    const result = await pool.query(
+      `INSERT INTO report_schedules (report_type, frequency, recipients, client_id, next_run_at, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [report_type, frequency, recipients, client_id || null, nextRun, req.operator.id]
+    );
+    res.status(201).json({ schedule: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/reports/schedules/:id
+router.patch('/schedules/:id', async (req, res, next) => {
+  try {
+    const { is_active, recipients, frequency } = req.body;
+    const result = await pool.query(
+      `UPDATE report_schedules SET
+         is_active  = COALESCE($1, is_active),
+         recipients = COALESCE($2, recipients),
+         frequency  = COALESCE($3, frequency)
+       WHERE id = $4 RETURNING *`,
+      [is_active ?? null, recipients || null, frequency || null, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Schedule not found' });
+    res.json({ schedule: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/reports/schedules/:id
+router.delete('/schedules/:id', async (req, res, next) => {
+  try {
+    const result = await pool.query('DELETE FROM report_schedules WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Schedule not found' });
+    res.json({ message: 'Schedule deleted' });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

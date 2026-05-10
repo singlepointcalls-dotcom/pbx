@@ -534,6 +534,8 @@
       <button class="admin-nav-item" onclick="Admin.showSection('dnc', event)">&#128683; DNC</button>
       <button class="admin-nav-item" onclick="Admin.showSection('transcription', event)">&#127908; Transcription</button>
       <button class="admin-nav-item" onclick="Admin.showSection('whatsapp', event)">&#128242; WhatsApp</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('csat', event)">&#11088; CSAT</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -1090,6 +1092,54 @@
       </div>
     </div>
 
+    <!-- CSAT Section -->
+    <div id="admin-csat" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#11088; Customer Satisfaction (CSAT)</h2>
+        <select id="csat-filter-client" onchange="CsatPanel.load()" style="min-width:160px">
+          <option value="">All Clients</option>
+        </select>
+      </div>
+      <div id="csat-stats-bar" style="display:flex;gap:24px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px">
+        <div><div style="font-size:1.6rem;font-weight:700" id="csat-avg">—</div><div style="font-size:0.75rem;color:var(--text-muted)">Avg Rating</div></div>
+        <div><div style="font-size:1.6rem;font-weight:700" id="csat-responded">—</div><div style="font-size:0.75rem;color:var(--text-muted)">Responded</div></div>
+        <div><div style="font-size:1.6rem;font-weight:700" id="csat-total">—</div><div style="font-size:0.75rem;color:var(--text-muted)">Total Sent</div></div>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Client</th><th>Caller</th><th>Sent</th><th>Responded</th><th>Rating</th><th>Comment</th></tr></thead>
+        <tbody id="csat-tbody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Scheduled Reports Section -->
+    <div id="admin-schedules" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#128337; Scheduled Reports</h2>
+        <button class="btn btn-primary btn-sm" onclick="SchedulesPanel.openNew()">+ New Schedule</button>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Type</th><th>Frequency</th><th>Recipients</th><th>Client</th><th>Last Sent</th><th>Next Run</th><th>Active</th><th></th></tr></thead>
+        <tbody id="schedules-tbody"><tr><td colspan="8" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+      <div id="schedule-form" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:16px;margin-top:16px">
+        <h3 style="margin:0 0 12px">New Scheduled Report</h3>
+        <div style="display:grid;gap:10px">
+          <div class="field"><label>Report Type</label>
+            <select id="sf-type"><option value="calls">Calls</option><option value="messages">Messages</option><option value="performance">Performance</option><option value="sla">SLA</option></select>
+          </div>
+          <div class="field"><label>Frequency</label>
+            <select id="sf-freq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
+          </div>
+          <div class="field"><label>Client (optional)</label><select id="sf-client"><option value="">All Clients</option></select></div>
+          <div class="field"><label>Recipients (comma-separated emails)</label><input type="text" id="sf-recipients" placeholder="email@example.com, other@example.com" /></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="SchedulesPanel.save()">Save Schedule</button>
+            <button class="btn btn-secondary" onclick="SchedulesPanel.closeNew()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /view-admin -->
 
   <!-- Appointment New/Edit Modal -->
@@ -1405,6 +1455,12 @@
           <div class="field">
             <label>SLA — Abandon threshold (missed calls before alert)</label>
             <input type="number" id="cf-sla-abandon" min="1" max="100" value="3" placeholder="3" style="max-width:100px" />
+          </div>
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="cf-csat-enabled" />
+              Enable CSAT surveys (send SMS rating request after each answered call)
+            </label>
           </div>
         </div>
 

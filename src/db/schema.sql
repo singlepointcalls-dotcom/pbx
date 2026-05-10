@@ -1032,3 +1032,40 @@ ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_new_message BOOLEAN NOT NU
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_missed_call BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_sla_breach  BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_escalation  BOOLEAN NOT NULL DEFAULT false;
+
+-- ============================================================
+-- v20 — CSAT surveys, scheduled reports, contact tags
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS csat_surveys (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  call_log_id  UUID REFERENCES call_logs(id) ON DELETE SET NULL,
+  client_id    UUID REFERENCES clients(id) ON DELETE CASCADE,
+  token        UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  phone        TEXT NOT NULL,
+  sent_at      TIMESTAMPTZ DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  rating       SMALLINT CHECK (rating BETWEEN 1 AND 5),
+  comment      TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_csat_surveys_call_log ON csat_surveys(call_log_id);
+CREATE INDEX IF NOT EXISTS idx_csat_surveys_client ON csat_surveys(client_id);
+CREATE INDEX IF NOT EXISTS idx_csat_surveys_token ON csat_surveys(token);
+
+CREATE TABLE IF NOT EXISTS report_schedules (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_type   TEXT NOT NULL CHECK (report_type IN ('calls','messages','performance','sla')),
+  frequency     TEXT NOT NULL CHECK (frequency IN ('daily','weekly','monthly')),
+  recipients    TEXT[] NOT NULL DEFAULT '{}',
+  client_id     UUID REFERENCES clients(id) ON DELETE CASCADE,
+  last_sent_at  TIMESTAMPTZ,
+  next_run_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  created_by    UUID REFERENCES operators(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_report_schedules_next_run ON report_schedules(next_run_at) WHERE is_active = true;
+
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS csat_enabled BOOLEAN NOT NULL DEFAULT false;

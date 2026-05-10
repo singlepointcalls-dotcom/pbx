@@ -50,6 +50,7 @@ const leaderboardRoutes    = require('./api/routes/leaderboard');
 const shiftsRoutes         = require('./api/routes/shifts');
 const voicemailRoutes      = require('./api/routes/voicemail');
 const ivrRoutes            = require('./api/routes/ivr');
+const { router: csatRoutes } = require('./api/routes/csat');
 const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
@@ -170,6 +171,7 @@ app.use('/api/leaderboard',     leaderboardRoutes);
 app.use('/api/shifts',          shiftsRoutes);
 app.use('/api/voicemail',       voicemailRoutes);
 app.use('/api/ivr',             ivrRoutes);
+app.use('/api/csat',           csatRoutes);
 
 // Health check — includes DB connectivity and basic counts for monitoring
 app.get('/api/health', async (_req, res) => {
