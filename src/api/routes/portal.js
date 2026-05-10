@@ -150,6 +150,24 @@ router.get('/me', requirePortalAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/portal/messages/stats — message counts by status for the past 30 days
+router.get('/messages/stats', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status IN ('pending','delivered'))::int AS pending,
+         COUNT(*) FILTER (WHERE status = 'acknowledged')::int AS acknowledged,
+         COUNT(*) FILTER (WHERE urgency = 'urgent')::int AS urgent,
+         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int AS last_30_days
+       FROM messages
+       WHERE client_id = $1`,
+      [req.portalUser.client_id]
+    );
+    res.json({ stats: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/messages
 router.get('/messages', requirePortalAuth, async (req, res, next) => {
   try {

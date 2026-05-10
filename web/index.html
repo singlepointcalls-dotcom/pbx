@@ -429,8 +429,17 @@
             <option value="">All Status</option>
             <option value="pending">Pending</option>
             <option value="delivered">Delivered</option>
+            <option value="acknowledged">Acknowledged</option>
             <option value="failed">Failed</option>
           </select>
+          <select id="msg-filter-urgency" onchange="App.loadMessages()">
+            <option value="">All Urgency</option>
+            <option value="urgent">Urgent</option>
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+          </select>
+          <input type="date" id="msg-filter-from" onchange="App.loadMessages()" title="From date" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius)" />
+          <input type="date" id="msg-filter-to" onchange="App.loadMessages()" title="To date" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius)" />
         </div>
         <div id="messages-list" class="messages-list"></div>
       </section>

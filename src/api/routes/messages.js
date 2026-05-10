@@ -11,7 +11,7 @@ router.use(requireAuth);
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, status, urgency, limit = 50, offset = 0 } = req.query;
+    const { client_id, status, urgency, from, to, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT m.*, c.name AS client_name, o.full_name AS operator_name
       FROM messages m
@@ -32,6 +32,14 @@ router.get('/', async (req, res, next) => {
     if (urgency) {
       params.push(urgency);
       query += ` AND m.urgency = $${params.length}`;
+    }
+    if (from) {
+      params.push(from);
+      query += ` AND m.created_at >= $${params.length}`;
+    }
+    if (to) {
+      params.push(to);
+      query += ` AND m.created_at < ($${params.length}::date + INTERVAL '1 day')`;
     }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET

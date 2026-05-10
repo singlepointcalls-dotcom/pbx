@@ -221,24 +221,36 @@ const Portal = (() => {
 
     // Stats
     try {
-      const [callData, msgData] = await Promise.all([
+      const [callData, msgData, msgStats] = await Promise.all([
         api('GET', '/portal/calls?days=30'),
         api('GET', '/portal/messages?limit=5'),
+        api('GET', '/portal/messages/stats').catch(() => null),
       ]);
+      const statCards = [];
       if (callData) {
         const s = callData.summary;
-        el('p-stats').innerHTML = [
-          { label: 'Total Calls (30d)', value: s.total,   color: 'blue' },
-          { label: 'Answered',          value: s.answered, color: 'green' },
-          { label: 'Missed',            value: s.missed,   color: 'red' },
-          { label: 'Minutes (30d)',      value: s.total_minutes, color: 'orange' },
-        ].map((c) => `
-          <div class="p-stat-card p-stat-${c.color}">
-            <div class="p-stat-value">${c.value ?? 0}</div>
-            <div class="p-stat-label">${c.label}</div>
-          </div>
-        `).join('');
+        statCards.push(
+          { label: 'Total Calls (30d)', value: s.total,         color: 'blue' },
+          { label: 'Answered',          value: s.answered,       color: 'green' },
+          { label: 'Missed',            value: s.missed,         color: 'red' },
+          { label: 'Call Minutes (30d)', value: s.total_minutes, color: 'orange' },
+        );
       }
+      if (msgStats?.stats) {
+        const ms = msgStats.stats;
+        statCards.push(
+          { label: 'Messages (30d)',   value: ms.last_30_days, color: 'blue' },
+          { label: 'Pending',          value: ms.pending,       color: 'orange' },
+          { label: 'Acknowledged',     value: ms.acknowledged,  color: 'green' },
+          { label: 'Urgent (all time)', value: ms.urgent,       color: 'red' },
+        );
+      }
+      el('p-stats').innerHTML = statCards.map((c) => `
+        <div class="p-stat-card p-stat-${c.color}">
+          <div class="p-stat-value">${c.value ?? 0}</div>
+          <div class="p-stat-label">${c.label}</div>
+        </div>
+      `).join('');
       if (msgData) {
         renderMsgList(el('p-dash-messages'), msgData.messages, 5);
       }

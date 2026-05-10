@@ -1385,12 +1385,18 @@ const App = (() => {
 
   /* ---- Messages ---- */
   async function loadMessages() {
-    const clientFilter = el('msg-filter-client')?.value;
-    const statusFilter = el('msg-filter-status')?.value;
+    const clientFilter  = el('msg-filter-client')?.value;
+    const statusFilter  = el('msg-filter-status')?.value;
+    const urgencyFilter = el('msg-filter-urgency')?.value;
+    const fromFilter    = el('msg-filter-from')?.value;
+    const toFilter      = el('msg-filter-to')?.value;
 
     let path = '/messages?limit=30';
-    if (clientFilter) path += `&client_id=${clientFilter}`;
-    if (statusFilter) path += `&status=${statusFilter}`;
+    if (clientFilter)  path += `&client_id=${clientFilter}`;
+    if (statusFilter)  path += `&status=${statusFilter}`;
+    if (urgencyFilter) path += `&urgency=${urgencyFilter}`;
+    if (fromFilter)    path += `&from=${fromFilter}`;
+    if (toFilter)      path += `&to=${toFilter}`;
 
     try {
       const data = await api('GET', path);
