@@ -61,7 +61,7 @@ async function sendAutoReply(message) {
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, status, urgency, from, to, tag, assigned_to, caller_phone, limit = 50, offset = 0 } = req.query;
+    const { client_id, status, urgency, from, to, tag, assigned_to, caller_phone, archived, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
              ao.full_name AS assigned_to_name
@@ -112,6 +112,12 @@ router.get('/', async (req, res, next) => {
     }
     if (req.query.flagged === 'true') {
       query += ` AND m.is_flagged = true`;
+    }
+    if (archived === 'true') {
+      query += ` AND m.archived_at IS NOT NULL`;
+    } else {
+      // By default, exclude archived messages
+      query += ` AND m.archived_at IS NULL`;
     }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET
@@ -246,6 +252,24 @@ router.post('/', async (req, res, next) => {
         console.warn('[auto-reply] failed for message', message.id, err.message)
       );
     }
+
+    // AI classification (fire-and-forget — updates urgency/tags if confident)
+    const { classifyMessage } = require('../../services/ai');
+    classifyMessage(message).then(async (classification) => {
+      if (!classification) return;
+      await pool.query(
+        `UPDATE messages SET ai_classification = $1 WHERE id = $2`,
+        [JSON.stringify(classification), message.id]
+      );
+      // Auto-upgrade urgency to urgent if AI is confident (≥0.85) and message is still pending
+      if (classification.urgency === 'high' && (classification.confidence || 0) >= 0.85) {
+        await pool.query(
+          `UPDATE messages SET urgency = 'urgent' WHERE id = $1 AND urgency = 'normal'`,
+          [message.id]
+        );
+        broadcast('message:updated', { id: message.id, urgency: 'urgent' });
+      }
+    }).catch((err) => console.warn('[ai] classification failed:', err.message));
 
     res.status(201).json({ message });
   } catch (err) {
@@ -462,6 +486,23 @@ router.patch('/:id/flag', async (req, res, next) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Message not found' });
     res.json({ message: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/messages/:id/archive — toggle archived status
+router.patch('/:id/archive', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE messages
+       SET archived_at = CASE WHEN archived_at IS NULL THEN NOW() ELSE NULL END
+       WHERE id = $1
+       RETURNING id, archived_at`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Message not found' });
+    const archived = !!result.rows[0].archived_at;
+    broadcast('message:archived', { id: req.params.id, archived });
+    res.json({ message: result.rows[0], archived });
   } catch (err) { next(err); }
 });
 

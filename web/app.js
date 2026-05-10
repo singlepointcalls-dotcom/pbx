@@ -1429,6 +1429,7 @@ const App = (() => {
     if (tagFilter)      path += `&tag=${encodeURIComponent(tagFilter)}`;
     if (assignedFilter) path += `&assigned_to=${encodeURIComponent(assignedFilter)}`;
     if (_msgFlagFilter) path += `&flagged=true`;
+    if (_showArchived)  path += `&archived=true`;
 
     try {
       const data = await api('GET', path);
@@ -1487,9 +1488,13 @@ const App = (() => {
       const m = data.message;
       _detailMessageBody = m.body || '';
       el('msg-detail-title').textContent = m.subject || 'Message';
+      const aiClass = m.ai_classification;
       el('msg-detail-meta').innerHTML = [
         `<span class="pill pill-${m.urgency === 'high' ? 'red' : 'blue'}">${m.urgency}</span>`,
         `<span class="pill">${m.status}</span>`,
+        m.is_flagged ? `<span class="pill" style="background:#c0392b;color:#fff">&#127988; Flagged</span>` : '',
+        m.archived_at ? `<span class="pill" style="background:#7f8c8d;color:#fff">&#128451; Archived</span>` : '',
+        aiClass?.call_type ? `<span class="pill" style="background:#2c3e50;color:#fff" title="AI classification">&#129302; ${aiClass.call_type}</span>` : '',
         `<span>Client: <strong>${escHtml(m.client_name || '—')}</strong></span>`,
         `<span>Caller: ${escHtml(m.caller_name || '—')}${m.caller_phone ? ` (${escHtml(m.caller_phone)})` : ''}</span>`,
         m.assigned_to_name ? `<span style="color:#8ab4f8">&#128101; ${escHtml(m.assigned_to_name)}</span>` : '',
@@ -1559,13 +1564,16 @@ const App = (() => {
       // Show portal rating if present
       const ratingEl = el('msg-detail-rating');
       if (ratingEl) {
+        let ratingHtml = '';
         if (m.portal_rating) {
           const stars = '★'.repeat(m.portal_rating) + '☆'.repeat(5 - m.portal_rating);
-          ratingEl.style.display = 'block';
-          ratingEl.innerHTML = `<span style="color:#f0ad4e;font-size:1rem">${stars}</span> <span style="color:var(--text-muted)">Client rated ${m.portal_rating}/5</span>${m.portal_rating_comment ? ` — <em>${escHtml(m.portal_rating_comment)}</em>` : ''}`;
-        } else {
-          ratingEl.style.display = 'none';
+          ratingHtml += `<span style="color:#f0ad4e;font-size:1rem">${stars}</span> <span style="color:var(--text-muted)">Client rated ${m.portal_rating}/5</span>${m.portal_rating_comment ? ` — <em>${escHtml(m.portal_rating_comment)}</em>` : ''}`;
         }
+        if (m.portal_read_at) {
+          ratingHtml += `${ratingHtml ? ' &nbsp;·&nbsp; ' : ''}<span style="font-size:0.8rem;color:var(--text-muted)">👁 Portal viewed ${new Date(m.portal_read_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>`;
+        }
+        ratingEl.style.display = ratingHtml ? 'block' : 'none';
+        if (ratingHtml) ratingEl.innerHTML = ratingHtml;
       }
 
       // Load delivery log
@@ -1717,6 +1725,25 @@ const App = (() => {
       const btn = el('msg-detail-flag-btn');
       if (btn) btn.title = flagged ? 'Unflag' : 'Flag for follow-up';
       toast(flagged ? 'Message flagged for follow-up' : 'Flag removed', 'success');
+      loadMessages();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  let _showArchived = false;
+
+  function toggleArchivedView() {
+    _showArchived = !_showArchived;
+    const btn = el('msg-archive-view-btn');
+    if (btn) btn.textContent = _showArchived ? '📥 Active Messages' : '🗃 Archived';
+    loadMessages();
+  }
+
+  async function toggleMsgArchive() {
+    if (!_detailMessageId) return;
+    try {
+      const data = await api('PATCH', `/messages/${_detailMessageId}/archive`, {});
+      toast(data.archived ? 'Message archived' : 'Message restored', 'success');
+      closeMsgDetail();
       loadMessages();
     } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
@@ -2986,7 +3013,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage, toggleMsgFlag, toggleFlagFilter, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
+    showMessageDetail, closeMsgDetail, redeliverMessage, toggleMsgFlag, toggleFlagFilter, toggleMsgArchive, toggleArchivedView, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,

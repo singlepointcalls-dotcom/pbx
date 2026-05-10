@@ -1169,6 +1169,10 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_enabled     BOOLEAN NOT 
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_subject     TEXT;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_body        TEXT;
 ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS disposition_notes    TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS archived_at           TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_read_at        TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_classification     JSONB;
+CREATE INDEX IF NOT EXISTS idx_messages_archived ON messages(archived_at) WHERE archived_at IS NOT NULL;
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS helpful_count     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS not_helpful_count INTEGER NOT NULL DEFAULT 0;
 -- Allow campaign_id to be NULL for widget/ad-hoc callback requests

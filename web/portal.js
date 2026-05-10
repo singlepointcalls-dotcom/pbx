@@ -995,6 +995,8 @@ const Portal = (() => {
       return;
     }
     container.style.display = 'block';
+    // Mark as portal-read (fire-and-forget)
+    api('PATCH', `/portal/messages/${msgId}/mark-read`, {}).catch(() => {});
     await loadMsgReplies(msgId, container);
   }
 

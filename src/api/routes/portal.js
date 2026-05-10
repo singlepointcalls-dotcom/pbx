@@ -251,6 +251,18 @@ router.post('/messages/:id/rate', requirePortalAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// PATCH /api/portal/messages/:id/mark-read — set portal_read_at to NOW()
+router.patch('/messages/:id/mark-read', requirePortalAuth, async (req, res, next) => {
+  try {
+    await pool.query(
+      `UPDATE messages SET portal_read_at = COALESCE(portal_read_at, NOW())
+       WHERE id = $1 AND client_id = $2`,
+      [req.params.id, req.portalUser.client_id]
+    );
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 // POST /api/portal/messages/:id/acknowledge — portal user marks their message as read
 router.post('/messages/:id/acknowledge', requirePortalAuth, async (req, res, next) => {
   try {
