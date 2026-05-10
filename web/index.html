@@ -1312,6 +1312,7 @@
         <button type="button" class="modal-tab" id="tab-webhooks-btn" onclick="Admin.showClientTab('webhooks',this)" style="display:none">&#128268; Webhooks</button>
         <button type="button" class="modal-tab" id="tab-msgtpl-btn" onclick="Admin.showClientTab('msgtpl',this)" style="display:none">&#128196; Msg Templates</button>
         <button type="button" class="modal-tab" id="tab-holidays-btn" onclick="Admin.showClientTab('holidays',this)" style="display:none">&#128197; Holidays</button>
+        <button type="button" class="modal-tab" id="tab-crm-btn" onclick="Admin.showClientTab('crm',this)" style="display:none">&#128279; CRM</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -1771,6 +1772,53 @@
           <thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Notes</th><th></th></tr></thead>
           <tbody id="holidays-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
         </table>
+      </div>
+
+      <!-- Tab: CRM Integration -->
+      <div id="ctab-crm" class="modal-body ctab" style="display:none">
+        <h4 style="margin-bottom:12px">&#128279; CRM Integration</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:16px">
+          When messages are delivered, they are also pushed to the configured CRM system.
+          Credentials are stored encrypted at rest and never shown after saving.
+        </p>
+        <div class="field">
+          <label>CRM Type</label>
+          <select id="cf-crm-type" onchange="Admin.onCrmTypeChange()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px">
+            <option value="">None</option>
+            <option value="salesforce">Salesforce</option>
+            <option value="hubspot">HubSpot</option>
+            <option value="zoho">Zoho CRM</option>
+          </select>
+        </div>
+        <!-- Salesforce fields -->
+        <div id="crm-sf-fields" style="display:none">
+          <div class="field"><label>Instance URL</label><input type="url" id="crm-sf-url" placeholder="https://myorg.salesforce.com" class="field-input" /></div>
+          <div class="field"><label>Client ID</label><input type="text" id="crm-sf-client-id" class="field-input" /></div>
+          <div class="field"><label>Client Secret</label><input type="password" id="crm-sf-client-secret" placeholder="Leave blank to keep existing" class="field-input" autocomplete="new-password" /></div>
+        </div>
+        <!-- HubSpot fields -->
+        <div id="crm-hs-fields" style="display:none">
+          <div class="field"><label>HubSpot Access Token / API Key</label><input type="password" id="crm-hs-api-key" placeholder="Leave blank to keep existing" class="field-input" autocomplete="new-password" /></div>
+          <div class="field"><label>Portal ID (optional)</label><input type="text" id="crm-hs-portal-id" class="field-input" /></div>
+        </div>
+        <!-- Zoho fields -->
+        <div id="crm-zo-fields" style="display:none">
+          <div class="field"><label>Zoho Region</label>
+            <select id="crm-zo-region" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 8px">
+              <option value="com">Global (.com)</option>
+              <option value="eu">EU (.eu)</option>
+              <option value="in">India (.in)</option>
+              <option value="com.au">Australia (.com.au)</option>
+            </select>
+          </div>
+          <div class="field"><label>Client ID</label><input type="text" id="crm-zo-client-id" class="field-input" /></div>
+          <div class="field"><label>Client Secret</label><input type="password" id="crm-zo-client-secret" placeholder="Leave blank to keep existing" class="field-input" autocomplete="new-password" /></div>
+          <div class="field"><label>Refresh Token</label><input type="password" id="crm-zo-refresh-token" placeholder="Leave blank to keep existing" class="field-input" autocomplete="new-password" /></div>
+        </div>
+        <div id="crm-no-config" style="color:var(--text-muted);font-size:0.85rem;margin-top:8px">Select a CRM type to configure the integration.</div>
+        <p style="font-size:0.75rem;color:var(--warning);margin-top:12px" id="crm-secret-note" style="display:none">
+          &#9888; Secret fields show placeholder text if a value is already saved. Leave blank to keep the existing secret.
+        </p>
       </div>
 
       <div class="modal-footer">

@@ -2941,6 +2941,7 @@ const Admin = (() => {
     if (name === 'webhooks' && editingClientId) loadWebhooks(editingClientId);
     if (name === 'msgtpl' && editingClientId) loadMsgTemplates();
     if (name === 'holidays' && editingClientId) loadHolidays();
+    if (name === 'crm') onCrmTypeChange();
   }
 
   /* ---- Clients ---- */
@@ -3007,7 +3008,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn', 'tab-holidays-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn', 'tab-holidays-btn', 'tab-crm-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -3062,6 +3063,19 @@ const Admin = (() => {
         if (el('cf-sla-abandon')) el('cf-sla-abandon').value = c.sla_abandon_threshold || 3;
         if (el('cf-sla-minutes')) el('cf-sla-minutes').value = c.sla_minutes || 60;
         if (el('cf-csat-enabled')) el('cf-csat-enabled').checked = !!c.csat_enabled;
+
+        // CRM
+        if (el('cf-crm-type')) {
+          el('cf-crm-type').value = c.crm_type || '';
+          const cfg = c.crm_config || {};
+          if (el('crm-sf-url'))        el('crm-sf-url').value        = cfg.instance_url || '';
+          if (el('crm-sf-client-id'))  el('crm-sf-client-id').value  = cfg.client_id || '';
+          if (el('crm-hs-portal-id'))  el('crm-hs-portal-id').value  = cfg.portal_id || '';
+          if (el('crm-zo-region'))     el('crm-zo-region').value     = cfg.region || 'com';
+          if (el('crm-zo-client-id'))  el('crm-zo-client-id').value  = cfg.client_id || '';
+          // secret fields left blank — placeholder indicates existing value
+          onCrmTypeChange();
+        }
 
         // SMTP
         el('cf-smtp-host').value = c.smtp_host || '';
@@ -3170,6 +3184,32 @@ const Admin = (() => {
         csat_enabled: el('cf-csat-enabled')?.checked ?? false,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
+
+      // CRM config (only include if crm tab is in DOM)
+      if (el('cf-crm-type')) {
+        const crmType = el('cf-crm-type').value || null;
+        body.crm_type = crmType;
+        if (crmType === 'salesforce') {
+          const cfg = { instance_url: el('crm-sf-url')?.value.trim(), client_id: el('crm-sf-client-id')?.value.trim() };
+          const secret = el('crm-sf-client-secret')?.value.trim();
+          if (secret) cfg.client_secret = secret;
+          body.crm_config = cfg;
+        } else if (crmType === 'hubspot') {
+          const cfg = { portal_id: el('crm-hs-portal-id')?.value.trim() };
+          const key = el('crm-hs-api-key')?.value.trim();
+          if (key) cfg.api_key = key;
+          body.crm_config = cfg;
+        } else if (crmType === 'zoho') {
+          const cfg = { region: el('crm-zo-region')?.value || 'com', client_id: el('crm-zo-client-id')?.value.trim() };
+          const secret = el('crm-zo-client-secret')?.value.trim();
+          const refresh = el('crm-zo-refresh-token')?.value.trim();
+          if (secret) cfg.client_secret = secret;
+          if (refresh) cfg.refresh_token = refresh;
+          body.crm_config = cfg;
+        } else {
+          body.crm_config = null;
+        }
+      }
 
       if (editingClientId) {
         await api('PUT', `/clients/${editingClientId}`, body);
@@ -4598,6 +4638,21 @@ const Admin = (() => {
   }
 
   /* ---- Client Holidays ---- */
+  /* ---- CRM Tab ---- */
+  function onCrmTypeChange() {
+    const type = el('cf-crm-type')?.value || '';
+    const sfF  = el('crm-sf-fields');
+    const hsF  = el('crm-hs-fields');
+    const zoF  = el('crm-zo-fields');
+    const none = el('crm-no-config');
+    const note = el('crm-secret-note');
+    if (sfF) sfF.style.display = type === 'salesforce' ? '' : 'none';
+    if (hsF) hsF.style.display = type === 'hubspot'    ? '' : 'none';
+    if (zoF) zoF.style.display = type === 'zoho'       ? '' : 'none';
+    if (none) none.style.display = type ? 'none' : '';
+    if (note) note.style.display = type ? '' : 'none';
+  }
+
   async function loadHolidays() {
     if (!editingClientId) return;
     const tbody = el('holidays-tbody');
@@ -4922,6 +4977,7 @@ const Admin = (() => {
     loadMsgTemplates, openMsgTplNew, closeMsgTplNew, saveMsgTpl, deleteMsgTpl,
     // Holidays
     loadHolidays, openHolidayNew, closeHolidayNew, saveHoliday, deleteHoliday,
+    onCrmTypeChange,
     // Performance
     loadPerformance,
     // Targets

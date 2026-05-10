@@ -9,10 +9,18 @@ router.use(requireAuth);
 
 function maskClientSecrets(client) {
   if (!client) return client;
+  let crm_config = client.crm_config;
+  if (crm_config && typeof crm_config === 'object') {
+    crm_config = { ...crm_config };
+    if (crm_config.client_secret) crm_config.client_secret = '***';
+    if (crm_config.api_key) crm_config.api_key = '***';
+    if (crm_config.access_token) crm_config.access_token = '***';
+  }
   return {
     ...client,
     smtp_pass: client.smtp_pass ? '***' : null,
     halo_oauth_client_secret: client.halo_oauth_client_secret ? '***' : null,
+    crm_config,
   };
 }
 
@@ -201,6 +209,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       escalation_rules, sla_answer_seconds, sla_abandon_threshold, data_retention_months,
       halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
       halo_customer_id, halo_ticket_type_id, csat_enabled, sla_minutes,
+      crm_type, crm_config,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -247,7 +256,9 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          halo_customer_id       = COALESCE($33, halo_customer_id),
          halo_ticket_type_id    = COALESCE($34, halo_ticket_type_id),
          csat_enabled           = COALESCE($36, csat_enabled),
-         sla_minutes            = COALESCE($37, sla_minutes)
+         sla_minutes            = COALESCE($37, sla_minutes),
+         crm_type               = COALESCE($38, crm_type),
+         crm_config             = COALESCE($39, crm_config)
        WHERE id = $22
        RETURNING *`,
       [
@@ -281,6 +292,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         sla_abandon_threshold    !== undefined ? parseInt(sla_abandon_threshold)    : null,
         csat_enabled             !== undefined ? !!csat_enabled                     : null,
         sla_minutes              !== undefined ? parseInt(sla_minutes)              : null,
+        crm_type                 !== undefined ? (crm_type || null)                 : null,
+        crm_config               !== undefined ? JSON.stringify(crm_config)         : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
