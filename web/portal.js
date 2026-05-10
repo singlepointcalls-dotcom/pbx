@@ -50,6 +50,17 @@ const Portal = (() => {
   /* ---- Auth ---- */
   async function init() {
     el('portal-login-form').addEventListener('submit', handleLogin);
+    // Handle password-reset link: /portal.html?reset=TOKEN&user=USERNAME
+    const params = new URLSearchParams(location.search);
+    const resetToken    = params.get('reset');
+    const resetUsername = params.get('user');
+    if (resetToken && resetUsername) {
+      el('portal-login-form').style.display = 'none';
+      el('portal-reset').style.display = 'block';
+      el('portal-reset').dataset.token    = resetToken;
+      el('portal-reset').dataset.username = resetUsername;
+      return;
+    }
     if (token) {
       try {
         const data = await api('GET', '/portal/me');
@@ -89,6 +100,61 @@ const Portal = (() => {
   function showLogin() {
     el('portal-login').classList.add('active');
     el('portal-app').classList.remove('active');
+    el('portal-login-form').style.display = 'block';
+    el('portal-forgot').style.display = 'none';
+    el('portal-reset').style.display  = 'none';
+  }
+
+  function showForgot(e) {
+    if (e) e.preventDefault();
+    el('portal-login-form').style.display = 'none';
+    el('portal-forgot').style.display = 'block';
+    el('portal-reset').style.display  = 'none';
+    setTimeout(() => { const u = el('p-forgot-username'); if (u) u.focus(); }, 80);
+  }
+
+  async function doForgot() {
+    const username = (el('p-forgot-username')?.value || '').trim();
+    const errEl = el('p-forgot-error');
+    const okEl  = el('p-forgot-ok');
+    errEl.textContent = '';
+    okEl.style.display = 'none';
+    if (!username) { errEl.textContent = 'Enter your username'; return; }
+    try {
+      await fetch('/api/portal/password-reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      okEl.textContent = 'If that username exists with an email on file, a reset link has been sent.';
+      okEl.style.display = 'block';
+    } catch (err) { errEl.textContent = err.message; }
+  }
+
+  async function doReset() {
+    const resetEl = el('portal-reset');
+    const token_  = resetEl?.dataset.token    || '';
+    const username = resetEl?.dataset.username || '';
+    const newPw   = el('p-reset-password')?.value || '';
+    const errEl   = el('p-reset-error');
+    const okEl    = el('p-reset-ok');
+    errEl.textContent = '';
+    okEl.style.display = 'none';
+    if (!newPw) { errEl.textContent = 'Enter a new password'; return; }
+    try {
+      const r = await fetch('/api/portal/password-reset/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, token: token_, new_password: newPw }),
+      }).then((res) => res.json());
+      if (r.error) throw new Error(r.error);
+      okEl.textContent = 'Password updated! Redirecting to login…';
+      okEl.style.display = 'block';
+      setTimeout(() => {
+        history.replaceState(null, '', location.pathname);
+        showLogin();
+      }, 2000);
+    } catch (err) { errEl.textContent = err.message; }
   }
 
   function showApp() {
@@ -511,5 +577,6 @@ const Portal = (() => {
     setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
+    showForgot, showLogin, doForgot, doReset,
   };
 })();

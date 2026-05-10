@@ -14,6 +14,7 @@
     <div class="p-logo">&#9742; SinglePoint Calls</div>
     <h2>Client Portal</h2>
     <p class="p-subtitle">Log in to view your messages, calls and billing</p>
+    <!-- Normal login form -->
     <form id="portal-login-form">
       <div class="p-field">
         <label>Username</label>
@@ -25,7 +26,38 @@
       </div>
       <div id="p-login-error" class="p-error hidden"></div>
       <button type="submit" class="p-btn p-btn-primary p-btn-full">Sign In</button>
+      <div style="text-align:center;margin-top:10px">
+        <a href="#" style="font-size:0.85rem;color:#666" onclick="Portal.showForgot(event)">Forgot password?</a>
+      </div>
     </form>
+    <!-- Forgot password step -->
+    <div id="portal-forgot" style="display:none">
+      <p style="font-size:0.85rem;color:#666;margin-bottom:10px">Enter your username to receive a reset link.</p>
+      <div class="p-field">
+        <label>Username</label>
+        <input type="text" id="p-forgot-username" autocomplete="username" />
+      </div>
+      <div id="p-forgot-error" style="font-size:0.85rem;color:#e74c3c;margin-bottom:8px;min-height:16px"></div>
+      <div id="p-forgot-ok" style="font-size:0.85rem;color:green;margin-bottom:8px;min-height:16px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button class="p-btn p-btn-primary" style="flex:1" onclick="Portal.doForgot()">Send Reset Link</button>
+        <button class="p-btn p-btn-secondary" onclick="Portal.showLogin()">Back</button>
+      </div>
+    </div>
+    <!-- Reset password step (landed from email link) -->
+    <div id="portal-reset" style="display:none">
+      <p style="font-size:0.85rem;color:#666;margin-bottom:10px">Enter your new password.</p>
+      <div class="p-field">
+        <label>New Password</label>
+        <input type="password" id="p-reset-password" autocomplete="new-password" />
+      </div>
+      <div id="p-reset-error" style="font-size:0.85rem;color:#e74c3c;margin-bottom:8px;min-height:16px"></div>
+      <div id="p-reset-ok" style="font-size:0.85rem;color:green;margin-bottom:8px;min-height:16px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button class="p-btn p-btn-primary" style="flex:1" onclick="Portal.doReset()">Set New Password</button>
+        <button class="p-btn p-btn-secondary" onclick="Portal.showLogin()">Back</button>
+      </div>
+    </div>
     <p class="p-login-footer">Need access? Contact your account manager.</p>
   </div>
 </div>
