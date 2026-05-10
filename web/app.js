@@ -1403,6 +1403,7 @@ const App = (() => {
     const urgencyFilter = el('msg-filter-urgency')?.value;
     const fromFilter    = el('msg-filter-from')?.value;
     const toFilter      = el('msg-filter-to')?.value;
+    const tagFilter     = el('msg-filter-tag')?.value.trim();
 
     let path = '/messages?limit=30';
     if (clientFilter)  path += `&client_id=${clientFilter}`;
@@ -1410,6 +1411,7 @@ const App = (() => {
     if (urgencyFilter) path += `&urgency=${urgencyFilter}`;
     if (fromFilter)    path += `&from=${fromFilter}`;
     if (toFilter)      path += `&to=${toFilter}`;
+    if (tagFilter)     path += `&tag=${encodeURIComponent(tagFilter)}`;
 
     try {
       const data = await api('GET', path);
@@ -1436,6 +1438,7 @@ const App = (() => {
           <span class="message-item-time">${relTime(m.created_at)}</span>
           <span class="urgency-pill urgency-${m.urgency}">${m.urgency}</span>
           <span class="message-item-status status-${m.status}">${m.status}</span>
+          ${(m.tags || []).map((t) => `<span style="font-size:0.7rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text-muted)">${escHtml(t)}</span>`).join('')}
         </div>
       </div>
     `).join('');
@@ -1487,6 +1490,17 @@ const App = (() => {
         }
       }
 
+      // Display tags
+      const tagsEl = el('msg-detail-tags');
+      const tagInput = el('msg-detail-tag-input');
+      const currentTags = m.tags || [];
+      if (tagsEl) {
+        tagsEl.innerHTML = currentTags.length
+          ? currentTags.map((t) => `<span style="font-size:0.8rem;background:var(--primary);color:#fff;border-radius:4px;padding:1px 7px">${escHtml(t)}</span>`).join('')
+          : '<span style="font-size:0.8rem;color:var(--text-muted)">No tags</span>';
+      }
+      if (tagInput) tagInput.value = currentTags.join(', ');
+
       // Load delivery log
       try {
         const del = await api('GET', `/messages/${messageId}/deliveries`);
@@ -1498,6 +1512,29 @@ const App = (() => {
       } catch { /* ignore */ }
     } catch (err) {
       el('msg-detail-body').textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function saveMsgTags() {
+    if (!_detailMessageId) return;
+    const input = el('msg-detail-tag-input');
+    if (!input) return;
+    const raw = input.value.trim();
+    const tags = raw ? raw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+    try {
+      const data = await api('PATCH', `/messages/${_detailMessageId}/tags`, { tags });
+      const tagsEl = el('msg-detail-tags');
+      const newTags = data.message?.tags || tags;
+      if (tagsEl) {
+        tagsEl.innerHTML = newTags.length
+          ? newTags.map((t) => `<span style="font-size:0.8rem;background:var(--primary);color:#fff;border-radius:4px;padding:1px 7px">${escHtml(t)}</span>`).join('')
+          : '<span style="font-size:0.8rem;color:var(--text-muted)">No tags</span>';
+      }
+      input.value = newTags.join(', ');
+      toast('Tags saved', 'success');
+      loadMessages();
+    } catch (err) {
+      toast(`Tags error: ${err.message}`, 'danger');
     }
   }
 
@@ -2763,7 +2800,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage,
+    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,

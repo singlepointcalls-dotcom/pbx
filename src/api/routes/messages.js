@@ -11,7 +11,7 @@ router.use(requireAuth);
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, status, urgency, from, to, limit = 50, offset = 0 } = req.query;
+    const { client_id, status, urgency, from, to, tag, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT m.*, c.name AS client_name, o.full_name AS operator_name
       FROM messages m
@@ -40,6 +40,10 @@ router.get('/', async (req, res, next) => {
     if (to) {
       params.push(to);
       query += ` AND m.created_at < ($${params.length}::date + INTERVAL '1 day')`;
+    }
+    if (tag) {
+      params.push(tag);
+      query += ` AND $${params.length} = ANY(m.tags)`;
     }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET
@@ -266,6 +270,22 @@ router.post('/bulk/acknowledge', async (req, res, next) => {
 
     broadcast('messages:bulk_acknowledged', { count: updated, by: req.operator.id });
     res.json({ updated });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/messages/:id/tags — set tags array on a message
+router.patch('/:id/tags', async (req, res, next) => {
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags must be an array of strings' });
+    const sanitized = tags.map((t) => String(t).trim().toLowerCase().replace(/\s+/g, '-')).filter(Boolean).slice(0, 20);
+    const result = await pool.query(
+      `UPDATE messages SET tags = $1::text[], updated_at = NOW() WHERE id = $2 RETURNING id, tags`,
+      [sanitized, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Message not found' });
+    broadcast('message:tags_updated', { id: req.params.id, tags: result.rows[0].tags });
+    res.json({ message: result.rows[0] });
   } catch (err) { next(err); }
 });
 

@@ -1126,3 +1126,7 @@ CREATE INDEX IF NOT EXISTS idx_sla_alerts_msg ON sla_alerts(message_id);
 
 -- Message acknowledgment SLA in minutes (distinct from call answer SLA in seconds)
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_minutes INTEGER NOT NULL DEFAULT 60;
+
+-- v24 — Message tags
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_messages_tags ON messages USING GIN(tags);
