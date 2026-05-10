@@ -441,6 +441,11 @@
           <input type="date" id="msg-filter-from" onchange="App.loadMessages()" title="From date" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius)" />
           <input type="date" id="msg-filter-to" onchange="App.loadMessages()" title="To date" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius)" />
           <input type="text" id="msg-filter-tag" placeholder="&#127991; tag" title="Filter by tag" oninput="App.loadMessages()" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);width:90px" />
+          <select id="msg-filter-assigned" onchange="App.loadMessages()" title="Assignment filter" style="font-size:0.8rem;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius)">
+            <option value="">All</option>
+            <option value="me">Assigned to me</option>
+            <option value="unassigned">Unassigned</option>
+          </select>
         </div>
         <div id="messages-list" class="messages-list"></div>
       </section>
@@ -2164,6 +2169,16 @@
         <div style="display:flex;gap:6px;align-items:center">
           <input type="text" id="msg-detail-tag-input" placeholder="add-tag, another-tag" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text)" onkeydown="if(event.key==='Enter')App.saveMsgTags()" />
           <button class="btn btn-sm btn-secondary" onclick="App.saveMsgTags()">Save Tags</button>
+        </div>
+      </div>
+      <!-- Assignment -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-bottom:6px">&#128101; Assign To</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="msg-detail-assign" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text)">
+            <option value="">Unassigned</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="App.saveMsgAssign()">Assign</button>
         </div>
       </div>
       <!-- Internal Notes -->

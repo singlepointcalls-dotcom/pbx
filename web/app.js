@@ -1403,15 +1403,17 @@ const App = (() => {
     const urgencyFilter = el('msg-filter-urgency')?.value;
     const fromFilter    = el('msg-filter-from')?.value;
     const toFilter      = el('msg-filter-to')?.value;
-    const tagFilter     = el('msg-filter-tag')?.value.trim();
+    const tagFilter      = el('msg-filter-tag')?.value.trim();
+    const assignedFilter = el('msg-filter-assigned')?.value;
 
     let path = '/messages?limit=30';
-    if (clientFilter)  path += `&client_id=${clientFilter}`;
-    if (statusFilter)  path += `&status=${statusFilter}`;
-    if (urgencyFilter) path += `&urgency=${urgencyFilter}`;
-    if (fromFilter)    path += `&from=${fromFilter}`;
-    if (toFilter)      path += `&to=${toFilter}`;
-    if (tagFilter)     path += `&tag=${encodeURIComponent(tagFilter)}`;
+    if (clientFilter)   path += `&client_id=${clientFilter}`;
+    if (statusFilter)   path += `&status=${statusFilter}`;
+    if (urgencyFilter)  path += `&urgency=${urgencyFilter}`;
+    if (fromFilter)     path += `&from=${fromFilter}`;
+    if (toFilter)       path += `&to=${toFilter}`;
+    if (tagFilter)      path += `&tag=${encodeURIComponent(tagFilter)}`;
+    if (assignedFilter) path += `&assigned_to=${encodeURIComponent(assignedFilter)}`;
 
     try {
       const data = await api('GET', path);
@@ -1439,6 +1441,7 @@ const App = (() => {
           <span class="urgency-pill urgency-${m.urgency}">${m.urgency}</span>
           <span class="message-item-status status-${m.status}">${m.status}</span>
           ${(m.tags || []).map((t) => `<span style="font-size:0.7rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text-muted)">${escHtml(t)}</span>`).join('')}
+          ${m.assigned_to_name ? `<span style="font-size:0.7rem;background:#1a3a5c;color:#8ab4f8;border-radius:3px;padding:0 4px">&#128101; ${escHtml(m.assigned_to_name)}</span>` : ''}
         </div>
       </div>
     `).join('');
@@ -1473,8 +1476,9 @@ const App = (() => {
         `<span class="pill">${m.status}</span>`,
         `<span>Client: <strong>${escHtml(m.client_name || '—')}</strong></span>`,
         `<span>Caller: ${escHtml(m.caller_name || '—')}${m.caller_phone ? ` (${escHtml(m.caller_phone)})` : ''}</span>`,
+        m.assigned_to_name ? `<span style="color:#8ab4f8">&#128101; ${escHtml(m.assigned_to_name)}</span>` : '',
         `<span>${new Date(m.created_at).toLocaleString('en-GB')}</span>`,
-      ].join('');
+      ].filter(Boolean).join('');
       el('msg-detail-body').textContent = m.body || '(no body)';
 
       // Display custom form_data if present
@@ -1488,6 +1492,15 @@ const App = (() => {
         } else {
           formDataEl.style.display = 'none';
         }
+      }
+
+      // Populate assignment dropdown from operator list
+      const assignSel = el('msg-detail-assign');
+      if (assignSel) {
+        const opData = await api('GET', '/operators').catch(() => null);
+        const operators = opData?.operators || [];
+        assignSel.innerHTML = '<option value="">Unassigned</option>' +
+          operators.map((op) => `<option value="${op.id}"${m.assigned_to === op.id ? ' selected' : ''}>${escHtml(op.full_name)}</option>`).join('');
       }
 
       // Display internal notes
@@ -1516,6 +1529,21 @@ const App = (() => {
       } catch { /* ignore */ }
     } catch (err) {
       el('msg-detail-body').textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function saveMsgAssign() {
+    if (!_detailMessageId) return;
+    const assignSel = el('msg-detail-assign');
+    if (!assignSel) return;
+    const operatorId = assignSel.value || null;
+    try {
+      await api('PATCH', `/messages/${_detailMessageId}/assign`, { operator_id: operatorId });
+      const label = assignSel.options[assignSel.selectedIndex]?.text || 'Unassigned';
+      toast(`Assigned to: ${label}`, 'success');
+      loadMessages();
+    } catch (err) {
+      toast(`Assignment error: ${err.message}`, 'danger');
     }
   }
 
@@ -2816,7 +2844,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes,
+    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes, saveMsgAssign,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,

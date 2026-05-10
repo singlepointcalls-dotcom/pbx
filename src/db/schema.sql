@@ -1133,3 +1133,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_tags ON messages USING GIN(tags);
 
 -- v25 — Internal operator notes on messages
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS internal_notes TEXT;
+
+-- v26 — Message assignment (distinct from operator_id who took the call)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES operators(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_assigned_to ON messages(assigned_to) WHERE assigned_to IS NOT NULL;

@@ -11,12 +11,14 @@ router.use(requireAuth);
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, status, urgency, from, to, tag, limit = 50, offset = 0 } = req.query;
+    const { client_id, status, urgency, from, to, tag, assigned_to, limit = 50, offset = 0 } = req.query;
     let query = `
-      SELECT m.*, c.name AS client_name, o.full_name AS operator_name
+      SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
+             ao.full_name AS assigned_to_name
       FROM messages m
       LEFT JOIN clients c ON m.client_id = c.id
       LEFT JOIN operators o ON m.operator_id = o.id
+      LEFT JOIN operators ao ON m.assigned_to = ao.id
       WHERE 1=1
     `;
     const params = [];
@@ -44,6 +46,15 @@ router.get('/', async (req, res, next) => {
     if (tag) {
       params.push(tag);
       query += ` AND $${params.length} = ANY(m.tags)`;
+    }
+    if (assigned_to === 'me') {
+      params.push(req.operator.id);
+      query += ` AND m.assigned_to = $${params.length}`;
+    } else if (assigned_to === 'unassigned') {
+      query += ` AND m.assigned_to IS NULL`;
+    } else if (assigned_to) {
+      params.push(assigned_to);
+      query += ` AND m.assigned_to = $${params.length}`;
     }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET
@@ -95,10 +106,12 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT m.*, c.name AS client_name, o.full_name AS operator_name
+      `SELECT m.*, c.name AS client_name, o.full_name AS operator_name,
+              ao.full_name AS assigned_to_name
        FROM messages m
        LEFT JOIN clients c ON m.client_id = c.id
        LEFT JOIN operators o ON m.operator_id = o.id
+       LEFT JOIN operators ao ON m.assigned_to = ao.id
        WHERE m.id = $1`,
       [req.params.id]
     );
@@ -272,6 +285,21 @@ router.post('/bulk/acknowledge', async (req, res, next) => {
 
     broadcast('messages:bulk_acknowledged', { count: updated, by: req.operator.id });
     res.json({ updated });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/messages/:id/assign — assign message to an operator (or unassign)
+router.patch('/:id/assign', async (req, res, next) => {
+  try {
+    const { operator_id } = req.body;
+    const result = await pool.query(
+      `UPDATE messages SET assigned_to = $1, updated_at = NOW() WHERE id = $2
+       RETURNING id, assigned_to`,
+      [operator_id || null, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Message not found' });
+    broadcast('message:assigned', { id: req.params.id, assigned_to: operator_id || null });
+    res.json({ message: result.rows[0] });
   } catch (err) { next(err); }
 });
 
