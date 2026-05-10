@@ -17,6 +17,7 @@ const { broadcast } = require('../services/realtime');
 const { transcribeCall } = require('../services/transcription');
 const { sendCsatSurvey } = require('../api/routes/csat');
 const { _isWithinBusinessHours: isWithinBusinessHours } = require('../api/routes/clients');
+const { executeIvrFlow } = require('../services/ivr-executor');
 
 let ariClient = null;
 
@@ -227,6 +228,33 @@ async function handleStasisStart(event, channel) {
     did,
     startTime: new Date(),
   });
+
+  // Execute IVR flow if client has an active one
+  if (client) {
+    try {
+      const ivrResult = await pool.query(
+        `SELECT * FROM ivr_flows WHERE client_id = $1 AND is_active = true ORDER BY updated_at DESC LIMIT 1`,
+        [client.id]
+      );
+      const ivrFlow = ivrResult.rows[0];
+      if (ivrFlow) {
+        const ivrHandled = await executeIvrFlow(ivrFlow, channel);
+        if (ivrHandled) {
+          // IVR fully handled the call (hangup or dialplan transfer)
+          if (callLogId) {
+            await pool.query(
+              `UPDATE call_logs SET call_end = NOW(), disposition = 'ivr_handled' WHERE id = $1`,
+              [callLogId]
+            );
+          }
+          activeCalls.delete(channelId);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[ARI] IVR execution failed (proceeding with normal flow):', err.message);
+    }
+  }
 
   // Play hold music while waiting for operator
   try {

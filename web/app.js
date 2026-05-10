@@ -3244,6 +3244,8 @@ const Admin = (() => {
     else if (name === 'transcription') TranscriptionPanel.load();
     else if (name === 'recordings') RecordingsPanel.load();
     else if (name === 'queue') QueuePanel.load();
+    else if (name === 'intake-submissions') IntakeSubmissionsPanel.load();
+    else if (name === 'op-performance') OperatorPerfPanel.load();
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
@@ -7273,6 +7275,125 @@ const QueuePanel = (() => {
   }
 
   return { load, abandon };
+})();
+
+/* ============================================================
+   IntakeSubmissionsPanel — Intake Form Submissions Admin
+   ============================================================ */
+const IntakeSubmissionsPanel = (() => {
+  async function load() {
+    const clientId = document.getElementById('intake-filter-client')?.value || '';
+    const wrap = document.getElementById('intake-table-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+
+    // Populate client filter once
+    const clientSel = document.getElementById('intake-filter-client');
+    if (clientSel && clientSel.options.length <= 1) {
+      try {
+        const { clients } = await api('GET', '/clients?limit=200');
+        (clients || []).forEach((c) => {
+          const o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          clientSel.appendChild(o);
+        });
+      } catch (_) {}
+    }
+
+    try {
+      const params = new URLSearchParams({ limit: 100 });
+      if (clientId) params.set('client_id', clientId);
+      const { submissions } = await api('GET', `/widget/submissions?${params}`);
+
+      if (!submissions?.length) {
+        wrap.innerHTML = '<p class="empty-state">No intake form submissions found.</p>';
+        return;
+      }
+
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead><tr>
+            <th>Submitted</th><th>Client</th><th>Caller</th>
+            <th>Phone</th><th>Form Data</th><th>Message Status</th>
+          </tr></thead>
+          <tbody>
+            ${submissions.map((s) => {
+              const fd = s.form_data || {};
+              const { caller_name, caller_phone, ...fields } = fd;
+              const fieldsSummary = Object.entries(fields)
+                .filter(([, v]) => v !== undefined && v !== '')
+                .map(([k, v]) => `<span style="font-size:0.75rem"><b>${escHtml(k)}:</b> ${escHtml(String(v))}</span>`)
+                .join('<br>');
+              const statusColor = { new: '#e74c3c', acknowledged: '#27ae60', archived: '#999' }[s.message_status] || 'var(--text)';
+              return `<tr>
+                <td style="font-size:0.8rem">${new Date(s.submitted_at).toLocaleString()}</td>
+                <td>${escHtml(s.client_name || '—')}</td>
+                <td>${escHtml(s.caller_id_name || caller_name || '—')}</td>
+                <td>${escHtml(s.caller_id_num || caller_phone || '—')}</td>
+                <td>${fieldsSummary || '<span style="color:var(--text-muted)">No extra fields</span>'}</td>
+                <td><span style="color:${statusColor}">${escHtml(s.message_status || '—')}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch (err) {
+      wrap.innerHTML = `<p class="empty-state" style="color:var(--danger)">Failed to load: ${err.message}</p>`;
+    }
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   OperatorPerfPanel — Operator Performance Dashboard
+   ============================================================ */
+const OperatorPerfPanel = (() => {
+  async function load() {
+    const days = document.getElementById('perf-filter-days')?.value || 30;
+    const wrap = document.getElementById('perf-table-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+
+    try {
+      const { operators } = await api('GET', `/reports/operator-performance?days=${days}`);
+
+      if (!operators?.length) {
+        wrap.innerHTML = '<p class="empty-state">No operator data found.</p>';
+        return;
+      }
+
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead><tr>
+            <th>Operator</th><th>Calls Handled</th><th>Avg Call Duration</th>
+            <th>Messages Taken</th><th>Avg Ack Time</th>
+            <th>QA Reviews</th><th>Avg QA Score</th><th>Callbacks Done</th>
+          </tr></thead>
+          <tbody>
+            ${operators.map((op) => {
+              const avgDur = op.avg_call_duration_sec ? `${Math.floor(op.avg_call_duration_sec / 60)}m ${op.avg_call_duration_sec % 60}s` : '—';
+              const avgAck = op.avg_ack_minutes != null ? `${op.avg_ack_minutes}m` : '—';
+              const qaScore = op.avg_qa_score != null ? op.avg_qa_score : '—';
+              const qaColor = op.avg_qa_score >= 4 ? '#27ae60' : op.avg_qa_score >= 3 ? '#f39c12' : op.avg_qa_score != null ? '#e74c3c' : 'var(--text)';
+              return `<tr>
+                <td><strong>${escHtml(op.display_name || op.username)}</strong><br><span style="font-size:0.75rem;color:var(--text-muted)">${escHtml(op.username)}</span></td>
+                <td style="text-align:center">${op.calls_handled || 0}</td>
+                <td style="text-align:center">${avgDur}</td>
+                <td style="text-align:center">${op.messages_taken || 0}</td>
+                <td style="text-align:center">${avgAck}</td>
+                <td style="text-align:center">${op.qa_reviews || 0}</td>
+                <td style="text-align:center;color:${qaColor};font-weight:600">${qaScore}</td>
+                <td style="text-align:center">${op.callbacks_completed || 0}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch (err) {
+      wrap.innerHTML = `<p class="empty-state" style="color:var(--danger)">Failed to load: ${err.message}</p>`;
+    }
+  }
+
+  return { load };
 })();
 
 /* ============================================================

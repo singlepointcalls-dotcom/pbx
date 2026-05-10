@@ -259,4 +259,37 @@ router.get('/sla-compliance', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/reports/operator-performance — per-operator KPI summary
+router.get('/operator-performance', async (req, res, next) => {
+  try {
+    const { days = 30, operator_id } = req.query;
+    const since = `NOW() - INTERVAL '${parseInt(days, 10)} days'`;
+    const opFilter = operator_id ? `AND cl.operator_id = '${operator_id}'::uuid` : '';
+
+    const rows = await pool.query(`
+      SELECT
+        o.id,
+        o.username,
+        o.display_name,
+        COUNT(DISTINCT cl.id) FILTER (WHERE cl.call_start > ${since}) AS calls_handled,
+        ROUND(AVG(cl.duration_seconds) FILTER (WHERE cl.call_start > ${since} AND cl.duration_seconds > 0))::INT AS avg_call_duration_sec,
+        COUNT(DISTINCT m.id) FILTER (WHERE m.created_at > ${since}) AS messages_taken,
+        ROUND(AVG(EXTRACT(EPOCH FROM (m.acknowledged_at - m.created_at)) / 60) FILTER (WHERE m.acknowledged_at IS NOT NULL AND m.created_at > ${since}))::INT AS avg_ack_minutes,
+        COUNT(DISTINCT qa.id) FILTER (WHERE qa.created_at > ${since}) AS qa_reviews,
+        ROUND(AVG(qa.score) FILTER (WHERE qa.created_at > ${since}), 1) AS avg_qa_score,
+        COUNT(DISTINCT cb.id) FILTER (WHERE cb.created_at > ${since} AND cb.status = 'completed') AS callbacks_completed
+      FROM operators o
+      LEFT JOIN call_logs cl ON cl.operator_id = o.id ${opFilter}
+      LEFT JOIN messages m   ON m.operator_id  = o.id
+      LEFT JOIN qa_scores qa ON qa.operator_id = o.id
+      LEFT JOIN callback_records cb ON cb.operator_id = o.id
+      WHERE o.is_active = true
+      GROUP BY o.id, o.username, o.display_name
+      ORDER BY calls_handled DESC NULLS LAST
+    `);
+
+    res.json({ days: parseInt(days, 10), operators: rows.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

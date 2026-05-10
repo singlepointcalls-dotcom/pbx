@@ -305,6 +305,33 @@ router.post('/:token/intake', intakeLimit, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/* ---- GET /api/widget/submissions — list intake form submissions (admin) ---- */
+router.get('/submissions', requireAuth, async (req, res, next) => {
+  try {
+    const { client_id, limit = 50, offset = 0 } = req.query;
+    const params = [];
+    const conditions = [];
+    if (client_id) {
+      params.push(client_id);
+      conditions.push(`s.client_id = $${params.length}`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(Number(limit), Number(offset));
+    const result = await pool.query(
+      `SELECT s.*, c.name AS client_name,
+              m.caller_id_name, m.caller_id_num, m.status AS message_status
+         FROM intake_form_submissions s
+         LEFT JOIN clients c ON c.id = s.client_id
+         LEFT JOIN messages m ON m.id = s.message_id
+       ${where}
+       ORDER BY s.submitted_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    res.json({ submissions: result.rows });
+  } catch (err) { next(err); }
+});
+
 /* ---- POST /api/widget/:clientId/token — generate/regenerate widget token (admin) ---- */
 router.post('/clients/:clientId/token', requireAuth, requireRole('admin'), async (req, res, next) => {
   try {

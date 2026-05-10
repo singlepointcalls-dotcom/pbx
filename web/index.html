@@ -589,6 +589,8 @@
       <button class="admin-nav-item" onclick="Admin.showSection('broadcast', event)">&#128226; Broadcast</button>
       <button class="admin-nav-item" onclick="Admin.showSection('presence', event)">&#128101; Team</button>
       <button class="admin-nav-item" onclick="Admin.showSection('queue', event)">&#128222; Queue</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('intake-submissions', event)">&#128196; Form Submissions</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('op-performance', event)">&#127941; Performance</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -1255,6 +1257,40 @@
       <div id="queue-stats-bar" style="display:flex;gap:24px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px"></div>
       <div id="queue-table-wrap">
         <p class="empty-state">Loading queue…</p>
+      </div>
+    </div>
+
+    <!-- Intake Form Submissions Section -->
+    <div id="admin-intake-submissions" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#128196; Intake Form Submissions</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="intake-filter-client" onchange="IntakeSubmissionsPanel.load()" style="min-width:160px">
+            <option value="">All Clients</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="IntakeSubmissionsPanel.load()">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="intake-table-wrap">
+        <p class="empty-state">Loading submissions…</p>
+      </div>
+    </div>
+
+    <!-- Operator Performance Section -->
+    <div id="admin-op-performance" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#127941; Operator Performance</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="perf-filter-days" onchange="OperatorPerfPanel.load()" style="min-width:120px">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="OperatorPerfPanel.load()">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="perf-table-wrap">
+        <p class="empty-state">Loading performance data…</p>
       </div>
     </div>
 
