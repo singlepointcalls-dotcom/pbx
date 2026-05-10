@@ -183,6 +183,7 @@ const Portal = (() => {
     else if (section === 'contacts') loadContacts();
     else if (section === 'appointments') loadAppointments();
     else if (section === 'knowledge') loadKnowledge();
+    else if (section === 'files') loadFiles();
     else if (section === 'billing') loadBilling();
     else if (section === 'availability') loadAvailability();
     else if (section === 'account') loadAccount();
@@ -806,6 +807,44 @@ const Portal = (() => {
     if (article) article.style.display = 'none';
   }
 
+  /* ---- Files ---- */
+  async function loadFiles() {
+    const tbody = document.getElementById('p-files-tbody');
+    const countEl = document.getElementById('p-files-count');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="p-empty">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/portal/files');
+      const files = data.files || [];
+      if (countEl) countEl.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
+      if (!files.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-empty">No files shared yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = files.map((f) => `
+        <tr>
+          <td><strong>${escHtml(f.original_name)}</strong></td>
+          <td style="font-size:0.8rem;color:#888">${escHtml(f.mime_type || '—')}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${f.size_bytes ? formatFileSize(f.size_bytes) : '—'}</td>
+          <td style="font-size:0.82rem">${f.description ? escHtml(f.description) : '<span style="color:#aaa">—</span>'}</td>
+          <td style="font-size:0.8rem;white-space:nowrap">${new Date(f.created_at).toLocaleDateString()}</td>
+          <td><a href="/api/portal/files/${encodeURIComponent(f.id)}/download"
+                 class="p-btn p-btn-sm p-btn-secondary"
+                 style="text-decoration:none;padding:4px 10px;font-size:0.8rem"
+                 download="${escHtml(f.original_name)}">&#11167; Download</a></td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="p-empty">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
   return {
@@ -820,5 +859,7 @@ const Portal = (() => {
     loadAppointments, openNewAppt, closeNewAppt, saveNewAppt, cancelAppointment,
     // Knowledge
     loadKnowledge, searchKnowledge, openArticle, closeArticle,
+    // Files
+    loadFiles,
   };
 })();

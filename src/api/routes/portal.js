@@ -1,12 +1,16 @@
 'use strict';
 
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const pool = require('../../config/database');
 const { broadcast } = require('../../services/realtime');
+
+const UPLOAD_DIR = path.join(__dirname, '..', '..', '..', 'uploads');
 
 /* ---- Shared password validator ---- */
 function validatePassword(password) {
@@ -666,6 +670,42 @@ router.get('/appointments/ical', requirePortalAuth, async (req, res, next) => {
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="appointments.ics"');
     res.send(ics);
+  } catch (err) { next(err); }
+});
+
+// GET /api/portal/files — list files shared with this client
+router.get('/files', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT cf.id, cf.original_name, cf.mime_type, cf.size_bytes, cf.description, cf.created_at,
+              o.full_name AS uploaded_by_name
+       FROM client_files cf
+       LEFT JOIN operators o ON cf.uploaded_by = o.id
+       WHERE cf.client_id = $1
+       ORDER BY cf.created_at DESC`,
+      [req.portalUser.client_id]
+    );
+    res.json({ files: result.rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/portal/files/:fileId/download — download a file (client-scoped)
+router.get('/files/:fileId/download', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM client_files WHERE id = $1 AND client_id = $2',
+      [req.params.fileId, req.portalUser.client_id]
+    );
+    const file = result.rows[0];
+    if (!file) return res.status(404).json({ error: 'File not found' });
+
+    const filePath = path.resolve(UPLOAD_DIR, path.basename(file.filename));
+    if (!filePath.startsWith(path.resolve(UPLOAD_DIR))) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
+
+    res.download(filePath, file.original_name);
   } catch (err) { next(err); }
 });
 

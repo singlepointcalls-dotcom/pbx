@@ -75,6 +75,7 @@
       <button class="p-nav-btn" onclick="Portal.nav('contacts')">&#128101; Contacts</button>
       <button class="p-nav-btn" onclick="Portal.nav('appointments')">&#128197; Appointments</button>
       <button class="p-nav-btn" onclick="Portal.nav('knowledge')">&#128218; Knowledge</button>
+      <button class="p-nav-btn" onclick="Portal.nav('files')">&#128196; Files</button>
       <button class="p-nav-btn" onclick="Portal.nav('billing')">&#128182; Billing</button>
       <button class="p-nav-btn" onclick="Portal.nav('availability')">&#9200; Availability</button>
       <button class="p-nav-btn" onclick="Portal.nav('account')">&#128100; Account</button>
@@ -283,6 +284,19 @@
         <p id="p-kb-article-meta" style="color:#888;font-size:0.82rem;margin-bottom:16px"></p>
         <div id="p-kb-article-body" style="line-height:1.7;white-space:pre-wrap"></div>
       </div>
+    </section>
+
+    <!-- Files section -->
+    <section id="p-files" class="p-section">
+      <div class="p-section-header">
+        <h2 class="p-section-title">&#128196; Shared Files</h2>
+        <span id="p-files-count" style="font-size:0.85rem;color:#888"></span>
+      </div>
+      <p style="font-size:0.85rem;color:#666;margin-bottom:16px">Documents and files shared with your account by our team.</p>
+      <table class="p-table" id="p-files-table">
+        <thead><tr><th>File Name</th><th>Type</th><th>Size</th><th>Description</th><th>Uploaded</th><th></th></tr></thead>
+        <tbody id="p-files-tbody"><tr><td colspan="6" class="p-empty">Loading...</td></tr></tbody>
+      </table>
     </section>
 
     <!-- Account / GDPR section -->
