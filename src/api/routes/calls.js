@@ -9,7 +9,9 @@ router.use(requireAuth);
 // GET /api/calls
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, disposition, date_from, date_to, limit = 50, offset = 0, has_recording } = req.query;
+    const { client_id, disposition, date_from, date_to, from, to, limit = 50, offset = 0, has_recording } = req.query;
+    const rangeFrom = from || date_from;
+    const rangeTo   = to   || date_to;
 
     let query = `
       SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
@@ -28,25 +30,22 @@ router.get('/', async (req, res, next) => {
       params.push(disposition);
       query += ` AND cl.disposition = $${params.length}`;
     }
-    if (date_from) {
-      params.push(date_from);
+    if (rangeFrom) {
+      params.push(rangeFrom);
       query += ` AND cl.call_start >= $${params.length}`;
     }
-    if (date_to) {
-      params.push(date_to);
-      query += ` AND cl.call_start <= $${params.length}`;
+    if (rangeTo) {
+      params.push(rangeTo);
+      query += ` AND cl.call_start < ($${params.length}::date + INTERVAL '1 day')`;
     }
     if (has_recording === 'true') {
       query += ` AND cl.recording_url IS NOT NULL`;
     }
 
-    // CSV export (admin/supervisor only, client_id required for data isolation)
+    // CSV export (admin/supervisor only)
     if (req.query.format === 'csv') {
       if (!['admin', 'supervisor'].includes(req.operator?.role)) {
         return res.status(403).json({ error: 'CSV export requires admin or supervisor role' });
-      }
-      if (!client_id) {
-        return res.status(400).json({ error: 'client_id is required for CSV export' });
       }
       const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC LIMIT 50000', params);
       const cols = ['id','client_name','caller_id_num','caller_id_name','did','call_start','call_answered','call_end','duration_seconds','disposition','operator_name'];

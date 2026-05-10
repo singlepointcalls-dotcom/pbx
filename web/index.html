@@ -642,12 +642,16 @@
           <option value="answered">Answered</option>
           <option value="no_answer">No Answer</option>
           <option value="abandoned">Abandoned</option>
+          <option value="transferred">Transferred</option>
         </select>
+        <input type="date" id="calllog-from" style="font-size:0.83rem;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:var(--radius)" title="From date" />
+        <input type="date" id="calllog-to" style="font-size:0.83rem;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:var(--radius)" title="To date" />
         <button class="btn btn-sm btn-secondary" onclick="Admin.loadCallLog()">Filter</button>
+        <a id="calllog-csv-btn" href="/api/calls?format=csv" download="call-log.csv" class="btn btn-sm btn-secondary">&#11015; CSV</a>
       </div>
       <table class="admin-table">
-        <thead><tr><th>Time</th><th>Client</th><th>Caller</th><th>DID</th><th>Duration</th><th>Disposition</th><th>Operator</th><th>Recording</th></tr></thead>
-        <tbody id="calllog-tbody"><tr><td colspan="8" class="empty-state">Click Refresh to load</td></tr></tbody>
+        <thead><tr><th>Time</th><th>Client</th><th>Caller</th><th>DID</th><th>Duration</th><th>Disposition</th><th>Operator</th><th>Recording</th><th></th></tr></thead>
+        <tbody id="calllog-tbody"><tr><td colspan="9" class="empty-state">Click Refresh to load</td></tr></tbody>
       </table>
     </div>
 
@@ -1063,6 +1067,17 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="date" id="audit-from" style="font-size:0.85rem" />
           <input type="date" id="audit-to"   style="font-size:0.85rem" />
+          <select id="audit-action" style="font-size:0.83rem;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:var(--radius)">
+            <option value="">All Actions</option>
+            <option value="operator.login">Login</option>
+            <option value="message.create">Message Create</option>
+            <option value="message.acknowledge">Message Ack</option>
+            <option value="call.answered">Call Answered</option>
+            <option value="client.create">Client Create</option>
+            <option value="client.update">Client Update</option>
+            <option value="operator.create">Operator Create</option>
+            <option value="operator.update">Operator Update</option>
+          </select>
           <button class="btn btn-secondary btn-sm" onclick="AuditPanel.load()">Filter</button>
           <button class="btn btn-secondary btn-sm" onclick="AuditPanel.exportCsv()">&#11167; CSV</button>
         </div>

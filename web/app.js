@@ -3941,17 +3941,23 @@ const Admin = (() => {
   async function loadCallLog() {
     const tbody = el('calllog-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" style="padding:12px;color:#666">Loading...</td></tr>';
-    const clientId   = el('calllog-client-filter')?.value.trim();
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;color:#666">Loading...</td></tr>';
+    const clientId    = el('calllog-client-filter')?.value.trim();
     const disposition = el('calllog-disposition')?.value;
+    const from        = el('calllog-from')?.value;
+    const to          = el('calllog-to')?.value;
     let qs = '?limit=100';
-    if (clientId)   qs += `&client_id=${encodeURIComponent(clientId)}`;
+    if (clientId)    qs += `&client_id=${encodeURIComponent(clientId)}`;
     if (disposition) qs += `&disposition=${encodeURIComponent(disposition)}`;
+    if (from)        qs += `&from=${from}`;
+    if (to)          qs += `&to=${to}`;
+    const csvLink = el('calllog-csv-btn');
+    if (csvLink) csvLink.href = `/api/calls?format=csv${qs.slice(1) ? '&' + qs.slice(1) : ''}`;
     try {
       const data = await api('GET', `/calls${qs}`);
       const rows = data?.calls || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No calls found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No calls found</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map((r) => `
@@ -3968,10 +3974,13 @@ const Admin = (() => {
                  <source src="/api/calls/${r.id}/recording">
                </audio>`
             : '—'}</td>
+          <td>${r.caller_id_num && r.disposition !== 'answered'
+            ? `<button class="btn btn-sm btn-secondary" title="Call back" onclick="App.originateToContact('${escHtml(r.caller_id_num)}','${r.client_id || ''}')">&#128222; Call Back</button>`
+            : ''}</td>
         </tr>
       `).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -5975,9 +5984,10 @@ const AuditPanel = (() => {
     const tbody = el('audit-tbody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
     try {
-      const from = el('audit-from')?.value;
-      const to   = el('audit-to')?.value;
-      const qs   = `?limit=100${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
+      const from   = el('audit-from')?.value;
+      const to     = el('audit-to')?.value;
+      const action = el('audit-action')?.value;
+      const qs   = `?limit=100${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}${action ? `&action=${encodeURIComponent(action)}` : ''}`;
       const data = await api('GET', `/audit${qs}`);
       render(data?.entries || []);
     } catch (err) { toast(`Audit error: ${err.message}`, 'danger'); }
@@ -5997,10 +6007,14 @@ const AuditPanel = (() => {
   }
 
   function exportCsv() {
-    const from = el('audit-from')?.value;
-    const to   = el('audit-to')?.value;
-    const qs   = `${from ? `?from=${from}` : '?'}${to ? `${from ? '&' : ''}to=${to}` : ''}`;
-    window.location = `/api/audit/export.csv${qs}`;
+    const from   = el('audit-from')?.value;
+    const to     = el('audit-to')?.value;
+    const action = el('audit-action')?.value;
+    const parts  = [];
+    if (from)   parts.push(`from=${from}`);
+    if (to)     parts.push(`to=${to}`);
+    if (action) parts.push(`action=${encodeURIComponent(action)}`);
+    window.location = `/api/audit/export.csv${parts.length ? '?' + parts.join('&') : ''}`;
   }
 
   return { load, exportCsv };
