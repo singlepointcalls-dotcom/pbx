@@ -2190,6 +2190,16 @@
         </div>
       </div>
     </div>
+      <!-- Operator Reply -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-bottom:6px">&#128140; Reply to Portal User</div>
+        <div id="msg-detail-replies" style="max-height:180px;overflow-y:auto;margin-bottom:8px;display:flex;flex-direction:column;gap:6px"></div>
+        <div style="display:flex;gap:6px">
+          <textarea id="msg-detail-reply-input" rows="2" placeholder="Type a reply to the client portal user..." style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text);resize:vertical" onkeydown="if(event.ctrlKey&&event.key==='Enter')App.sendMsgReply()"></textarea>
+          <button class="btn btn-sm btn-primary" style="align-self:flex-end" onclick="App.sendMsgReply()">Send</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeMsgDetail()">Close</button>
       <button class="btn btn-warning" id="msg-detail-redeliver-btn" onclick="App.redeliverMessage()">&#8635; Redeliver</button>

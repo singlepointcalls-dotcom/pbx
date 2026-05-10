@@ -1137,3 +1137,13 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS internal_notes TEXT;
 -- v26 — Message assignment (distinct from operator_id who took the call)
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS assigned_to UUID REFERENCES operators(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_assigned_to ON messages(assigned_to) WHERE assigned_to IS NOT NULL;
+
+-- v27 — Portal message replies (operator responses to portal enquiries)
+CREATE TABLE IF NOT EXISTS message_replies (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  operator_id UUID REFERENCES operators(id) ON DELETE SET NULL,
+  body        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_message_replies_msg ON message_replies(message_id);

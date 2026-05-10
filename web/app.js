@@ -1518,6 +1518,27 @@ const App = (() => {
       }
       if (tagInput) tagInput.value = currentTags.join(', ');
 
+      // Load replies
+      try {
+        const repliesData = await api('GET', `/messages/${messageId}/replies`);
+        const repliesEl = el('msg-detail-replies');
+        if (repliesEl) {
+          const replies = repliesData.replies || [];
+          repliesEl.innerHTML = replies.length
+            ? replies.map((r) => `
+              <div style="background:var(--bg-dark);border-radius:6px;padding:6px 10px;font-size:0.82rem">
+                <div style="font-weight:600;font-size:0.75rem;color:var(--text-muted);margin-bottom:2px">
+                  ${escHtml(r.operator_name || 'Operator')} &middot; ${new Date(r.created_at).toLocaleString('en-GB')}
+                </div>
+                <div style="white-space:pre-wrap">${escHtml(r.body)}</div>
+              </div>
+            `).join('')
+            : '<span style="font-size:0.8rem;color:var(--text-muted)">No replies yet</span>';
+        }
+        const replyInput = el('msg-detail-reply-input');
+        if (replyInput) replyInput.value = '';
+      } catch { /* ignore */ }
+
       // Load delivery log
       try {
         const del = await api('GET', `/messages/${messageId}/deliveries`);
@@ -1529,6 +1550,23 @@ const App = (() => {
       } catch { /* ignore */ }
     } catch (err) {
       el('msg-detail-body').textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function sendMsgReply() {
+    if (!_detailMessageId) return;
+    const replyInput = el('msg-detail-reply-input');
+    if (!replyInput) return;
+    const body = replyInput.value.trim();
+    if (!body) return;
+    try {
+      await api('POST', `/messages/${_detailMessageId}/replies`, { body });
+      replyInput.value = '';
+      toast('Reply sent to portal user', 'success');
+      // Reload replies
+      showMessageDetail(_detailMessageId);
+    } catch (err) {
+      toast(`Reply error: ${err.message}`, 'danger');
     }
   }
 
@@ -2844,7 +2882,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes, saveMsgAssign,
+    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,

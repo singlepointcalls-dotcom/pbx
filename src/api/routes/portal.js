@@ -243,6 +243,25 @@ router.post('/messages/:id/acknowledge', requirePortalAuth, async (req, res, nex
   } catch (err) { next(err); }
 });
 
+// GET /api/portal/messages/:id/replies — portal user reads operator replies on their message
+router.get('/messages/:id/replies', requirePortalAuth, async (req, res, next) => {
+  try {
+    // Verify message belongs to this client
+    const msg = await pool.query('SELECT id FROM messages WHERE id = $1 AND client_id = $2', [req.params.id, req.portalUser.client_id]);
+    if (!msg.rows.length) return res.status(404).json({ error: 'Message not found' });
+
+    const result = await pool.query(
+      `SELECT mr.id, mr.body, mr.created_at, o.full_name AS operator_name
+       FROM message_replies mr
+       LEFT JOIN operators o ON mr.operator_id = o.id
+       WHERE mr.message_id = $1
+       ORDER BY mr.created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ replies: result.rows });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/calls
 router.get('/calls', requirePortalAuth, async (req, res, next) => {
   try {

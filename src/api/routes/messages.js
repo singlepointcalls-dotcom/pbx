@@ -344,4 +344,47 @@ router.get('/:id/webhook-log', requireRole('admin', 'supervisor'), async (req, r
   } catch (err) { next(err); }
 });
 
+// GET /api/messages/:id/replies — get replies for a message
+router.get('/:id/replies', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT mr.*, o.full_name AS operator_name
+       FROM message_replies mr
+       LEFT JOIN operators o ON mr.operator_id = o.id
+       WHERE mr.message_id = $1
+       ORDER BY mr.created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ replies: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/messages/:id/replies — operator sends a reply to a portal enquiry
+router.post('/:id/replies', async (req, res, next) => {
+  try {
+    const { body } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'Reply body is required' });
+
+    // Verify message exists and get client_id
+    const msg = await pool.query('SELECT client_id FROM messages WHERE id = $1', [req.params.id]);
+    if (!msg.rows[0]) return res.status(404).json({ error: 'Message not found' });
+
+    const result = await pool.query(
+      `INSERT INTO message_replies (message_id, operator_id, body)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.params.id, req.operator.id, body.trim()]
+    );
+    const reply = result.rows[0];
+
+    // Notify portal users for this client
+    const { broadcastToPortalClient } = require('../../services/realtime');
+    broadcastToPortalClient(msg.rows[0].client_id, 'portal:message:reply', {
+      message_id: req.params.id,
+      reply: { ...reply, operator_name: req.operator.fullName },
+    });
+
+    res.status(201).json({ reply });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

@@ -181,6 +181,20 @@ const Portal = (() => {
       }
     });
 
+    // Operator reply to portal enquiry
+    _socket.on('portal:message:reply', (data) => {
+      const { message_id } = data;
+      showLiveToast(`&#128140; Our team replied to your enquiry`, () => {
+        nav('messages');
+        setTimeout(() => {
+          const replyContainer = document.getElementById(`msg-replies-${message_id}`);
+          if (replyContainer && replyContainer.style.display !== 'none') {
+            toggleMsgReplies(message_id);
+          }
+        }, 500);
+      });
+    });
+
     // Portal-targeted new message event (more specific)
     _socket.on('portal:message:new', (data) => {
       _unreadCount++;
@@ -407,9 +421,15 @@ const Portal = (() => {
             <span>${relTime(m.created_at)}</span>
             ${m.acknowledged_at ? `<span style="color:#27ae60">&#10003; Acknowledged</span>` : ''}
           </div>
-          ${!m.acknowledged_at && m.status !== 'acknowledged' ? `
-            <button class="p-btn p-btn-sm" onclick="Portal.acknowledgeMessage('${m.id}', this)">&#10003; Mark Read</button>
-          ` : ''}
+          <div style="display:flex;gap:6px">
+            <button class="p-btn p-btn-sm p-btn-secondary" onclick="Portal.toggleMsgReplies('${m.id}', this)">&#128140; Replies</button>
+            ${!m.acknowledged_at && m.status !== 'acknowledged' ? `
+              <button class="p-btn p-btn-sm" onclick="Portal.acknowledgeMessage('${m.id}', this)">&#10003; Mark Read</button>
+            ` : ''}
+          </div>
+        </div>
+        <div id="msg-replies-${m.id}" style="display:none;margin-top:8px;padding:8px;background:var(--p-card-bg,#f8f9fa);border-radius:6px;font-size:0.82rem">
+          Loading replies...
         </div>
       </div>
     `).join('');
@@ -869,6 +889,36 @@ const Portal = (() => {
   }
 
   /* ---- Files ---- */
+  /* ---- Message Replies ---- */
+  async function toggleMsgReplies(msgId, btn) {
+    const container = document.getElementById(`msg-replies-${msgId}`);
+    if (!container) return;
+    if (container.style.display !== 'none') {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    container.innerHTML = 'Loading...';
+    try {
+      const data = await api('GET', `/portal/messages/${msgId}/replies`);
+      const replies = data.replies || [];
+      if (!replies.length) {
+        container.innerHTML = '<span style="color:var(--p-text-muted,#888)">No replies from our team yet.</span>';
+        return;
+      }
+      container.innerHTML = replies.map((r) => `
+        <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.06)">
+          <div style="font-size:0.75rem;color:var(--p-text-muted,#888);margin-bottom:2px">
+            <strong>${escHtml(r.operator_name || 'Our team')}</strong> &middot; ${new Date(r.created_at).toLocaleString()}
+          </div>
+          <div style="white-space:pre-wrap">${escHtml(r.body)}</div>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<span style="color:#e74c3c">Error: ${escHtml(err.message)}</span>`;
+    }
+  }
+
   async function loadFiles() {
     const tbody = document.getElementById('p-files-tbody');
     const countEl = document.getElementById('p-files-count');
@@ -922,6 +972,8 @@ const Portal = (() => {
     loadKnowledge, searchKnowledge, openArticle, closeArticle,
     // Files
     loadFiles,
+    // Replies
+    toggleMsgReplies,
     // Realtime
     dismissLiveToast,
   };
