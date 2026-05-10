@@ -609,6 +609,13 @@ const App = (() => {
     socket.on('call:dnc_blocked', (data) => {
       toast(`DNC-blocked call from ${data.callerIdNum || 'Unknown'} — rejected`, 'info', 4000);
     });
+    socket.on('queue:new', (data) => {
+      toast(`Caller ${data.callerIdNum || 'Unknown'} queued (position ${data.position}) — no operators available`, 'warning', 6000);
+      if (document.getElementById('admin-queue')?.style.display !== 'none') QueuePanel.load();
+    });
+    socket.on('queue:abandoned', () => {
+      if (document.getElementById('admin-queue')?.style.display !== 'none') QueuePanel.load();
+    });
     socket.on('client:availability', (data) => {
       // Update active call panel if it's for the current call's client
       if (activeCall?.client?.id === data.client_id) {
@@ -3236,6 +3243,7 @@ const Admin = (() => {
     else if (name === 'dnc') DncPanel.load();
     else if (name === 'transcription') TranscriptionPanel.load();
     else if (name === 'recordings') RecordingsPanel.load();
+    else if (name === 'queue') QueuePanel.load();
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
@@ -7171,6 +7179,100 @@ const RecordingsPanel = (() => {
   }
 
   return { load, deleteRecording };
+})();
+
+/* ============================================================
+   QueuePanel — Call Queue Admin
+   ============================================================ */
+const QueuePanel = (() => {
+  async function load() {
+    const status = document.getElementById('queue-filter-status')?.value || 'waiting';
+    const wrap = document.getElementById('queue-table-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+
+    try {
+      const [qData, stats] = await Promise.all([
+        api('GET', `/queue?status=${status}&limit=100`),
+        api('GET', '/queue/stats'),
+      ]);
+
+      // Stats bar
+      const sb = document.getElementById('queue-stats-bar');
+      if (sb) {
+        sb.innerHTML = [
+          { label: 'Waiting', val: stats.waiting || 0, color: stats.waiting > 0 ? '#e74c3c' : '#27ae60' },
+          { label: 'Connecting', val: stats.connecting || 0, color: '#f39c12' },
+          { label: 'Answered (1h)', val: stats.answered_1h || 0, color: '#2ecc71' },
+          { label: 'Abandoned (1h)', val: stats.abandoned_1h || 0, color: '#e67e22' },
+          { label: 'Avg Wait (answered)', val: stats.avg_wait_answered_1h != null ? formatSeconds(stats.avg_wait_answered_1h) : '—', color: 'var(--text)' },
+          { label: 'Longest Waiting', val: stats.longest_wait_seconds != null ? formatSeconds(stats.longest_wait_seconds) : '—', color: stats.longest_wait_seconds > 120 ? '#e74c3c' : 'var(--text)' },
+        ].map(({ label, val, color }) =>
+          `<div><div style="font-size:1.4rem;font-weight:700;color:${color}">${val}</div><div style="font-size:0.7rem;color:var(--text-muted)">${label}</div></div>`
+        ).join('');
+      }
+
+      const entries = qData.entries || [];
+      if (!entries.length) {
+        wrap.innerHTML = `<p class="empty-state">No ${status === 'all' ? '' : status + ' '}queue entries.</p>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead><tr>
+            <th>Position</th><th>Client</th><th>Caller</th><th>Queued At</th>
+            <th>Wait</th><th>Status</th><th>Operator</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            ${entries.map((e) => {
+              const waitSec = e.current_wait_seconds || e.wait_seconds || 0;
+              const statusBadge = {
+                waiting: '<span style="color:#e74c3c;font-weight:600">Waiting</span>',
+                connecting: '<span style="color:#f39c12;font-weight:600">Connecting</span>',
+                answered: '<span style="color:#27ae60">Answered</span>',
+                abandoned: '<span style="color:#e67e22">Abandoned</span>',
+                timed_out: '<span style="color:#999">Timed Out</span>',
+              }[e.status] || e.status;
+              return `<tr>
+                <td>${e.position}</td>
+                <td>${escHtml(e.client_name || '—')}</td>
+                <td>${escHtml(e.caller_name || e.caller_number || 'Unknown')}<br><span style="font-size:0.75rem;color:var(--text-muted)">${escHtml(e.caller_number || '')}</span></td>
+                <td style="font-size:0.8rem">${new Date(e.queued_at).toLocaleTimeString()}</td>
+                <td>${formatSeconds(waitSec)}</td>
+                <td>${statusBadge}</td>
+                <td>${escHtml(e.operator_username || '—')}</td>
+                <td>${e.status === 'waiting' ? `<button class="btn btn-sm btn-danger" onclick="QueuePanel.abandon('${e.id}', this)">Abandon</button>` : ''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch (err) {
+      wrap.innerHTML = `<p class="empty-state" style="color:var(--danger)">Failed to load queue: ${err.message}</p>`;
+    }
+  }
+
+  function formatSeconds(sec) {
+    if (!sec && sec !== 0) return '—';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  async function abandon(id, btn) {
+    if (!confirm('Abandon this queued call?')) return;
+    btn.disabled = true;
+    try {
+      await api('DELETE', `/queue/${id}`);
+      showToast('Queue entry abandoned', 'success');
+      load();
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
+      btn.disabled = false;
+    }
+  }
+
+  return { load, abandon };
 })();
 
 /* ============================================================

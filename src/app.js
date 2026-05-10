@@ -11,6 +11,7 @@ const contactRoutes = require('./api/routes/contacts');
 const messageRoutes = require('./api/routes/messages');
 const callRoutes = require('./api/routes/calls');
 const callControlRoutes = require('./api/routes/callcontrol');
+const queueRoutes       = require('./api/routes/queue');
 const operatorRoutes = require('./api/routes/operators');
 const reportRoutes = require('./api/routes/reports');
 const taskRoutes = require('./api/routes/tasks');
@@ -135,6 +136,7 @@ app.use('/api/clients', availabilityRoutes); // /api/clients/:id/availability
 app.use('/api/messages', messageRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/callcontrol', callControlRoutes);
+app.use('/api/queue',       queueRoutes);
 app.use('/api/operators', operatorRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tasks', taskRoutes);

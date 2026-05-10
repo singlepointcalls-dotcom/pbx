@@ -588,6 +588,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
       <button class="admin-nav-item" onclick="Admin.showSection('broadcast', event)">&#128226; Broadcast</button>
       <button class="admin-nav-item" onclick="Admin.showSection('presence', event)">&#128101; Team</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('queue', event)">&#128222; Queue</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -1234,6 +1235,26 @@
       </div>
       <div id="rec-table-wrap">
         <p class="empty-state">Loading recordings…</p>
+      </div>
+    </div>
+
+    <!-- Call Queue Section -->
+    <div id="admin-queue" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#128222; Call Queue</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="queue-filter-status" onchange="QueuePanel.load()" style="min-width:130px">
+            <option value="waiting">Waiting</option>
+            <option value="all">All</option>
+            <option value="answered">Answered</option>
+            <option value="abandoned">Abandoned</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="QueuePanel.load()">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="queue-stats-bar" style="display:flex;gap:24px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:16px"></div>
+      <div id="queue-table-wrap">
+        <p class="empty-state">Loading queue…</p>
       </div>
     </div>
 

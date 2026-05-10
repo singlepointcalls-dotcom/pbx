@@ -1188,3 +1188,37 @@ ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS client_id  UUID REFERENCES
 ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS caller_phone VARCHAR(50);
 ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS source VARCHAR(30) NOT NULL DEFAULT 'campaign';
 CREATE INDEX IF NOT EXISTS idx_cbrecord_client ON callback_records(client_id) WHERE client_id IS NOT NULL;
+
+-- ============================================================
+-- v33 — Call queue + Intake form submissions
+-- ============================================================
+
+-- call_queue: tracks inbound calls waiting for an available operator
+CREATE TABLE IF NOT EXISTS call_queue (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID REFERENCES clients(id) ON DELETE CASCADE,
+  channel_id      TEXT NOT NULL,
+  caller_number   VARCHAR(50),
+  caller_name     TEXT,
+  queued_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  position        INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','connecting','answered','abandoned','timed_out')),
+  operator_id     UUID REFERENCES operators(id) ON DELETE SET NULL,
+  answered_at     TIMESTAMPTZ,
+  abandoned_at    TIMESTAMPTZ,
+  wait_seconds    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_call_queue_status  ON call_queue(status, queued_at);
+CREATE INDEX IF NOT EXISTS idx_call_queue_client  ON call_queue(client_id);
+
+-- intake_form_submissions: stores public widget intake form responses
+CREATE TABLE IF NOT EXISTS intake_form_submissions (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  message_id    UUID REFERENCES messages(id) ON DELETE SET NULL,
+  form_data     JSONB NOT NULL DEFAULT '{}',
+  submitter_ip  TEXT,
+  submitted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_intake_submissions_client  ON intake_form_submissions(client_id);
+CREATE INDEX IF NOT EXISTS idx_intake_submissions_msg     ON intake_form_submissions(message_id);

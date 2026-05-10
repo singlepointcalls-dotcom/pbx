@@ -237,6 +237,37 @@ async function handleStasisStart(event, channel) {
     console.warn('[ARI] MOH failed:', err.message);
   }
 
+  // Check operator availability — if nobody is available, add to call queue
+  let queueEntryId = null;
+  if (client) {
+    try {
+      const availResult = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM operator_availability
+         WHERE status = 'available'`,
+      );
+      const availableCount = parseInt(availResult.rows[0]?.cnt ?? '0', 10);
+
+      if (availableCount === 0) {
+        const posResult = await pool.query(
+          `SELECT COUNT(*) + 1 AS pos FROM call_queue WHERE status = 'waiting'`
+        );
+        const position = parseInt(posResult.rows[0]?.pos ?? '1', 10);
+        const qr = await pool.query(
+          `INSERT INTO call_queue (client_id, channel_id, caller_number, caller_name, position)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [client.id, channelId, callerIdNum, callerIdName, position]
+        );
+        queueEntryId = qr.rows[0].id;
+        // Track queue ID alongside call data
+        activeCalls.get(channelId).queueEntryId = queueEntryId;
+        broadcast('queue:new', { queueEntryId, channelId, callerIdNum, callerIdName, clientId: client.id, clientName: client.name, position });
+        console.log(`[ARI] No operators available — queued channel=${channelId} position=${position}`);
+      }
+    } catch (err) {
+      console.warn('[ARI] Queue check failed (proceeding without queue tracking):', err.message);
+    }
+  }
+
   // Broadcast to all connected operators
   broadcast('call:ringing', {
     channelId,
@@ -244,6 +275,7 @@ async function handleStasisStart(event, channel) {
     callerIdNum,
     callerIdName,
     did,
+    queueEntryId,
     client: client
       ? { id: client.id, name: client.name, account_number: client.account_number, script: client.script, greeting: client.greeting }
       : null,
@@ -286,6 +318,16 @@ async function handleStasisEnd(event, channel) {
     }
   }
 
+  // Mark queue entry as abandoned if still waiting
+  if (callData.queueEntryId) {
+    pool.query(
+      `UPDATE call_queue SET status = 'abandoned', abandoned_at = NOW(),
+          wait_seconds = EXTRACT(EPOCH FROM (NOW() - queued_at))::INT
+        WHERE id = $1 AND status IN ('waiting','connecting')`,
+      [callData.queueEntryId]
+    ).catch((err) => console.warn('[ARI] Queue entry cleanup failed:', err.message));
+  }
+
   activeCalls.delete(channelId);
 
   broadcast('call:ended', { channelId, callLogId: callData.callLogId, duration: durationSec });
@@ -311,6 +353,14 @@ async function answerCall(channelId, operatorExtension) {
   // Stop MOH
   try { await channel.stopMoh(); } catch (_) {}
 
+  // Mark queue entry as connecting
+  if (callData.queueEntryId) {
+    pool.query(
+      `UPDATE call_queue SET status = 'connecting' WHERE id = $1 AND status = 'waiting'`,
+      [callData.queueEntryId]
+    ).catch(() => {});
+  }
+
   // Answer the inbound channel
   await channel.answer();
 
@@ -335,6 +385,16 @@ async function answerCall(channelId, operatorExtension) {
   // When operator channel answers, add it to the bridge
   operatorChannel.on('StasisStart', async () => {
     await bridge.addChannel({ channel: operatorChannel.id });
+
+    // Mark queue entry as answered
+    if (callData.queueEntryId) {
+      pool.query(
+        `UPDATE call_queue SET status = 'answered', answered_at = NOW(),
+            wait_seconds = EXTRACT(EPOCH FROM (NOW() - queued_at))::INT
+          WHERE id = $1`,
+        [callData.queueEntryId]
+      ).catch(() => {});
+    }
 
     // Update call log with answer time and operator
     broadcast('call:answered', { channelId, callLogId: callData.callLogId });
