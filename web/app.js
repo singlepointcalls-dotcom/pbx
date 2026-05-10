@@ -825,6 +825,31 @@ const App = (() => {
       .catch((err) => toast(`Transfer failed: ${err.message}`, 'danger'));
   }
 
+  function showConference() {
+    const panel = el('conference-panel');
+    if (panel) panel.classList.toggle('hidden');
+    const tp = el('transfer-panel');
+    if (tp && !tp.classList.contains('hidden')) tp.classList.add('hidden');
+  }
+
+  function hideConference() {
+    const panel = el('conference-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function addConferenceParty() {
+    if (!activeCall) return;
+    const ext = el('conf-ext')?.value?.trim();
+    if (!ext) return;
+    try {
+      await api('POST', `/callcontrol/${activeCall.channelId}/conference`, { extension: ext });
+      toast(`Conference party ${ext} dialing…`, 'success');
+      hideConference();
+    } catch (err) {
+      toast(`Conference failed: ${err.message}`, 'danger');
+    }
+  }
+
   function viewScript(channelId) {
     const call = callQueue.get(channelId) || (activeCall?.channelId === channelId ? activeCall : null);
     if (!call || !call.client) { hide('script-panel'); return; }
@@ -3122,7 +3147,7 @@ const App = (() => {
 
   /* ---- Public interface ---- */
   return {
-    logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
+    logout, pickupCall, hangup, toggleHold, showTransfer, transfer, showConference, hideConference, addConferenceParty,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages, loadMoreMessages,
     showMessageDetail, closeMsgDetail, redeliverMessage, toggleMsgFlag, toggleFlagFilter, toggleMsgArchive, toggleArchivedView, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
     aiSummarise, aiTranslate, aiSuggestReply,
@@ -4289,6 +4314,22 @@ const Admin = (() => {
     el('opf-active-row').style.display = operatorId ? 'flex' : 'none';
     el('operator-modal').style.display = 'flex';
 
+    // Pre-fill existing values when editing
+    if (operatorId) {
+      try {
+        const { operators } = await api('GET', '/operators');
+        const op = operators.find((o) => o.id === operatorId);
+        if (op) {
+          el('opf-fullname').value = op.full_name || '';
+          el('opf-email').value   = op.email || '';
+          el('opf-role').value    = op.role || 'operator';
+          el('opf-active').checked = !!op.is_active;
+          if (el('opf-display-name')) el('opf-display-name').value = op.display_name || '';
+          if (el('opf-sip-extension')) el('opf-sip-extension').value = op.sip_extension || '';
+        }
+      } catch (_) {}
+    }
+
     // Load client assignments for operator-role editing
     const assignWrap = el('opf-client-assign-wrap');
     if (assignWrap && operatorId) {
@@ -4317,10 +4358,13 @@ const Admin = (() => {
   }
 
   async function saveOperator() {
+    const sipExt = el('opf-sip-extension')?.value?.trim();
     const body = {
-      full_name: el('opf-fullname').value.trim(),
-      email: el('opf-email').value.trim(),
-      role: el('opf-role').value,
+      full_name:     el('opf-fullname').value.trim(),
+      display_name:  el('opf-display-name')?.value?.trim() || undefined,
+      email:         el('opf-email').value.trim(),
+      role:          el('opf-role').value,
+      sip_extension: sipExt || undefined,
     };
     const pw = el('opf-password').value;
     if (pw) body.password = pw;

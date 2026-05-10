@@ -626,6 +626,49 @@ async function originateOutbound(operatorExtension, destination, clientId) {
   return { bridgeId: bridge.id, operatorChannelId: operatorChannel.id };
 }
 
+/**
+ * Add a third party to an existing call's mixing bridge (conference).
+ * The inbound call must already be answered (bridgeId set on callData).
+ */
+async function conferenceAdd(channelId, targetExtension) {
+  if (!ariClient) throw new Error('ARI not connected');
+
+  const callData = activeCalls.get(channelId);
+  if (!callData) throw new Error(`No active call for channel ${channelId}`);
+  if (!callData.bridgeId) throw new Error('Call must be answered before adding conference parties');
+
+  const mixingBridge = ariClient.Bridge({ id: callData.bridgeId });
+
+  const confChannel = await ariClient.channels.originate({
+    endpoint: `SIP/${targetExtension}`,
+    app: process.env.ARI_APP || 'answering-service',
+    appArgs: `conference,${channelId}`,
+    callerId: `Conference <${callData.callerIdNum}>`,
+    timeout: 30,
+  });
+
+  confChannel.on('StasisStart', async () => {
+    await mixingBridge.addChannel({ channel: confChannel.id });
+    broadcast('call:conference_joined', { channelId, confChannelId: confChannel.id, extension: targetExtension });
+    console.log(`[ARI] Conference party added: extension=${targetExtension} channel=${confChannel.id}`);
+  });
+
+  confChannel.on('StasisEnd', async () => {
+    broadcast('call:conference_left', { channelId, confChannelId: confChannel.id });
+  });
+
+  // Log conference session
+  if (callData.callLogId) {
+    pool.query(
+      `INSERT INTO conference_sessions (bridge_id, initiator_id, call_log_id, participants)
+       VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT DO NOTHING`,
+      [callData.bridgeId, null, callData.callLogId, JSON.stringify([{ extension: targetExtension, joined_at: new Date().toISOString() }])]
+    ).catch(() => {});
+  }
+
+  return { confChannelId: confChannel.id };
+}
+
 function isConnected() { return ariClient !== null; }
 
-module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound, isConnected };
+module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound, conferenceAdd, isConnected };

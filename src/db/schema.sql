@@ -1222,3 +1222,20 @@ CREATE TABLE IF NOT EXISTS intake_form_submissions (
 );
 CREATE INDEX IF NOT EXISTS idx_intake_submissions_client  ON intake_form_submissions(client_id);
 CREATE INDEX IF NOT EXISTS idx_intake_submissions_msg     ON intake_form_submissions(message_id);
+
+-- ============================================================
+-- v34 — Operator SIP extensions + conference bridge log
+-- ============================================================
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS sip_extension VARCHAR(20);
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS display_name  VARCHAR(100);
+
+CREATE TABLE IF NOT EXISTS conference_sessions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bridge_id       TEXT NOT NULL,
+  initiator_id    UUID REFERENCES operators(id) ON DELETE SET NULL,
+  call_log_id     UUID REFERENCES call_logs(id) ON DELETE SET NULL,
+  participants    JSONB NOT NULL DEFAULT '[]',
+  started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_conf_sessions_call ON conference_sessions(call_log_id);

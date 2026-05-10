@@ -181,10 +181,16 @@
             <button class="btn btn-danger" onclick="App.hangup()">Hang Up</button>
             <button class="btn btn-hold" id="btn-hold" onclick="App.toggleHold()">Hold</button>
             <button class="btn btn-secondary" onclick="App.showTransfer()">Transfer</button>
+            <button class="btn btn-secondary" onclick="App.showConference()" title="Add party to call">&#9654;&#9654; Conf</button>
           </div>
           <div id="transfer-panel" class="hidden">
             <input type="text" id="transfer-ext" placeholder="Extension" />
             <button class="btn btn-primary btn-sm" onclick="App.transfer()">Transfer</button>
+          </div>
+          <div id="conference-panel" class="hidden">
+            <input type="text" id="conf-ext" placeholder="Extension or number" />
+            <button class="btn btn-primary btn-sm" onclick="App.addConferenceParty()">Add Party</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.hideConference()">Cancel</button>
           </div>
         </div>
       </section>
@@ -2158,6 +2164,10 @@
         <div class="form-row">
           <div class="field"><label>Username *</label><input type="text" id="opf-username" autocomplete="off" required /></div>
           <div class="field"><label>Full Name *</label><input type="text" id="opf-fullname" required /></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>Display Name</label><input type="text" id="opf-display-name" placeholder="How operators see you" /></div>
+          <div class="field"><label>SIP Extension</label><input type="text" id="opf-sip-extension" placeholder="e.g. 101" /></div>
         </div>
         <div class="field"><label>Email *</label><input type="email" id="opf-email" required /></div>
         <div class="form-row">

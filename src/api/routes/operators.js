@@ -13,7 +13,7 @@ router.use(requireAuth);
 router.get('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, full_name, email, role, is_active, created_at FROM operators ORDER BY full_name'
+      'SELECT id, username, full_name, display_name, email, role, is_active, sip_extension, created_at FROM operators ORDER BY full_name'
     );
     res.json({ operators: result.rows });
   } catch (err) {
@@ -52,7 +52,7 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 // PUT /api/operators/:id
 router.put('/:id', requireRole('admin'), async (req, res, next) => {
   try {
-    const { full_name, email, role, is_active, password } = req.body;
+    const { full_name, display_name, email, role, is_active, password, sip_extension } = req.body;
     let hash;
     if (password) {
       hash = await bcrypt.hash(password, 12);
@@ -61,13 +61,15 @@ router.put('/:id', requireRole('admin'), async (req, res, next) => {
     const result = await pool.query(
       `UPDATE operators SET
          full_name = COALESCE($1, full_name),
-         email = COALESCE($2, email),
-         role = COALESCE($3, role),
-         is_active = COALESCE($4, is_active),
-         password_hash = COALESCE($5, password_hash)
-       WHERE id = $6
-       RETURNING id, username, full_name, email, role, is_active`,
-      [full_name, email, role, is_active, hash, req.params.id]
+         display_name = COALESCE($2, display_name),
+         email = COALESCE($3, email),
+         role = COALESCE($4, role),
+         is_active = COALESCE($5, is_active),
+         password_hash = COALESCE($6, password_hash),
+         sip_extension = COALESCE($7, sip_extension)
+       WHERE id = $8
+       RETURNING id, username, full_name, display_name, email, role, is_active, sip_extension`,
+      [full_name, display_name, email, role, is_active, hash, sip_extension || null, req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Operator not found' });
     audit.log(req, 'operator.update', {
