@@ -48,11 +48,6 @@ router.get('/', async (req, res, next) => {
       const csvResult = await pool.query(query + ' ORDER BY cl.call_start DESC LIMIT 50000', params);
       const cols = ['id','client_name','caller_id_num','caller_id_name','did','call_start','call_answered','call_end','duration_seconds','disposition','operator_name'];
       const header = cols.join(',');
-      // Prefix cells that start with formula chars to prevent CSV injection
-      const sanitizeCsv = (v) => {
-        const s = String(v ?? '').replace(/"/g, '""');
-        return /^[=+\-@\t\r]/.test(s) ? `"'${s}"` : `"${s}"`;
-      };
       const rows = csvResult.rows.map((r) => cols.map((c) => sanitizeCsv(r[c])).join(','));
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="calls.csv"');
@@ -131,6 +126,51 @@ router.get('/follow-ups/pending', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/calls/:id/recording — stream recording file
+router.get('/:id/recording', async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT recording_url FROM call_logs WHERE id = $1', [req.params.id]);
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Call not found' });
+    if (!row.recording_url) return res.status(404).json({ error: 'No recording for this call' });
+
+    const fs = require('fs');
+    const path = require('path');
+    const filePath = path.resolve(row.recording_url);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Recording file not found on disk' });
+
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType = ext === '.mp3' ? 'audio/mpeg' : 'audio/wav';
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `attachment; filename="recording-${req.params.id}${ext}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/calls/:id/recording — delete recording file (GDPR)
+router.delete('/:id/recording', requireAuth, async (req, res, next) => {
+  try {
+    if (!['admin', 'supervisor'].includes(req.operator?.role)) {
+      return res.status(403).json({ error: 'Admin or supervisor required' });
+    }
+    const result = await pool.query('SELECT recording_url FROM call_logs WHERE id = $1', [req.params.id]);
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Call not found' });
+    if (!row.recording_url) return res.status(404).json({ error: 'No recording to delete' });
+
+    const fs = require('fs');
+    const path = require('path');
+    const filePath = path.resolve(row.recording_url);
+    try { fs.unlinkSync(filePath); } catch { /* file may already be gone */ }
+
+    await pool.query('UPDATE call_logs SET recording_url = NULL WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Recording deleted' });
+  } catch (err) { next(err); }
+});
+
 // GET /api/calls/history/:callerNumber?client_id=... — call history for a specific caller
 // client_id is required: history is scoped to one client to prevent cross-client data exposure
 router.get('/history/:callerNumber', async (req, res, next) => {
@@ -163,4 +203,10 @@ router.get('/history/:callerNumber', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+function sanitizeCsv(v) {
+  const s = String(v ?? '').replace(/"/g, '""');
+  return /^[=+\-@\t\r]/.test(s) ? `"'${s}"` : `"${s}"`;
+}
+
 module.exports = router;
+module.exports._sanitizeCsv = sanitizeCsv;

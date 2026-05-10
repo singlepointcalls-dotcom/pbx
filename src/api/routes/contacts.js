@@ -200,4 +200,79 @@ router.delete('/:clientId/oncall/:scheduleId', requireRole('admin', 'supervisor'
   }
 });
 
+// GET /api/clients/:clientId/contacts/import/template — download CSV template
+router.get('/:clientId/contacts/import/template', requireRole('admin', 'supervisor'), (req, res) => {
+  const header = 'name,email,phone,mobile,role,priority,notify_email,notify_sms,notify_phone_call\r\n';
+  const example = '"Jane Smith","jane@example.com","+441234567890","+447700900123","Manager",1,true,true,false\r\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="contacts-template.csv"');
+  res.send(header + example);
+});
+
+// POST /api/clients/:clientId/contacts/import — bulk import contacts from CSV body (text/csv or multipart field)
+router.post('/:clientId/contacts/import', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    // Accept raw CSV body or a 'csv' text field in JSON
+    let csvText = '';
+    const ct = req.headers['content-type'] || '';
+    if (ct.includes('text/csv') || ct.includes('text/plain')) {
+      csvText = req.body?.toString() || '';
+    } else {
+      csvText = req.body?.csv || '';
+    }
+    if (!csvText) return res.status(400).json({ error: 'CSV body required (Content-Type: text/csv or JSON {csv:"..."}' });
+
+    const lines = csvText.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return res.status(400).json({ error: 'CSV must have a header row and at least one data row' });
+
+    const header = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    const col = (row, name) => {
+      const idx = header.indexOf(name);
+      if (idx === -1) return undefined;
+      return row[idx]?.replace(/^"|"$/g, '').trim() || null;
+    };
+
+    const parseBoolean = (v) => v === 'true' || v === '1' || v === 'yes';
+
+    let imported = 0, skipped = 0;
+    const errors = [];
+    const clientId = req.params.clientId;
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i].split(',');
+      const name = col(row, 'name');
+      const email = col(row, 'email');
+      if (!name) { errors.push({ line: i + 1, error: 'name is required' }); skipped++; continue; }
+
+      try {
+        await pool.query(
+          `INSERT INTO contacts
+             (client_id, name, email, phone, mobile, role, priority, notify_email, notify_sms, notify_phone_call)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           ON CONFLICT (client_id, email) WHERE email IS NOT NULL
+           DO UPDATE SET
+             name = EXCLUDED.name, phone = EXCLUDED.phone, mobile = EXCLUDED.mobile,
+             role = EXCLUDED.role, priority = EXCLUDED.priority,
+             notify_email = EXCLUDED.notify_email, notify_sms = EXCLUDED.notify_sms,
+             notify_phone_call = EXCLUDED.notify_phone_call`,
+          [
+            clientId, name, email,
+            col(row, 'phone'), col(row, 'mobile'), col(row, 'role'),
+            parseInt(col(row, 'priority') || '100', 10) || 100,
+            parseBoolean(col(row, 'notify_email') ?? 'true'),
+            parseBoolean(col(row, 'notify_sms') ?? 'false'),
+            parseBoolean(col(row, 'notify_phone_call') ?? 'false'),
+          ]
+        );
+        imported++;
+      } catch (err) {
+        errors.push({ line: i + 1, error: err.message });
+        skipped++;
+      }
+    }
+
+    res.json({ imported, skipped, errors });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

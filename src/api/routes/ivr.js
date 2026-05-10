@@ -173,3 +173,4 @@ function exportToDialplan(flow) {
 }
 
 module.exports = router;
+module.exports._exportToDialplan = exportToDialplan;

@@ -159,4 +159,77 @@ router.delete('/:id', requireRole('admin', 'supervisor'), async (req, res, next)
   } catch (err) { next(err); }
 });
 
+// GET /api/appointments/:id/ical — single appointment as iCalendar (.ics)
+router.get('/:id/ical', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT a.*, c.name AS client_name
+       FROM appointments a LEFT JOIN clients c ON a.client_id = c.id
+       WHERE a.id = $1`,
+      [req.params.id]
+    );
+    const appt = result.rows[0];
+    if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="appointment-${appt.id}.ics"`);
+    res.send(buildIcs([appt]));
+  } catch (err) { next(err); }
+});
+
+// GET /api/appointments/ical/export?client_id=&date_from=&date_to= — bulk iCal export
+router.get('/ical/export', async (req, res, next) => {
+  try {
+    if (!['admin', 'supervisor'].includes(req.operator?.role)) {
+      return res.status(403).json({ error: 'Admin or supervisor required' });
+    }
+    const { client_id, date_from, date_to } = req.query;
+    let query = `SELECT a.*, c.name AS client_name FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE 1=1`;
+    const params = [];
+    if (client_id) { params.push(client_id); query += ` AND a.client_id = $${params.length}`; }
+    if (date_from)  { params.push(date_from);  query += ` AND a.appointment_at >= $${params.length}`; }
+    if (date_to)    { params.push(date_to);    query += ` AND a.appointment_at <= $${params.length}`; }
+    query += ' ORDER BY a.appointment_at ASC LIMIT 2000';
+    const result = await pool.query(query, params);
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="appointments.ics"');
+    res.send(buildIcs(result.rows));
+  } catch (err) { next(err); }
+});
+
+function buildIcs(appointments) {
+  const stamp = fmtIcs(new Date());
+  const events = appointments.map(a => {
+    const start = a.appointment_at ? fmtIcs(new Date(a.appointment_at)) : stamp;
+    const end   = a.appointment_at
+      ? fmtIcs(new Date(new Date(a.appointment_at).getTime() + (a.duration_minutes || 30) * 60000))
+      : stamp;
+    return [
+      'BEGIN:VEVENT',
+      `UID:${a.id}@answering-service`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${escIcs((a.service_type || 'Appointment') + (a.client_name ? ` — ${a.client_name}` : ''))}`,
+      a.caller_name  ? `ORGANIZER;CN=${escIcs(a.caller_name)}:mailto:noreply@answering-service` : '',
+      a.caller_email ? `ATTENDEE:mailto:${a.caller_email}` : '',
+      a.notes        ? `DESCRIPTION:${escIcs(a.notes)}` : '',
+      `STATUS:${a.status === 'confirmed' ? 'CONFIRMED' : a.status === 'cancelled' ? 'CANCELLED' : 'TENTATIVE'}`,
+      'END:VEVENT',
+    ].filter(Boolean).join('\r\n');
+  });
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SinglePoint Calls//Answering Service//EN',
+    'CALSCALE:GREGORIAN','METHOD:PUBLISH',...events,'END:VCALENDAR'].join('\r\n');
+}
+
+function fmtIcs(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+function escIcs(s) {
+  return String(s).replace(/[\\,;]/g, c => '\\' + c).replace(/\n/g, '\\n');
+}
+
 module.exports = router;
+module.exports._buildIcs = buildIcs;
+module.exports._fmtIcs = fmtIcs;
+module.exports._escIcs = escIcs;

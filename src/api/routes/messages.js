@@ -226,4 +226,15 @@ router.patch('/:id/read', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/messages/:id/webhook-log — webhook delivery attempt history (admin/supervisor)
+router.get('/:id/webhook-log', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM webhook_delivery_log WHERE message_id = $1 ORDER BY sent_at ASC`,
+      [req.params.id]
+    );
+    res.json({ logs: result.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

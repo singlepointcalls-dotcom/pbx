@@ -697,11 +697,22 @@ async function sendWebhook(webhook, message) {
 
   let lastErr;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    let statusCode = null;
     try {
-      await axios.post(webhook.url, payload, { headers, timeout });
+      const resp = await axios.post(webhook.url, payload, { headers, timeout });
+      statusCode = resp.status;
+      pool.query(
+        'INSERT INTO webhook_delivery_log (message_id, url, attempt, status_code) VALUES ($1,$2,$3,$4)',
+        [message.id, webhook.url, attempt, statusCode]
+      ).catch(() => {});
       return;
     } catch (err) {
       lastErr = err;
+      statusCode = err.response?.status || null;
+      pool.query(
+        'INSERT INTO webhook_delivery_log (message_id, url, attempt, status_code, error) VALUES ($1,$2,$3,$4,$5)',
+        [message.id, webhook.url, attempt, statusCode, err.message]
+      ).catch(() => {});
       if (attempt < maxRetries) await sleep(attempt * 1000);
     }
   }

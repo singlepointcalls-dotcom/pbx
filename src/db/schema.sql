@@ -985,3 +985,20 @@ CREATE TABLE IF NOT EXISTS ivr_flows (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ivr_client ON ivr_flows(client_id);
+
+-- ============================================================
+-- v16 — Webhook dead-letter log, per-client SLA abandon threshold
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS webhook_delivery_log (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id  UUID REFERENCES messages(id) ON DELETE CASCADE,
+    url         TEXT NOT NULL,
+    attempt     INT NOT NULL DEFAULT 1,
+    status_code INT,
+    error       TEXT,
+    sent_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wdl_message ON webhook_delivery_log(message_id);
+
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_abandon_threshold INT NOT NULL DEFAULT 3;

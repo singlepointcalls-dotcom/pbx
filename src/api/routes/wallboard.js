@@ -101,4 +101,52 @@ router.get(
   }
 );
 
+// GET /api/wallboard/live — SSE stream pushing stats every 10 s
+// Clients: new EventSource('/api/wallboard/live?token=<jwt>')
+router.get(
+  '/live',
+  requireAuth,
+  requireRole('admin', 'supervisor', 'operator'),
+  async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendStats = async () => {
+      try {
+        const [active, queue, todayCalls, answered, msgs, missed, sla, aht, unack] =
+          await Promise.all([
+            pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_end IS NULL AND call_answered IS NOT NULL`),
+            pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_start >= NOW() - INTERVAL '5 minutes' AND call_answered IS NULL AND call_end IS NULL`),
+            pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_start >= CURRENT_DATE`),
+            pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_start >= CURRENT_DATE AND call_answered IS NOT NULL`),
+            pool.query(`SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE`),
+            pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_start >= CURRENT_DATE AND call_answered IS NULL AND call_end IS NOT NULL`),
+            pool.query(`SELECT ROUND(100.0*SUM(CASE WHEN sla_met THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),1) AS pct FROM call_logs WHERE call_start >= CURRENT_DATE AND call_answered IS NOT NULL`),
+            pool.query(`SELECT ROUND(AVG(duration_seconds)) AS avg FROM call_logs WHERE call_start >= CURRENT_DATE AND duration_seconds IS NOT NULL`),
+            pool.query(`SELECT COUNT(*) FROM messages WHERE acknowledged_at IS NULL AND status='delivered' AND created_at >= NOW() - INTERVAL '4 hours'`),
+          ]);
+        const payload = JSON.stringify({
+          active_calls: parseInt(active.rows[0].count),
+          queue_count: parseInt(queue.rows[0].count),
+          today_calls: parseInt(todayCalls.rows[0].count),
+          today_answered: parseInt(answered.rows[0].count),
+          today_messages: parseInt(msgs.rows[0].count),
+          today_missed: parseInt(missed.rows[0].count),
+          sla_met_pct: sla.rows[0].pct !== null ? parseFloat(sla.rows[0].pct) : null,
+          avg_handle_seconds: aht.rows[0].avg !== null ? parseInt(aht.rows[0].avg) : null,
+          unack_messages: parseInt(unack.rows[0].count),
+          ts: Date.now(),
+        });
+        res.write(`data: ${payload}\n\n`);
+      } catch { /* ignore transient DB errors in stream */ }
+    };
+
+    await sendStats();
+    const interval = setInterval(sendStats, 10000);
+    req.on('close', () => clearInterval(interval));
+  }
+);
+
 module.exports = router;

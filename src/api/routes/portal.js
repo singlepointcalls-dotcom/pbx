@@ -516,4 +516,48 @@ router.delete('/clients/:clientId/users/:userId', requireAuth, requireRole('admi
   } catch (err) { next(err); }
 });
 
+// GET /api/portal/appointments/ical — iCal feed for the portal user's client
+router.get('/appointments/ical', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT a.*, c.name AS client_name
+       FROM appointments a LEFT JOIN clients c ON a.client_id = c.id
+       WHERE a.client_id = $1 AND a.appointment_at >= NOW() - INTERVAL '30 days'
+       ORDER BY a.appointment_at ASC LIMIT 500`,
+      [req.portalUser.client_id]
+    );
+    const stamp = fmtIcs(new Date());
+    const events = result.rows.map(a => {
+      const start = a.appointment_at ? fmtIcs(new Date(a.appointment_at)) : stamp;
+      const end   = a.appointment_at
+        ? fmtIcs(new Date(new Date(a.appointment_at).getTime() + (a.duration_minutes || 30) * 60000))
+        : stamp;
+      return [
+        'BEGIN:VEVENT',
+        `UID:${a.id}@answering-service`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART:${start}`,
+        `DTEND:${end}`,
+        `SUMMARY:${escIcs((a.service_type || 'Appointment') + (a.client_name ? ` — ${a.client_name}` : ''))}`,
+        a.caller_name  ? `ORGANIZER;CN=${escIcs(a.caller_name)}:mailto:noreply@answering-service` : '',
+        a.notes        ? `DESCRIPTION:${escIcs(a.notes)}` : '',
+        `STATUS:${a.status === 'confirmed' ? 'CONFIRMED' : a.status === 'cancelled' ? 'CANCELLED' : 'TENTATIVE'}`,
+        'END:VEVENT',
+      ].filter(Boolean).join('\r\n');
+    });
+    const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//SinglePoint Calls//Answering Service//EN',
+      'CALSCALE:GREGORIAN','METHOD:PUBLISH',...events,'END:VCALENDAR'].join('\r\n');
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="appointments.ics"');
+    res.send(ics);
+  } catch (err) { next(err); }
+});
+
+function fmtIcs(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+function escIcs(s) {
+  return String(s).replace(/[\\,;]/g, c => '\\' + c).replace(/\n/g, '\\n');
+}
+
 module.exports = router;
