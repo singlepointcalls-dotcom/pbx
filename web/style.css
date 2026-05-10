@@ -1,6 +1,9 @@
 /* ============================================================
-   SinglePoint Calls — Modern Light Theme
+   SinglePoint Calls — Brand Theme 2025
+   Brand colours: Deep Blue #101E33 · Green #CFFF5E
+   Font: Ofelia Text → DM Sans (Google Fonts substitute)
    ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -10,10 +13,11 @@
   --bg-panel:    #ffffff;
   --bg-panel-alt:#f0f2f8;
   --border:      #e2e6f0;
-  --border-focus:#4f7aff;
-  --accent:      #4f7aff;
-  --accent-hover:#3a66f0;
-  --accent-light:#eef1ff;
+  --border-focus:#CFFF5E;
+  --accent:      #CFFF5E;
+  --accent-hover:#b8e83a;
+  --accent-light:#f0ffe6;
+  --brand-dark:  #101E33;
   --danger:      #e03d3d;
   --danger-light:#fff0f0;
   --warning:     #d97706;
@@ -21,13 +25,13 @@
   --success:     #16a34a;
   --success-light:#f0faf4;
   --ringing:     #d97706;
-  --text:        #1e2340;
-  --text-muted:  #6b7399;
-  --text-subtle: #9aa0be;
-  --shadow-sm:   0 1px 3px rgba(30,35,64,0.07), 0 1px 2px rgba(30,35,64,0.04);
-  --shadow-md:   0 4px 16px rgba(30,35,64,0.1), 0 1px 4px rgba(30,35,64,0.06);
-  --shadow-lg:   0 16px 48px rgba(30,35,64,0.14), 0 4px 12px rgba(30,35,64,0.08);
-  --font:        'Inter', system-ui, -apple-system, sans-serif;
+  --text:        #101E33;
+  --text-muted:  #4a5568;
+  --text-subtle: #7a8699;
+  --shadow-sm:   0 1px 3px rgba(16,30,51,0.08), 0 1px 2px rgba(16,30,51,0.05);
+  --shadow-md:   0 4px 16px rgba(16,30,51,0.12), 0 1px 4px rgba(16,30,51,0.07);
+  --shadow-lg:   0 16px 48px rgba(16,30,51,0.16), 0 4px 12px rgba(16,30,51,0.09);
+  --font:        'Ofelia Text', 'DM Sans', system-ui, -apple-system, sans-serif;
   --radius:      8px;
   --radius-lg:   12px;
 }
@@ -55,7 +59,7 @@ body {
 #login-screen {
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #e8ecff 0%, #f4f6fb 60%, #eef6ff 100%);
+  background: linear-gradient(145deg, #101E33 0%, #1a3050 55%, #0d1a2b 100%);
 }
 
 .login-box {
@@ -92,23 +96,24 @@ body {
   justify-content: space-between;
   padding: 0 20px;
   height: 54px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--brand-dark);
+  border-bottom: 1px solid #0a1626;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(16,30,51,0.35);
+  color: #ffffff;
 }
 
 .logo {
   font-size: 1.1rem;
   font-weight: 800;
-  color: var(--accent);
+  color: #CFFF5E;
   letter-spacing: -0.01em;
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.logo .logo-icon { color: var(--accent); font-size: 1.2rem; }
-.operator-name { font-size: 0.82rem; color: var(--text-muted); margin-right: 12px; }
+.logo .logo-icon { color: #CFFF5E; font-size: 1.2rem; }
+.operator-name { font-size: 0.82rem; color: rgba(255,255,255,0.6); margin-right: 12px; }
 
 .status-badge {
   padding: 4px 14px;
@@ -195,8 +200,8 @@ body {
 }
 .btn:active { transform: scale(0.98); }
 
-.btn-primary  { background: var(--accent); color: #fff; box-shadow: 0 1px 4px rgba(79,122,255,0.3); }
-.btn-primary:hover  { background: var(--accent-hover); box-shadow: 0 2px 8px rgba(79,122,255,0.4); }
+.btn-primary  { background: var(--accent); color: #101E33; font-weight: 700; box-shadow: 0 1px 4px rgba(207,255,94,0.35); }
+.btn-primary:hover  { background: var(--accent-hover); box-shadow: 0 2px 8px rgba(207,255,94,0.45); }
 .btn-secondary { background: var(--bg-panel-alt); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { background: var(--border); }
 .btn-danger   { background: var(--danger); color: #fff; }
@@ -479,7 +484,7 @@ body {
 .nav-tab {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: rgba(255,255,255,0.65);
   font-size: 0.82rem;
   font-weight: 600;
   padding: 5px 14px;
@@ -487,8 +492,8 @@ body {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.nav-tab:hover  { background: var(--bg-panel-alt); color: var(--text); }
-.nav-tab.active { background: var(--accent); color: #fff; }
+.nav-tab:hover  { background: rgba(255,255,255,0.1); color: #ffffff; }
+.nav-tab.active { background: #CFFF5E; color: #101E33; }
 
 /* ============================================================
    ADMIN VIEW

@@ -198,4 +198,76 @@ router.post('/reply', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/sms/bulk — send SMS to multiple recipients
+router.post('/bulk', async (req, res, next) => {
+  try {
+    const { client_id, contact_ids, recipients, body } = req.body;
+    if (!body || body.trim().length === 0) return res.status(400).json({ error: 'body is required' });
+    if (body.length > 1600) return res.status(400).json({ error: 'body too long (max 1600 chars)' });
+
+    let targets = []; // [{phone, name}]
+
+    if (contact_ids && Array.isArray(contact_ids) && contact_ids.length > 0) {
+      const r = await pool.query(
+        `SELECT name, phone FROM contacts WHERE id = ANY($1::uuid[]) AND phone IS NOT NULL AND phone != ''`,
+        [contact_ids]
+      );
+      targets = r.rows.map(c => ({ phone: c.phone, name: c.name }));
+    } else if (recipients && Array.isArray(recipients)) {
+      targets = recipients.filter(r => r.phone).map(r => ({ phone: r.phone, name: r.name || r.phone }));
+    }
+
+    if (targets.length === 0) return res.status(400).json({ error: 'No valid recipients' });
+    if (targets.length > 200) return res.status(400).json({ error: 'Max 200 recipients per bulk send' });
+
+    const useWebex = !!process.env.WEBEX_INTERACT_API_KEY;
+    const provider = useWebex ? 'webexinteract' : 'twilio';
+    const from = process.env.TWILIO_FROM_NUMBER || process.env.WEBEX_INTERACT_SENDER_ID || 'system';
+
+    if (!useWebex) {
+      const { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: token, TWILIO_FROM_NUMBER: twFrom } = process.env;
+      if (!sid || !token || !twFrom) return res.status(503).json({ error: 'SMS provider not configured' });
+    }
+
+    const results = { sent: 0, failed: 0, errors: [] };
+
+    for (const target of targets) {
+      try {
+        let providerMessageId = null;
+        if (useWebex) {
+          const resp = await axios.post(
+            'https://api.webexinteract.com/v1/sms',
+            { from: process.env.WEBEX_INTERACT_SENDER_ID, to: [{ phone: [target.phone] }], message_body: body },
+            { headers: { 'X-AUTH-KEY': process.env.WEBEX_INTERACT_API_KEY, 'Content-Type': 'application/json' }, timeout: 10000 }
+          );
+          providerMessageId = resp.data?.message_id || null;
+        } else {
+          const resp = await axios.post(
+            `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`,
+            new URLSearchParams({ From: from, To: target.phone, Body: body }),
+            { auth: { username: process.env.TWILIO_ACCOUNT_SID, password: process.env.TWILIO_AUTH_TOKEN }, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          );
+          providerMessageId = resp.data?.sid || null;
+        }
+
+        await pool.query(
+          `INSERT INTO sms_messages
+             (client_id, direction, from_number, to_number, body, provider, provider_message_id, status, operator_id)
+           VALUES ($1, 'outbound', $2, $3, $4, $5, $6, 'sent', $7)`,
+          [client_id || null, from, target.phone, body, provider, providerMessageId, req.operator.id]
+        );
+        results.sent++;
+      } catch (err) {
+        results.failed++;
+        results.errors.push({ phone: target.phone, error: err.response?.data?.message || err.message });
+      }
+      // 150ms inter-message delay to avoid provider rate limits
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    broadcast('sms:bulk_sent', { client_id, sent: results.sent, failed: results.failed, operator_id: req.operator.id });
+    res.json({ ...results, total: targets.length });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

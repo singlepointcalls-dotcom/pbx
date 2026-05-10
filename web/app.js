@@ -3290,6 +3290,7 @@ const Admin = (() => {
     else if (name === 'queue') QueuePanel.load();
     else if (name === 'intake-submissions') IntakeSubmissionsPanel.load();
     else if (name === 'op-performance') OperatorPerfPanel.load();
+    else if (name === 'bulk-sms') BulkSmsPanel.load();
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
@@ -3414,6 +3415,9 @@ const Admin = (() => {
         if (el('cf-auto-reply-enabled')) el('cf-auto-reply-enabled').checked = !!c.auto_reply_enabled;
         if (el('cf-auto-reply-subject')) el('cf-auto-reply-subject').value = c.auto_reply_subject || '';
         if (el('cf-auto-reply-body')) el('cf-auto-reply-body').value = c.auto_reply_body || '';
+        if (el('cf-logo-url')) el('cf-logo-url').value = c.logo_url || '';
+        if (el('cf-brand-color')) el('cf-brand-color').value = c.brand_color || '#2563eb';
+        if (el('cf-brand-color-hex')) el('cf-brand-color-hex').value = c.brand_color || '';
 
         // Logo
         renderLogoPreview(c.logo_url || null);
@@ -3554,6 +3558,8 @@ const Admin = (() => {
         auto_reply_enabled: el('cf-auto-reply-enabled')?.checked || false,
         auto_reply_subject: el('cf-auto-reply-subject')?.value.trim() || null,
         auto_reply_body:    el('cf-auto-reply-body')?.value.trim() || null,
+        logo_url:    el('cf-logo-url')?.value.trim() || null,
+        brand_color: el('cf-brand-color-hex')?.value.trim() || el('cf-brand-color')?.value || null,
         whatsapp_number:  el('cf-whatsapp').value.trim() || null,
         telegram_chat_id: el('cf-telegram').value.trim() || null,
         slack_webhook:    el('cf-slack-webhook').value.trim() || null,
@@ -7862,6 +7868,101 @@ const BroadcastPanel = (() => {
   }
 
   return { load, loadContacts, toggleContact, selectAll, send };
+})();
+
+/* ============================================================
+   BulkSmsPanel — send SMS to multiple contacts at once
+   ============================================================ */
+const BulkSmsPanel = (() => {
+  let _contacts = [];
+
+  async function load() {
+    const sel = el('bsms-client-sel');
+    if (!sel) return;
+    try {
+      const data = await api('GET', '/clients?limit=200');
+      const clients = data.clients || data || [];
+      sel.innerHTML = '<option value="">— Select client —</option>' +
+        clients.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    } catch (e) { /* ignore */ }
+    el('bsms-contacts-tbody').innerHTML = '<tr><td colspan="3" class="empty-state">Select a client</td></tr>';
+    el('bsms-count-bar').textContent = '';
+    el('bsms-result').style.display = 'none';
+  }
+
+  async function loadContacts() {
+    const clientId = el('bsms-client-sel').value;
+    const tbody = el('bsms-contacts-tbody');
+    if (!clientId) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Select a client</td></tr>';
+      _contacts = [];
+      updateCountBar();
+      return;
+    }
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
+    try {
+      const data = await api('GET', `/contacts?client_id=${clientId}&limit=200`);
+      _contacts = (data.contacts || data || []).filter(c => c.phone);
+      if (!_contacts.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No contacts with phone numbers</td></tr>';
+        return;
+      }
+      tbody.innerHTML = _contacts.map(c => `
+        <tr>
+          <td><input type="checkbox" checked data-id="${c.id}" onchange="BulkSmsPanel.updateCountBar()"></td>
+          <td>${escHtml(c.name)}</td>
+          <td>${escHtml(c.phone || '')}</td>
+        </tr>`).join('');
+      updateCountBar();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function selectAll(checked) {
+    document.querySelectorAll('#bsms-contacts-tbody input[type=checkbox]').forEach(cb => cb.checked = checked);
+    updateCountBar();
+  }
+
+  function updateCountBar() {
+    const checked = document.querySelectorAll('#bsms-contacts-tbody input[type=checkbox]:checked').length;
+    el('bsms-count-bar').textContent = `${checked} of ${_contacts.length} selected`;
+  }
+
+  function updateCharCount() {
+    const len = (el('bsms-body').value || '').length;
+    el('bsms-char-count').textContent = len;
+  }
+
+  async function send() {
+    const clientId = el('bsms-client-sel').value;
+    const body = (el('bsms-body').value || '').trim();
+    if (!body) { showToast('Enter a message body', 'error'); return; }
+
+    const selectedIds = Array.from(document.querySelectorAll('#bsms-contacts-tbody input[type=checkbox]:checked'))
+      .map(cb => cb.dataset.id);
+    if (!selectedIds.length) { showToast('Select at least one recipient', 'error'); return; }
+
+    const resultDiv = el('bsms-result');
+    resultDiv.style.display = 'block';
+    resultDiv.style.background = 'var(--bg-secondary)';
+    resultDiv.style.border = '1px solid var(--border)';
+    resultDiv.textContent = `Sending to ${selectedIds.length} recipients…`;
+
+    try {
+      const result = await api('POST', '/sms/bulk', { client_id: clientId || null, contact_ids: selectedIds, body });
+      resultDiv.style.background = result.failed ? 'var(--warning-light)' : 'var(--success-light)';
+      resultDiv.style.border = `1px solid ${result.failed ? 'var(--warning)' : 'var(--success)'}`;
+      resultDiv.textContent = `Sent: ${result.sent} ✓   Failed: ${result.failed}${result.errors?.length ? ' — ' + result.errors.slice(0,3).map(e => e.phone).join(', ') : ''}`;
+      if (!result.failed) el('bsms-body').value = '';
+    } catch (err) {
+      resultDiv.style.background = 'var(--danger-light)';
+      resultDiv.style.border = '1px solid var(--danger)';
+      resultDiv.textContent = `Error: ${err.message}`;
+    }
+  }
+
+  return { load, loadContacts, selectAll, updateCountBar, updateCharCount, send };
 })();
 
 /* ============================================================

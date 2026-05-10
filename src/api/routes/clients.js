@@ -211,6 +211,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       halo_customer_id, halo_ticket_type_id, csat_enabled, sla_minutes,
       crm_type, crm_config,
       auto_reply_enabled, auto_reply_subject, auto_reply_body,
+      logo_url, brand_color,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -262,7 +263,9 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          crm_config             = COALESCE($39, crm_config),
          auto_reply_enabled     = COALESCE($40, auto_reply_enabled),
          auto_reply_subject     = COALESCE($41, auto_reply_subject),
-         auto_reply_body        = COALESCE($42, auto_reply_body)
+         auto_reply_body        = COALESCE($42, auto_reply_body),
+         logo_url               = COALESCE($43, logo_url),
+         brand_color            = COALESCE($44, brand_color)
        WHERE id = $22
        RETURNING *`,
       [
@@ -301,6 +304,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         auto_reply_enabled       !== undefined ? !!auto_reply_enabled               : null,
         auto_reply_subject       !== undefined ? (auto_reply_subject || null)       : null,
         auto_reply_body          !== undefined ? (auto_reply_body || null)          : null,
+        logo_url                 !== undefined ? (logo_url || null)                 : null,
+        brand_color              !== undefined ? (brand_color || null)              : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });

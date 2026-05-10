@@ -470,8 +470,9 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS greeting_rules JSONB NOT NULL DEFAU
 -- Clients: private notes (separate from public notes — shown in red, not shared with callers)
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS private_notes TEXT;
 
--- Client logo (stored filename from uploads directory)
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS logo_url TEXT;
+-- Client logo and branding
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS logo_url    TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS brand_color VARCHAR(7);  -- e.g. #2563eb
 
 -- ============================================================
 -- MARKET-LEADING FEATURE ADDITIONS

@@ -143,7 +143,8 @@ router.get('/me', requirePortalAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT cpu.id, cpu.username, cpu.email, cpu.client_id, cpu.created_at,
-              c.name AS client_name, c.account_number, c.address, c.opening_times, c.timezone
+              c.name AS client_name, c.account_number, c.address, c.opening_times, c.timezone,
+              c.logo_url, c.brand_color
        FROM client_portal_users cpu
        JOIN clients c ON cpu.client_id = c.id
        WHERE cpu.id = $1`,

@@ -1,26 +1,32 @@
 /* ============================================================
    SinglePoint Calls — Client Portal Styles
+   Brand colours: Deep Blue #101E33 · Green #CFFF5E
    ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap');
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --bg:          #f4f6fb;
   --surface:     #ffffff;
   --border:      #e2e6f0;
-  --accent:      #4f7aff;
-  --accent-h:    #3a66f0;
-  --accent-light:#eef1ff;
+  --accent:      #CFFF5E;
+  --accent-h:    #b8e83a;
+  --accent-light:#f0ffe6;
+  --brand-dark:  #101E33;
   --success:     #16a34a;
   --success-l:   #f0faf4;
   --danger:      #e03d3d;
   --danger-l:    #fff0f0;
   --warning:     #d97706;
   --warning-l:   #fff8ed;
-  --text:        #1e2340;
-  --text-muted:  #6b7399;
-  --shadow:      0 4px 16px rgba(30,35,64,0.1);
+  --text:        #101E33;
+  --text-muted:  #4a5568;
+  --shadow:      0 4px 16px rgba(16,30,51,0.12);
   --radius:      8px;
-  --font:        'Inter', system-ui, sans-serif;
+  --font:        'Ofelia Text', 'DM Sans', system-ui, sans-serif;
+  /* Portal primary — overridable per-client */
+  --p-primary:   #101E33;
 }
 
 body {
@@ -44,7 +50,7 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #e8ecff 0%, #f4f6fb 60%, #eef6ff 100%);
+  background: linear-gradient(145deg, #101E33 0%, #1a3050 55%, #0d1a2b 100%);
 }
 
 .p-login-box {
@@ -103,17 +109,18 @@ body {
   justify-content: space-between;
   padding: 0 24px;
   height: 56px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--brand-dark);
+  border-bottom: 1px solid #0a1626;
   flex-shrink: 0;
   gap: 16px;
-  box-shadow: 0 1px 4px rgba(30,35,64,0.06);
+  box-shadow: 0 2px 8px rgba(16,30,51,0.35);
+  color: #ffffff;
 }
 
 .p-topbar-brand {
   font-size: 1.05rem;
   font-weight: 800;
-  color: var(--accent);
+  color: #CFFF5E;
   white-space: nowrap;
 }
 
@@ -128,7 +135,7 @@ body {
 .p-nav-btn {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: rgba(255,255,255,0.65);
   font-size: 0.85rem;
   font-weight: 600;
   padding: 6px 14px;
@@ -137,8 +144,8 @@ body {
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
-.p-nav-btn:hover  { background: var(--bg); color: var(--text); }
-.p-nav-btn.active { background: var(--accent); color: #fff; }
+.p-nav-btn:hover  { background: rgba(255,255,255,0.1); color: #ffffff; }
+.p-nav-btn.active { background: #CFFF5E; color: #101E33; }
 
 .p-topbar-right {
   display: flex;
@@ -147,7 +154,7 @@ body {
   white-space: nowrap;
 }
 
-.p-username { font-size: 0.82rem; color: var(--text-muted); }
+.p-username { font-size: 0.82rem; color: rgba(255,255,255,0.6); }
 
 /* ---- Content ---- */
 .p-content {
@@ -200,7 +207,7 @@ body {
   transition: background 0.15s;
   white-space: nowrap;
 }
-.p-btn-primary  { background: var(--accent); color: #fff; }
+.p-btn-primary  { background: var(--accent); color: #101E33; font-weight: 700; }
 .p-btn-primary:hover { background: var(--accent-h); }
 .p-btn-sm       { padding: 5px 12px; font-size: 0.78rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; }
 .p-btn-sm:hover { background: var(--border); }

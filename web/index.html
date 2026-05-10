@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SinglePoint Calls — Operator Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -75,7 +77,14 @@
   <!-- Top Bar -->
   <header class="topbar">
     <div class="topbar-left">
-      <span class="logo"><span class="logo-icon">&#9742;</span>SinglePoint Calls</span>
+      <span class="logo">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="16" cy="4" r="2.5" stroke="#CFFF5E" stroke-width="2" fill="none"/>
+          <path d="M16 6.5 C16 14 8 17 4 17" stroke="#CFFF5E" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="4" cy="17" r="2" fill="#CFFF5E"/>
+        </svg>
+        SinglePoint Calls
+      </span>
     </div>
     <div class="topbar-center" style="display:flex;align-items:center;gap:8px;flex:1;max-width:480px">
       <span id="status-badge" class="status-badge ready">READY</span>
@@ -593,6 +602,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('csat', event)">&#11088; CSAT</button>
       <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
       <button class="admin-nav-item" onclick="Admin.showSection('broadcast', event)">&#128226; Broadcast</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('bulk-sms', event)">&#128172; Bulk SMS</button>
       <button class="admin-nav-item" onclick="Admin.showSection('presence', event)">&#128101; Team</button>
       <button class="admin-nav-item" onclick="Admin.showSection('queue', event)">&#128222; Queue</button>
       <button class="admin-nav-item" onclick="Admin.showSection('intake-submissions', event)">&#128196; Form Submissions</button>
@@ -1406,6 +1416,42 @@
       </div>
     </div>
 
+    <!-- Bulk SMS Panel -->
+    <div id="admin-bulk-sms" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#128172; Bulk SMS</h2>
+      </div>
+      <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div class="form-group">
+            <label>Client</label>
+            <select id="bsms-client-sel" class="form-control" onchange="BulkSmsPanel.loadContacts()"><option value="">— Select client —</option></select>
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea id="bsms-body" class="form-control" rows="5" maxlength="1600" placeholder="SMS message text (max 1600 chars)…" oninput="BulkSmsPanel.updateCharCount()"></textarea>
+            <div style="text-align:right;font-size:0.75rem;color:var(--text-muted)"><span id="bsms-char-count">0</span>/1600</div>
+          </div>
+          <div id="bsms-result" style="display:none;padding:10px;border-radius:4px;margin-bottom:10px"></div>
+          <button class="btn btn-primary" onclick="BulkSmsPanel.send()">&#9992; Send to Selected</button>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <label style="margin:0">Recipients</label>
+            <span style="font-size:0.8rem">
+              <a href="#" onclick="BulkSmsPanel.selectAll(true);return false">All</a> /
+              <a href="#" onclick="BulkSmsPanel.selectAll(false);return false">None</a>
+            </span>
+          </div>
+          <div id="bsms-count-bar" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px"></div>
+          <table class="data-table">
+            <thead><tr><th></th><th>Name</th><th>Phone</th></tr></thead>
+            <tbody id="bsms-contacts-tbody"><tr><td colspan="3" class="empty-state">Select a client</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /view-admin -->
 
   <!-- Appointment New/Edit Modal -->
@@ -1592,6 +1638,19 @@
 
       <!-- Tab: Details (Address, Opening Times, Info Sheets) -->
       <div id="ctab-details" class="modal-body ctab" style="display:none">
+        <div class="form-row">
+          <div class="field">
+            <label>Logo URL</label>
+            <input type="url" id="cf-logo-url" placeholder="https://example.com/logo.png" />
+          </div>
+          <div class="field">
+            <label>Brand Colour</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="color" id="cf-brand-color" value="#2563eb" style="width:40px;height:32px;padding:2px;border-radius:4px;border:1px solid var(--border);cursor:pointer" />
+              <input type="text" id="cf-brand-color-hex" placeholder="#2563eb" style="flex:1" oninput="document.getElementById('cf-brand-color').value=this.value" />
+            </div>
+          </div>
+        </div>
         <div class="field">
           <label>Business Address</label>
           <textarea id="cf-address" rows="3" placeholder="123 Example Street&#10;London&#10;EC1A 1BB"></textarea>

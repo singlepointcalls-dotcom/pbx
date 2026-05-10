@@ -236,6 +236,18 @@ const Portal = (() => {
     el('portal-app').classList.add('active');
     el('p-username-display').textContent = currentUser.username;
     el('p-company-name').textContent = currentUser.client_name || 'Client Portal';
+
+    // Apply client branding
+    if (currentUser.logo_url) {
+      const logo = el('p-client-logo');
+      if (logo) { logo.src = currentUser.logo_url; logo.style.display = 'inline-block'; }
+    }
+    if (currentUser.brand_color) {
+      const topbar = el('p-topbar');
+      if (topbar) topbar.style.setProperty('--p-brand', currentUser.brand_color);
+      document.documentElement.style.setProperty('--p-primary', currentUser.brand_color);
+    }
+
     nav('dashboard');
     initPush();
     connectRealtime();

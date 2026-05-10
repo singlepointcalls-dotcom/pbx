@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Client Portal — SinglePoint Calls</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/portal.css" />
 </head>
 <body>
@@ -11,7 +13,14 @@
 <!-- Login Screen -->
 <div id="portal-login" class="p-screen active">
   <div class="p-login-box">
-    <div class="p-logo">&#9742; SinglePoint Calls</div>
+    <div class="p-logo" style="display:flex;align-items:center;gap:8px;justify-content:center">
+      <svg width="28" height="28" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="4" r="2.5" stroke="#CFFF5E" stroke-width="2" fill="none"/>
+        <path d="M16 6.5 C16 14 8 17 4 17" stroke="#CFFF5E" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <circle cx="4" cy="17" r="2" fill="#CFFF5E"/>
+      </svg>
+      SinglePoint Calls
+    </div>
     <h2>Client Portal</h2>
     <p class="p-subtitle">Log in to view your messages, calls and billing</p>
     <!-- Normal login form -->
@@ -66,8 +75,11 @@
 <div id="portal-app" class="p-screen">
 
   <!-- Top bar -->
-  <header class="p-topbar">
-    <div class="p-topbar-brand">&#9742; <span id="p-company-name">Client Portal</span></div>
+  <header class="p-topbar" id="p-topbar">
+    <div class="p-topbar-brand">
+      <img id="p-client-logo" src="" alt="" style="display:none;height:28px;max-width:120px;object-fit:contain;margin-right:8px;border-radius:3px">
+      <span id="p-company-name">Client Portal</span>
+    </div>
     <nav class="p-topbar-nav" id="p-topbar-nav">
       <button class="p-nav-btn active" onclick="Portal.nav('dashboard')">&#128202; Dashboard</button>
       <button class="p-nav-btn" onclick="Portal.nav('messages')">&#128220; Messages</button>
