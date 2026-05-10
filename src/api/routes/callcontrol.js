@@ -1,7 +1,7 @@
 'use strict';
 
 const router = require('express').Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound } = require('../../asterisk/ari');
 
 router.use(requireAuth);
@@ -72,6 +72,57 @@ router.post('/originate', async (req, res, next) => {
     if (!extension || !destination) return res.status(400).json({ error: 'extension and destination are required' });
     const result = await originateOutbound(extension, destination, client_id || null);
     res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Live call monitoring (supervisor features) ────────────────────────────
+// These require ARI — return 503 if Asterisk is not connected.
+
+const ari = require('../../asterisk/ari');
+
+function ariRequired(res) {
+  res.status(503).json({ error: 'Asterisk ARI not connected — live monitoring unavailable' });
+}
+
+// POST /api/callcontrol/:channelId/monitor — supervisor silently listens to a call
+router.post('/:channelId/monitor', requireRole('admin', 'supervisor'), async (req, res) => {
+  try {
+    const { extension } = req.body;
+    if (!extension) return res.status(400).json({ error: 'extension is required' });
+    if (!ari.isConnected()) return ariRequired(res);
+    // Originate a channel to the supervisor's extension that snoops on the target
+    const result = await ari.originateOutbound(extension, `ChanSpy/${req.params.channelId}`, null);
+    res.json({ message: 'Monitoring started', result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/callcontrol/:channelId/whisper — supervisor speaks only to operator (not caller)
+router.post('/:channelId/whisper', requireRole('admin', 'supervisor'), async (req, res) => {
+  try {
+    const { extension } = req.body;
+    if (!extension) return res.status(400).json({ error: 'extension is required' });
+    if (!ari.isConnected()) return ariRequired(res);
+    // ChanSpy with 'w' flag = whisper mode
+    const result = await ari.originateOutbound(extension, `ChanSpy/${req.params.channelId},w`, null);
+    res.json({ message: 'Whisper mode started', result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/callcontrol/:channelId/barge — supervisor joins the call (three-way)
+router.post('/:channelId/barge', requireRole('admin', 'supervisor'), async (req, res) => {
+  try {
+    const { extension } = req.body;
+    if (!extension) return res.status(400).json({ error: 'extension is required' });
+    if (!ari.isConnected()) return ariRequired(res);
+    // ChanSpy with 'B' flag = barge mode (two-way)
+    const result = await ari.originateOutbound(extension, `ChanSpy/${req.params.channelId},B`, null);
+    res.json({ message: 'Barge started', result });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

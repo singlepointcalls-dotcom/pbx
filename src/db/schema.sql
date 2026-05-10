@@ -924,3 +924,64 @@ CREATE INDEX IF NOT EXISTS idx_portal_key_active ON portal_api_keys(portal_user_
 
 
 
+
+-- ============================================================
+-- v15 — Operator scheduling, time-off, voicemail boxes, IVR flows
+-- ============================================================
+
+-- Operator shift schedule
+CREATE TABLE IF NOT EXISTS operator_shifts (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id  UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    shift_date   DATE NOT NULL,
+    start_time   TIME NOT NULL,
+    end_time     TIME NOT NULL,
+    shift_type   TEXT NOT NULL DEFAULT 'regular' CHECK (shift_type IN ('regular','oncall','training')),
+    notes        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_shifts_operator ON operator_shifts(operator_id);
+CREATE INDEX IF NOT EXISTS idx_shifts_date     ON operator_shifts(shift_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_op_date_time
+    ON operator_shifts(operator_id, shift_date, start_time);
+
+-- Time-off requests
+CREATE TABLE IF NOT EXISTS time_off_requests (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id  UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    from_date    DATE NOT NULL,
+    to_date      DATE NOT NULL,
+    reason       TEXT,
+    status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+    reviewed_by  UUID REFERENCES operators(id),
+    reviewed_at  TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_timeoff_operator ON time_off_requests(operator_id);
+CREATE INDEX IF NOT EXISTS idx_timeoff_status   ON time_off_requests(status);
+
+-- Per-client voicemail box definitions
+CREATE TABLE IF NOT EXISTS voicemail_boxes (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    mailbox_number      TEXT NOT NULL UNIQUE,
+    pin                 TEXT NOT NULL,
+    greeting_url        TEXT,
+    max_message_seconds INT NOT NULL DEFAULT 120,
+    retention_days      INT NOT NULL DEFAULT 30,
+    notify_email        TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_voicemail_client ON voicemail_boxes(client_id);
+
+-- IVR flow builder (JSONB node graph → exported to Asterisk dialplan)
+CREATE TABLE IF NOT EXISTS ivr_flows (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id  UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    nodes      JSONB NOT NULL DEFAULT '[]',
+    is_active  BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ivr_client ON ivr_flows(client_id);

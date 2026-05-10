@@ -323,6 +323,132 @@ router.post('/password-reset/confirm', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Portal self-service: on-call contacts ────────────────────────────────
+
+// GET /api/portal/contacts — view on-call contacts for this client
+router.get('/contacts', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, role, phone, email, priority, notify_sms, notify_email,
+              notify_phone, is_oncall, created_at
+       FROM contacts
+       WHERE client_id = $1
+       ORDER BY priority ASC, name ASC`,
+      [req.portalUser.client_id]
+    );
+    res.json({ contacts: result.rows });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/portal/contacts/:id — portal user can edit basic contact info + on-call flag
+router.put('/contacts/:id', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { name, phone, email, notify_sms, notify_email, notify_phone, is_oncall } = req.body;
+    const result = await pool.query(
+      `UPDATE contacts SET
+         name         = COALESCE($1, name),
+         phone        = COALESCE($2, phone),
+         email        = COALESCE($3, email),
+         notify_sms   = COALESCE($4, notify_sms),
+         notify_email = COALESCE($5, notify_email),
+         notify_phone = COALESCE($6, notify_phone),
+         is_oncall    = COALESCE($7, is_oncall)
+       WHERE id = $8 AND client_id = $9
+       RETURNING id, name, role, phone, email, priority, notify_sms, notify_email,
+                 notify_phone, is_oncall`,
+      [name, phone, email, notify_sms, notify_email, notify_phone, is_oncall,
+       req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ contact: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// ── Portal self-service: appointments ────────────────────────────────────
+
+// GET /api/portal/appointments — view upcoming appointments for this client
+router.get('/appointments', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { from, to, status } = req.query;
+    const params = [req.portalUser.client_id];
+    let filter = '';
+    if (from)   { params.push(from);   filter += ` AND a.starts_at >= $${params.length}`; }
+    if (to)     { params.push(to);     filter += ` AND a.starts_at <= $${params.length}`; }
+    if (status) { params.push(status); filter += ` AND a.status = $${params.length}`; }
+
+    const result = await pool.query(
+      `SELECT a.*, op.full_name AS operator_name
+       FROM appointments a
+       LEFT JOIN operators op ON a.operator_id = op.id
+       WHERE a.client_id = $1 ${filter}
+       ORDER BY a.starts_at ASC
+       LIMIT 100`,
+      params
+    );
+    res.json({ appointments: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/appointments — client books an appointment
+router.post('/appointments', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { title, caller_name, caller_phone, starts_at, duration_minutes = 30, notes } = req.body;
+    if (!title || !starts_at) {
+      return res.status(400).json({ error: 'title and starts_at are required' });
+    }
+    const result = await pool.query(
+      `INSERT INTO appointments
+         (client_id, title, caller_name, caller_phone, starts_at, duration_minutes, notes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'scheduled')
+       RETURNING *`,
+      [req.portalUser.client_id, title, caller_name || null, caller_phone || null,
+       starts_at, duration_minutes, notes || null]
+    );
+    res.status(201).json({ appointment: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// ── Portal self-service: knowledge base ──────────────────────────────────
+
+// GET /api/portal/knowledge — browse client-specific knowledge articles
+router.get('/knowledge', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { q, category } = req.query;
+    const params = [req.portalUser.client_id];
+    let filter = '';
+    if (q) {
+      params.push(q);
+      filter += ` AND (ka.title ILIKE '%' || $${params.length} || '%'
+                    OR ka.content ILIKE '%' || $${params.length} || '%')`;
+    }
+    if (category) { params.push(category); filter += ` AND ka.category = $${params.length}`; }
+
+    const result = await pool.query(
+      `SELECT ka.id, ka.title, ka.category, ka.tags, ka.is_public, ka.created_at, ka.updated_at
+       FROM knowledge_articles ka
+       WHERE (ka.client_id = $1 OR ka.client_id IS NULL) AND ka.is_public = true
+       ${filter}
+       ORDER BY ka.category, ka.title
+       LIMIT 100`,
+      params
+    );
+    res.json({ articles: result.rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/portal/knowledge/:id — read article body
+router.get('/knowledge/:id', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM knowledge_articles
+       WHERE id = $1 AND (client_id = $2 OR client_id IS NULL) AND is_public = true`,
+      [req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Article not found' });
+    res.json({ article: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // ---- Portal user management (requires operator JWT, not portal JWT) ----
 const { requireAuth, requireRole } = require('../middleware/auth');
 

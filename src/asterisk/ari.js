@@ -395,4 +395,6 @@ async function originateOutbound(operatorExtension, destination, clientId) {
   return { bridgeId: bridge.id, operatorChannelId: operatorChannel.id };
 }
 
-module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound };
+function isConnected() { return ariClient !== null; }
+
+module.exports = { connectARI, answerCall, holdCall, unholdCall, transferCall, hangupCall, getActiveCalls, originateOutbound, isConnected };

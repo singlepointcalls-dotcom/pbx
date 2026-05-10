@@ -2311,6 +2311,19 @@ const Admin = (() => {
     else if (name === 'settings') loadSettings();
     else if (name === 'performance') loadPerformance();
     else if (name === 'canned') loadCannedResponses();
+    else if (name === 'analytics') Analytics.load();
+    else if (name === 'leaderboard') Leaderboard.load();
+    else if (name === 'sms') SMSInbox.load();
+    else if (name === 'appointments') AppointmentsPanel.load();
+    else if (name === 'shifts') ShiftsPanel.load();
+    else if (name === 'ivr') IVRPanel.load();
+    else if (name === 'voicemail') VoicemailPanel.load();
+    else if (name === 'callbacks') CallbacksPanel.load();
+    else if (name === 'scripts') ScriptsPanel.load();
+    else if (name === 'dids') DIDsPanel.load();
+    else if (name === 'routing') RoutingPanel.load();
+    else if (name === 'audit') AuditPanel.load();
+    else if (name === 'knowledge') KnowledgeAdmin.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -4053,4 +4066,782 @@ const Tasks = (() => {
 
   return { load, openNew, closeNew, saveNew, complete, remove };
 
+})();
+
+/* ============================================================
+   Analytics Panel
+   ============================================================ */
+const Analytics = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-analytics');
+    if (!container) return;
+    const period = el('analytics-period')?.value || 'day';
+    const from   = el('analytics-from')?.value || '';
+    const to     = el('analytics-to')?.value   || '';
+    container.querySelectorAll('.analytics-table-wrap').forEach((w) => {
+      w.innerHTML = '<p style="color:#666;padding:8px">Loading...</p>';
+    });
+    try {
+      const qs = `?granularity=${period}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
+      const [calls, msgs, sla, ops, clients] = await Promise.all([
+        api('GET', `/analytics/calls${qs}`),
+        api('GET', `/analytics/messages${qs}`),
+        api('GET', `/analytics/sla${qs}`),
+        api('GET', `/analytics/operators?${from ? `from=${from}&` : ''}${to ? `to=${to}` : ''}`),
+        api('GET', `/analytics/clients?${from ? `from=${from}&` : ''}${to ? `to=${to}` : ''}`),
+      ]);
+      renderCallsSeries(calls?.series || []);
+      renderMsgsSeries(msgs?.series || []);
+      renderSLASeries(sla?.series || []);
+      renderOperatorsTable(ops?.operators || []);
+      renderClientsTable(clients?.clients || []);
+    } catch (err) { toast(`Analytics error: ${err.message}`, 'danger'); }
+  }
+
+  function renderCallsSeries(rows) {
+    const w = el('analytics-calls-wrap');
+    if (!w) return;
+    if (!rows.length) { w.innerHTML = '<p style="color:#888">No data</p>'; return; }
+    w.innerHTML = `<table class="data-table"><thead><tr>
+      <th>Time</th><th>Total</th><th>Answered</th><th>Missed</th><th>Avg Handle (s)</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${new Date(r.bucket).toLocaleString()}</td>
+      <td>${r.total}</td><td>${r.answered}</td><td>${r.missed}</td><td>${r.avg_handle_seconds}</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderMsgsSeries(rows) {
+    const w = el('analytics-msgs-wrap');
+    if (!w) return;
+    if (!rows.length) { w.innerHTML = '<p style="color:#888">No data</p>'; return; }
+    w.innerHTML = `<table class="data-table"><thead><tr>
+      <th>Time</th><th>Urgency</th><th>Count</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${new Date(r.bucket).toLocaleString()}</td>
+      <td>${escHtml(r.urgency || '-')}</td><td>${r.count}</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderSLASeries(rows) {
+    const w = el('analytics-sla-wrap');
+    if (!w) return;
+    if (!rows.length) { w.innerHTML = '<p style="color:#888">No data</p>'; return; }
+    w.innerHTML = `<table class="data-table"><thead><tr>
+      <th>Time</th><th>Total Calls</th><th>SLA Met</th><th>SLA %</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${new Date(r.bucket).toLocaleString()}</td>
+      <td>${r.total_calls}</td><td>${r.sla_met}</td>
+      <td style="color:${parseFloat(r.sla_pct) >= 80 ? '#27ae60' : '#e74c3c'}">${r.sla_pct || 0}%</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderOperatorsTable(rows) {
+    const w = el('analytics-operators-wrap');
+    if (!w) return;
+    if (!rows.length) { w.innerHTML = '<p style="color:#888">No data</p>'; return; }
+    w.innerHTML = `<table class="data-table"><thead><tr>
+      <th>Operator</th><th>Calls</th><th>Messages</th><th>Avg Handle (s)</th><th>Avg QA</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${escHtml(r.full_name)}</td>
+      <td>${r.calls_taken}</td><td>${r.messages_logged}</td>
+      <td>${r.avg_handle_seconds}</td><td>${r.avg_qa_score || '-'}</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderClientsTable(rows) {
+    const w = el('analytics-clients-wrap');
+    if (!w) return;
+    if (!rows.length) { w.innerHTML = '<p style="color:#888">No data</p>'; return; }
+    w.innerHTML = `<table class="data-table"><thead><tr>
+      <th>Client</th><th>Messages</th><th>High Urgency</th><th>Calls</th><th>Avg Handle (s)</th>
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${r.messages}</td><td>${r.high_urgency}</td>
+      <td>${r.calls}</td><td>${r.avg_handle_seconds}</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   Leaderboard Panel
+   ============================================================ */
+const Leaderboard = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-leaderboard');
+    if (!container) return;
+    const period = el('leaderboard-period')?.value || 'week';
+    const tbody = el('leaderboard-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/leaderboard?period=${period}`);
+      render(data?.leaderboard || []);
+    } catch (err) { toast(`Leaderboard error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('leaderboard-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="padding:12px;color:#888">No data for this period</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => `<tr ${r.rank <= 3 ? 'style="background:#fffde7"' : ''}>
+      <td style="font-weight:bold;text-align:center">${r.rank}</td>
+      <td>${escHtml(r.full_name)}</td>
+      <td style="text-align:center">${r.calls}</td>
+      <td style="text-align:center">${r.messages}</td>
+      <td style="text-align:center">${r.sla_met}</td>
+      <td style="text-align:center">${r.avg_qa || '-'}</td>
+      <td style="text-align:center;font-weight:bold">${r.score}</td>
+      <td style="font-size:1.1em">${(r.badges || []).map((b) => `<span title="${escHtml(b.name)}">${b.icon}</span>`).join(' ')}</td>
+    </tr>`).join('');
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   SMS Inbox Panel (operator-accessible)
+   ============================================================ */
+const SMSInbox = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+  let activeThread = null;
+
+  async function load() {
+    const container = el('admin-sms');
+    if (!container) return;
+    loadThreads();
+  }
+
+  async function loadThreads() {
+    const list = el('sms-thread-list');
+    if (!list) return;
+    list.innerHTML = '<p style="color:#666;padding:8px">Loading...</p>';
+    try {
+      const data = await api('GET', '/sms/threads');
+      const threads = data?.threads || [];
+      if (!threads.length) { list.innerHTML = '<p style="color:#888;padding:8px">No SMS threads</p>'; return; }
+      list.innerHTML = threads.map((t) => `
+        <div class="sms-thread-item ${t.unread > 0 ? 'unread' : ''}"
+             onclick="SMSInbox.openThread('${escHtml(t.from_number)}','${escHtml(t.client_name || '')}')"
+             style="padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer">
+          <strong>${escHtml(t.from_number)}</strong>
+          ${t.unread > 0 ? `<span style="background:#e74c3c;color:#fff;border-radius:999px;padding:1px 6px;font-size:0.75em;margin-left:4px">${t.unread}</span>` : ''}
+          <span style="color:#888;font-size:0.85em;float:right">${escHtml(t.client_name || '')}</span>
+          <div style="color:#666;font-size:0.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.last_body || '')}</div>
+        </div>`).join('');
+    } catch (err) { toast(`SMS error: ${err.message}`, 'danger'); }
+  }
+
+  async function openThread(number, clientName) {
+    activeThread = number;
+    const pane = el('sms-message-pane');
+    if (!pane) return;
+    pane.style.display = '';
+    el('sms-thread-title') && (el('sms-thread-title').textContent = `${number}${clientName ? ` — ${clientName}` : ''}`);
+    const msgs = el('sms-messages');
+    if (msgs) msgs.innerHTML = '<p style="color:#666">Loading...</p>';
+    try {
+      const data = await api('GET', `/sms/thread/${encodeURIComponent(number)}`);
+      const messages = data?.messages || [];
+      if (msgs) {
+        if (!messages.length) { msgs.innerHTML = '<p style="color:#888">No messages</p>'; return; }
+        msgs.innerHTML = messages.map((m) => `
+          <div style="display:flex;flex-direction:${m.direction === 'outbound' ? 'row-reverse' : 'row'};margin:4px 0">
+            <div style="max-width:70%;padding:8px 12px;border-radius:12px;
+                        background:${m.direction === 'outbound' ? '#3498db' : '#f0f0f0'};
+                        color:${m.direction === 'outbound' ? '#fff' : '#333'}">
+              ${escHtml(m.body)}
+              <div style="font-size:0.75em;opacity:0.7;margin-top:2px">${new Date(m.created_at).toLocaleString()}</div>
+            </div>
+          </div>`).join('');
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    } catch (err) { toast(`Error loading thread: ${err.message}`, 'danger'); }
+    loadThreads();
+  }
+
+  async function sendReply() {
+    if (!activeThread) return;
+    const input = el('sms-reply-input');
+    const body  = input?.value?.trim();
+    if (!body) return;
+    try {
+      await api('POST', '/sms/reply', { to: activeThread, body });
+      input.value = '';
+      openThread(activeThread, '');
+      toast('SMS sent', 'success');
+    } catch (err) { toast(`Send failed: ${err.message}`, 'danger'); }
+  }
+
+  return { load, openThread, sendReply, loadThreads };
+})();
+
+/* ============================================================
+   Appointments Panel
+   ============================================================ */
+const AppointmentsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-appointments');
+    if (!container) return;
+    const from = el('appt-from')?.value || new Date().toISOString().slice(0, 10);
+    const to   = el('appt-to')?.value || '';
+    const tbody = el('appointments-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const qs = `?from=${from}${to ? `&to=${to}` : ''}`;
+      const data = await api('GET', `/appointments${qs}`);
+      render(data?.appointments || []);
+    } catch (err) { toast(`Appointments error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('appointments-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#888">No appointments</td></tr>';
+      return;
+    }
+    const statusColor = { scheduled: '#3498db', completed: '#27ae60', cancelled: '#e74c3c', no_show: '#e67e22' };
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${new Date(r.starts_at).toLocaleString()}</td>
+      <td>${escHtml(r.title)}</td>
+      <td>${escHtml(r.client_name || '')}</td>
+      <td>${escHtml(r.caller_name || '')}</td>
+      <td>${escHtml(r.caller_phone || '')}</td>
+      <td><span style="color:${statusColor[r.status] || '#666'}">${r.status}</span></td>
+      <td>
+        <button onclick="AppointmentsPanel.updateStatus('${r.id}','completed')" style="font-size:0.8em;margin-right:4px">Done</button>
+        <button onclick="AppointmentsPanel.updateStatus('${r.id}','cancelled')" style="font-size:0.8em">Cancel</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function updateStatus(id, status) {
+    try {
+      await api('PUT', `/appointments/${id}`, { status });
+      load();
+      toast(`Appointment ${status}`, 'success');
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function openNew() {
+    const modal = el('appt-modal');
+    if (modal) {
+      el('appt-modal-title-field').value  = '';
+      el('appt-modal-client').value       = '';
+      el('appt-modal-caller').value       = '';
+      el('appt-modal-phone').value        = '';
+      el('appt-modal-starts').value       = '';
+      el('appt-modal-duration').value     = '30';
+      el('appt-modal-notes').value        = '';
+      modal.style.display = 'flex';
+      // Populate client select
+      const sel = el('appt-modal-client');
+      if (sel && sel.options.length <= 1) {
+        const data = await api('GET', '/clients');
+        (data?.clients || []).forEach((c) => {
+          const o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          sel.appendChild(o);
+        });
+      }
+    }
+  }
+
+  function closeNew() { const m = el('appt-modal'); if (m) m.style.display = 'none'; }
+
+  async function saveNew() {
+    const body = {
+      title:            el('appt-modal-title-field')?.value?.trim(),
+      client_id:        el('appt-modal-client')?.value || null,
+      caller_name:      el('appt-modal-caller')?.value?.trim() || null,
+      caller_phone:     el('appt-modal-phone')?.value?.trim()  || null,
+      starts_at:        el('appt-modal-starts')?.value,
+      duration_minutes: parseInt(el('appt-modal-duration')?.value || '30'),
+      notes:            el('appt-modal-notes')?.value?.trim()  || null,
+    };
+    if (!body.title || !body.starts_at) { toast('Title and start time are required', 'danger'); return; }
+    try {
+      await api('POST', '/appointments', body);
+      closeNew();
+      load();
+      toast('Appointment created', 'success');
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, updateStatus, openNew, closeNew, saveNew };
+})();
+
+/* ============================================================
+   Shifts Panel (operator scheduling)
+   ============================================================ */
+const ShiftsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-shifts');
+    if (!container) return;
+    const date = el('shifts-date')?.value || new Date().toISOString().slice(0, 10);
+    const tbody = el('shifts-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/shifts/coverage?date=${date}`);
+      renderCoverage(data?.shifts || [], date);
+      loadTimeOff();
+    } catch (err) { toast(`Shifts error: ${err.message}`, 'danger'); }
+  }
+
+  function renderCoverage(rows, date) {
+    const tbody = el('shifts-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="padding:12px;color:#888">No shifts for ${date}</td></tr>`;
+      return;
+    }
+    const typeColors = { regular: '#3498db', oncall: '#e67e22', training: '#9b59b6' };
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${escHtml(r.operator_name)}</td>
+      <td>${r.start_time} – ${r.end_time}</td>
+      <td><span style="color:${typeColors[r.shift_type] || '#666'}">${r.shift_type}</span></td>
+      <td>${escHtml(r.notes || '')}</td>
+      <td><span class="status-badge ${r.operator_status === 'available' ? 'ready' : ''}" style="font-size:0.75em">${r.operator_status || 'offline'}</span></td>
+      <td><button onclick="ShiftsPanel.deleteShift('${r.id}')" style="font-size:0.8em">Delete</button></td>
+    </tr>`).join('');
+  }
+
+  async function loadTimeOff() {
+    const tbody = el('timeoff-tbody');
+    if (!tbody) return;
+    try {
+      const data = await api('GET', '/shifts/timeoff');
+      const rows = data?.requests || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No requests</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((r) => `<tr>
+        <td>${escHtml(r.operator_name)}</td>
+        <td>${r.from_date} – ${r.to_date}</td>
+        <td>${escHtml(r.reason || '')}</td>
+        <td style="color:${r.status==='approved'?'#27ae60':r.status==='denied'?'#e74c3c':'#e67e22'}">${r.status}</td>
+        <td>${r.reviewed_by_name ? escHtml(r.reviewed_by_name) : '-'}</td>
+        <td>${r.status === 'pending' ? `
+          <button onclick="ShiftsPanel.reviewTimeOff('${r.id}','approved')" style="font-size:0.8em;margin-right:4px">Approve</button>
+          <button onclick="ShiftsPanel.reviewTimeOff('${r.id}','denied')" style="font-size:0.8em">Deny</button>` : '-'}
+        </td>
+      </tr>`).join('');
+    } catch { /* ignore */ }
+  }
+
+  async function deleteShift(id) {
+    if (!confirm('Delete this shift?')) return;
+    try { await api('DELETE', `/shifts/${id}`); load(); toast('Shift deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function reviewTimeOff(id, status) {
+    try { await api('PUT', `/shifts/timeoff/${id}`, { status }); loadTimeOff(); toast(`Request ${status}`, 'success'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, deleteShift, reviewTimeOff, loadTimeOff };
+})();
+
+/* ============================================================
+   IVR Builder Panel
+   ============================================================ */
+const IVRPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-ivr');
+    if (!container) return;
+    const tbody = el('ivr-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/ivr');
+      render(data?.flows || []);
+    } catch (err) { toast(`IVR error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('ivr-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No IVR flows</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${escHtml(r.client_name)}</td>
+      <td>${r.node_count} nodes</td>
+      <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Draft'}</td>
+      <td>
+        <button onclick="IVRPanel.toggleActive('${r.id}',${!r.is_active})" style="font-size:0.8em;margin-right:4px">${r.is_active ? 'Deactivate' : 'Activate'}</button>
+        <a href="/api/ivr/${r.id}/export" style="font-size:0.8em;margin-right:4px">Export</a>
+        <button onclick="IVRPanel.deleteFlow('${r.id}')" style="font-size:0.8em">Delete</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function toggleActive(id, active) {
+    try { await api('PUT', `/ivr/${id}`, { is_active: active }); load(); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function deleteFlow(id) {
+    if (!confirm('Delete this IVR flow?')) return;
+    try { await api('DELETE', `/ivr/${id}`); load(); toast('IVR flow deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, toggleActive, deleteFlow };
+})();
+
+/* ============================================================
+   Voicemail Panel
+   ============================================================ */
+const VoicemailPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-voicemail');
+    if (!container) return;
+    const tbody = el('voicemail-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/voicemail');
+      render(data?.boxes || []);
+    } catch (err) { toast(`Voicemail error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('voicemail-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No voicemail boxes</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${escHtml(r.mailbox_number)}</td>
+      <td>${escHtml(r.client_name)}</td>
+      <td>${r.max_message_seconds}s / ${r.retention_days}d retention</td>
+      <td>${escHtml(r.notify_email || '-')}</td>
+      <td>
+        <button onclick="VoicemailPanel.viewMessages('${r.id}','${escHtml(r.mailbox_number)}')" style="font-size:0.8em;margin-right:4px">Messages</button>
+        <button onclick="VoicemailPanel.deleteBox('${r.id}')" style="font-size:0.8em">Delete</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function viewMessages(id, number) {
+    try {
+      const data = await api('GET', `/voicemail/${id}/messages`);
+      const msgs = data?.messages || [];
+      const info = msgs.length
+        ? msgs.map((m) => `${new Date(m.started_at).toLocaleString()} — ${m.caller_id} — ${m.duration_seconds}s\n${m.recording_transcript || '(no transcript)'}`).join('\n\n')
+        : 'No voicemail messages found.';
+      alert(`Voicemail box ${number}:\n\n${info}`);
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function deleteBox(id) {
+    if (!confirm('Delete this voicemail box?')) return;
+    try { await api('DELETE', `/voicemail/${id}`); load(); toast('Box deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, viewMessages, deleteBox };
+})();
+
+/* ============================================================
+   Callbacks Panel
+   ============================================================ */
+const CallbacksPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-callbacks');
+    if (!container) return;
+    const tbody = el('callbacks-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/callbacks');
+      render(data?.campaigns || []);
+    } catch (err) { toast(`Callbacks error: ${err.message}`, 'danger'); }
+  }
+
+  function render(campaigns) {
+    const tbody = el('callbacks-tbody');
+    if (!tbody) return;
+    if (!campaigns.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No campaigns</td></tr>'; return; }
+    tbody.innerHTML = campaigns.map((c) => `<tr>
+      <td>${escHtml(c.name)}</td>
+      <td>${escHtml(c.client_name || '')}</td>
+      <td style="color:${c.status === 'active' ? '#27ae60' : '#e74c3c'}">${c.status}</td>
+      <td>${c.total_records || 0} / ${c.completed_records || 0} done</td>
+      <td>
+        <button onclick="CallbacksPanel.getNext('${c.id}')" style="font-size:0.8em">Get Next</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function getNext(campaignId) {
+    try {
+      const data = await api('GET', `/callbacks/queue/next?campaign_id=${campaignId}`);
+      if (!data?.record) { toast('No more records in queue', 'info'); return; }
+      const r = data.record;
+      toast(`Next: ${r.phone_number} — ${r.contact_name || 'Unknown'} (attempt ${r.attempts + 1})`, 'info', 8000);
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, getNext };
+})();
+
+/* ============================================================
+   Scripts Panel
+   ============================================================ */
+const ScriptsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-scripts');
+    if (!container) return;
+    const industry = el('scripts-industry-filter')?.value || '';
+    const list = el('scripts-list');
+    if (list) list.innerHTML = '<p style="color:#666">Loading...</p>';
+    try {
+      const data = await api('GET', `/scripts/templates${industry ? `?industry=${encodeURIComponent(industry)}` : ''}`);
+      render(data?.templates || []);
+      loadIndustries();
+    } catch (err) { toast(`Scripts error: ${err.message}`, 'danger'); }
+  }
+
+  function render(templates) {
+    const list = el('scripts-list');
+    if (!list) return;
+    if (!templates.length) { list.innerHTML = '<p style="color:#888">No templates</p>'; return; }
+    list.innerHTML = templates.map((t) => `
+      <div style="border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:8px">
+        <strong>${escHtml(t.name)}</strong>
+        <span style="color:#888;font-size:0.85em;margin-left:8px">${escHtml(t.industry || 'General')}</span>
+        <div style="color:#666;font-size:0.875em;margin-top:4px">${escHtml((t.template_text || '').slice(0, 150))}...</div>
+      </div>`).join('');
+  }
+
+  async function loadIndustries() {
+    const sel = el('scripts-industry-filter');
+    if (!sel || sel.dataset.loaded) return;
+    try {
+      const data = await api('GET', '/scripts/industries');
+      (data?.industries || []).forEach((ind) => {
+        const o = document.createElement('option');
+        o.value = ind; o.textContent = ind;
+        sel.appendChild(o);
+      });
+      sel.dataset.loaded = '1';
+    } catch { /* ignore */ }
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   DIDs Panel
+   ============================================================ */
+const DIDsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-dids');
+    if (!container) return;
+    const tbody = el('dids-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/dids');
+      render(data?.dids || []);
+    } catch (err) { toast(`DIDs error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('dids-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No DIDs registered</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td><code>${escHtml(r.number)}</code></td>
+      <td>${escHtml(r.label || '')}</td>
+      <td>${escHtml(r.client_name || 'Unassigned')}</td>
+      <td>${escHtml(r.provider || '')}</td>
+      <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Inactive'}</td>
+      <td>
+        <button onclick="DIDsPanel.deleteDID('${r.id}')" style="font-size:0.8em">Delete</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  async function deleteDID(id) {
+    if (!confirm('Delete this DID?')) return;
+    try { await api('DELETE', `/dids/${id}`); load(); toast('DID deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, deleteDID };
+})();
+
+/* ============================================================
+   Routing Rules Panel
+   ============================================================ */
+const RoutingPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-routing');
+    if (!container) return;
+    const tbody = el('routing-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/routing-rules');
+      render(data?.rules || []);
+    } catch (err) { toast(`Routing error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('routing-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No routing rules</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${escHtml(r.match_area_code || '*')}</td>
+      <td>${escHtml(r.match_country || '*')}</td>
+      <td>${escHtml(r.match_did || '*')}</td>
+      <td>${(r.target_skills || []).map((s) => escHtml(s)).join(', ') || 'Any'}</td>
+      <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Off'}</td>
+    </tr>`).join('');
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   Audit Log Panel
+   ============================================================ */
+const AuditPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-audit');
+    if (!container) return;
+    const tbody = el('audit-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const from = el('audit-from')?.value;
+      const to   = el('audit-to')?.value;
+      const qs   = `?limit=100${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
+      const data = await api('GET', `/audit${qs}`);
+      render(data?.entries || []);
+    } catch (err) { toast(`Audit error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('audit-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No entries</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td style="white-space:nowrap">${new Date(r.ts).toLocaleString()}</td>
+      <td>${escHtml(r.operator_name || '')}</td>
+      <td><code>${escHtml(r.action)}</code></td>
+      <td>${escHtml(r.resource_type || '')}</td>
+      <td style="color:#888;font-size:0.85em">${escHtml(r.ip_address || '')}</td>
+    </tr>`).join('');
+  }
+
+  function exportCsv() {
+    const from = el('audit-from')?.value;
+    const to   = el('audit-to')?.value;
+    const qs   = `${from ? `?from=${from}` : '?'}${to ? `${from ? '&' : ''}to=${to}` : ''}`;
+    window.location = `/api/audit/export.csv${qs}`;
+  }
+
+  return { load, exportCsv };
+})();
+
+/* ============================================================
+   Knowledge Admin Panel
+   ============================================================ */
+const KnowledgeAdmin = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+
+  async function load() {
+    const container = el('admin-knowledge');
+    if (!container) return;
+    const tbody = el('knowledge-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#666">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/knowledge');
+      render(data?.articles || []);
+    } catch (err) { toast(`Knowledge error: ${err.message}`, 'danger'); }
+  }
+
+  function render(rows) {
+    const tbody = el('knowledge-tbody');
+    if (!tbody) return;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No articles</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => `<tr>
+      <td>${escHtml(r.title)}</td>
+      <td>${escHtml(r.category || '')}</td>
+      <td>${escHtml((r.tags || []).join(', '))}</td>
+      <td style="color:${r.is_public ? '#27ae60' : '#e74c3c'}">${r.is_public ? 'Public' : 'Internal'}</td>
+      <td><button onclick="KnowledgeAdmin.delete('${r.id}')" style="font-size:0.8em">Delete</button></td>
+    </tr>`).join('');
+  }
+
+  async function deleteArticle(id) {
+    if (!confirm('Delete this article?')) return;
+    try { await api('DELETE', `/knowledge/${id}`); load(); toast('Article deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, delete: deleteArticle };
 })();

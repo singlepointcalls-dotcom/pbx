@@ -46,6 +46,9 @@ const portalApiKeysRoutes  = require('./api/routes/portal-api-keys');
 const didRoutes            = require('./api/routes/dids');
 const analyticsRoutes      = require('./api/routes/analytics');
 const leaderboardRoutes    = require('./api/routes/leaderboard');
+const shiftsRoutes         = require('./api/routes/shifts');
+const voicemailRoutes      = require('./api/routes/voicemail');
+const ivrRoutes            = require('./api/routes/ivr');
 const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
@@ -162,6 +165,9 @@ app.use('/api/portal/api-keys', portalApiKeysRoutes);
 app.use('/api/dids',            didRoutes);
 app.use('/api/analytics',       analyticsRoutes);
 app.use('/api/leaderboard',     leaderboardRoutes);
+app.use('/api/shifts',          shiftsRoutes);
+app.use('/api/voicemail',       voicemailRoutes);
+app.use('/api/ivr',             ivrRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
