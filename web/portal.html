@@ -146,12 +146,22 @@
             <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Message *</label>
             <textarea id="p-compose-body" class="p-input" rows="5" placeholder="Describe your enquiry..." style="width:100%;resize:vertical"></textarea>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Your Name</label>
+              <input id="p-compose-caller-name" type="text" class="p-input" placeholder="e.g. Jane Smith" />
+            </div>
+            <div>
+              <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Callback Number</label>
+              <input id="p-compose-caller-phone" type="tel" class="p-input" placeholder="e.g. 0207 123 4567" />
+            </div>
+          </div>
           <div>
             <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:4px">Priority</label>
             <select id="p-compose-urgency" class="p-select">
-              <option value="low">Low</option>
+              <option value="low">Low — for your information</option>
               <option value="normal" selected>Normal</option>
-              <option value="urgent">Urgent</option>
+              <option value="high">High — requires prompt attention</option>
             </select>
           </div>
           <div style="display:flex;gap:8px;justify-content:flex-end">

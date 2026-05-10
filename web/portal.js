@@ -371,12 +371,17 @@ const Portal = (() => {
   }
 
   async function sendPortalMessage() {
-    const subject = el('p-compose-subject').value.trim();
-    const body = el('p-compose-body').value.trim();
-    const urgency = el('p-compose-urgency').value;
+    const subject     = el('p-compose-subject')?.value.trim();
+    const body        = el('p-compose-body')?.value.trim();
+    const urgency     = el('p-compose-urgency')?.value || 'normal';
+    const callerName  = el('p-compose-caller-name')?.value.trim();
+    const callerPhone = el('p-compose-caller-phone')?.value.trim();
     if (!body) return toast('Please enter your message', 'error');
+    const payload = { subject, body, urgency };
+    if (callerName) payload.caller_name = callerName;
+    if (callerPhone) payload.caller_phone = callerPhone;
     try {
-      await api('POST', '/portal/messages', { subject, body, urgency });
+      await api('POST', '/portal/messages', payload);
       toast('Message sent to your answering team');
       closeComposeMessage();
       msgOffset = 0;
@@ -727,15 +732,25 @@ const Portal = (() => {
         return;
       }
       container.innerHTML = contacts.map((c) => `
-        <div style="border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;max-width:600px">
-          <div style="font-weight:600;font-size:1rem">${escHtml(c.name)}</div>
-          <div style="font-size:0.85rem;color:#555">${escHtml(c.email || '')} ${c.phone ? '· ' + escHtml(c.phone) : ''}</div>
+        <div style="border:1px solid ${c.is_oncall ? 'var(--p-primary,#1a3a5c)' : '#ddd'};border-radius:8px;padding:14px 16px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;max-width:600px;${c.is_oncall ? 'background:rgba(26,58,92,0.04)' : ''}">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:600;font-size:1rem">${escHtml(c.name)}</span>
+            ${c.is_oncall ? '<span style="background:var(--p-primary,#1a3a5c);color:#fff;font-size:0.72rem;padding:1px 8px;border-radius:12px;font-weight:600">&#128222; ON CALL</span>' : ''}
+            ${c.title ? `<span style="font-size:0.8rem;color:#888">${escHtml(c.title)}</span>` : ''}
+          </div>
+          <div style="font-size:0.85rem;color:#555">
+            ${c.email ? `<a href="mailto:${encodeURIComponent(c.email)}" style="color:inherit">${escHtml(c.email)}</a>` : ''}
+            ${c.phone ? ` &middot; ${escHtml(c.phone)}` : ''}
+            ${c.mobile ? ` &middot; ${escHtml(c.mobile)} (mob)` : ''}
+          </div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.82rem;color:#555">
             <label><input type="checkbox" ${c.notify_email ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_email', this.checked)"> Email</label>
             <label><input type="checkbox" ${c.notify_sms ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_sms', this.checked)"> SMS</label>
             <label><input type="checkbox" ${c.notify_whatsapp ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_whatsapp', this.checked)"> WhatsApp</label>
+            <label><input type="checkbox" ${c.notify_phone ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_phone', this.checked)"> Phone Call</label>
           </div>
-          <div style="font-size:0.8rem;color:#888">Priority: ${c.priority || 1} · ${c.title ? escHtml(c.title) : 'No title'}</div>
+          ${c.on_call_note ? `<div style="font-size:0.8rem;color:#888;font-style:italic">&#128221; ${escHtml(c.on_call_note)}</div>` : ''}
+          ${c.message_note ? `<div style="font-size:0.8rem;color:#27ae60;font-style:italic">&#128272; ${escHtml(c.message_note)}</div>` : ''}
         </div>
       `).join('');
     } catch (err) {

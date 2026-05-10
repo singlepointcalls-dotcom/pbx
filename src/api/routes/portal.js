@@ -195,11 +195,11 @@ router.get('/messages', requirePortalAuth, async (req, res, next) => {
 // POST /api/portal/messages — portal user submits an enquiry to operators
 router.post('/messages', requirePortalAuth, async (req, res, next) => {
   try {
-    const { subject, body, urgency = 'normal', form_data } = req.body;
+    const { subject, body, urgency = 'normal', caller_name, caller_phone, form_data } = req.body;
     if (!body || body.trim().length < 3) {
       return res.status(400).json({ error: 'body is required (min 3 characters)' });
     }
-    const validUrgency = ['low', 'normal', 'urgent'];
+    const validUrgency = ['low', 'normal', 'high'];
     if (!validUrgency.includes(urgency)) return res.status(400).json({ error: 'Invalid urgency' });
 
     const portalUser = req.portalUser;
@@ -210,8 +210,8 @@ router.post('/messages', requirePortalAuth, async (req, res, next) => {
        RETURNING id, subject, body, urgency, status, created_at`,
       [
         portalUser.client_id,
-        portalUser.name || portalUser.email,
-        null,
+        caller_name || portalUser.name || portalUser.email,
+        caller_phone || null,
         subject || 'Portal enquiry',
         body.trim(),
         urgency,
@@ -450,11 +450,12 @@ router.post('/password-reset/confirm', async (req, res, next) => {
 router.get('/contacts', requirePortalAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, role, phone, email, priority, notify_sms, notify_email,
-              notify_phone, is_oncall, created_at
+      `SELECT id, name, title, role, phone, mobile, email, priority,
+              notify_sms, notify_email, notify_phone, notify_whatsapp,
+              is_oncall, on_call_note, message_note, created_at
        FROM contacts
        WHERE client_id = $1
-       ORDER BY priority ASC, name ASC`,
+       ORDER BY is_oncall DESC NULLS LAST, priority ASC, name ASC`,
       [req.portalUser.client_id]
     );
     res.json({ contacts: result.rows });
@@ -464,20 +465,21 @@ router.get('/contacts', requirePortalAuth, async (req, res, next) => {
 // PUT /api/portal/contacts/:id — portal user can edit basic contact info + on-call flag
 router.put('/contacts/:id', requirePortalAuth, async (req, res, next) => {
   try {
-    const { name, phone, email, notify_sms, notify_email, notify_phone, is_oncall } = req.body;
+    const { name, phone, email, notify_sms, notify_email, notify_phone, notify_whatsapp, is_oncall } = req.body;
     const result = await pool.query(
       `UPDATE contacts SET
-         name         = COALESCE($1, name),
-         phone        = COALESCE($2, phone),
-         email        = COALESCE($3, email),
-         notify_sms   = COALESCE($4, notify_sms),
-         notify_email = COALESCE($5, notify_email),
-         notify_phone = COALESCE($6, notify_phone),
-         is_oncall    = COALESCE($7, is_oncall)
-       WHERE id = $8 AND client_id = $9
-       RETURNING id, name, role, phone, email, priority, notify_sms, notify_email,
-                 notify_phone, is_oncall`,
-      [name, phone, email, notify_sms, notify_email, notify_phone, is_oncall,
+         name             = COALESCE($1, name),
+         phone            = COALESCE($2, phone),
+         email            = COALESCE($3, email),
+         notify_sms       = COALESCE($4, notify_sms),
+         notify_email     = COALESCE($5, notify_email),
+         notify_phone     = COALESCE($6, notify_phone),
+         notify_whatsapp  = COALESCE($7, notify_whatsapp),
+         is_oncall        = COALESCE($8, is_oncall)
+       WHERE id = $9 AND client_id = $10
+       RETURNING id, name, title, role, phone, mobile, email, priority, notify_sms, notify_email,
+                 notify_phone, notify_whatsapp, is_oncall, on_call_note`,
+      [name, phone, email, notify_sms, notify_email, notify_phone, notify_whatsapp, is_oncall,
        req.params.id, req.portalUser.client_id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Contact not found' });
