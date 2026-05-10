@@ -396,6 +396,25 @@ const App = (() => {
     el('profile-modal').style.display = 'none';
   }
 
+  async function requestTimeOff() {
+    const from = el('pf-timeoff-from')?.value;
+    const to = el('pf-timeoff-to')?.value;
+    const reason = el('pf-timeoff-reason')?.value.trim();
+    const msg = el('pf-timeoff-msg');
+    if (!from || !to) { if (msg) msg.textContent = 'Please select from and to dates.'; return; }
+    if (to < from) { if (msg) msg.textContent = 'To date must be on or after from date.'; return; }
+    try {
+      await api('POST', '/shifts/timeoff', { from_date: from, to_date: to, reason: reason || null });
+      if (msg) { msg.style.color = 'var(--success)'; msg.textContent = 'Time-off request submitted!'; }
+      if (el('pf-timeoff-from')) el('pf-timeoff-from').value = '';
+      if (el('pf-timeoff-to')) el('pf-timeoff-to').value = '';
+      if (el('pf-timeoff-reason')) el('pf-timeoff-reason').value = '';
+      setTimeout(() => { if (msg) msg.textContent = ''; }, 4000);
+    } catch (err) {
+      if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = err.message; }
+    }
+  }
+
   function showPwStrength(value) {
     const bar = el('pw-strength-bar');
     const fill = el('pw-strength-fill');
@@ -2740,6 +2759,8 @@ const App = (() => {
     loadFollowUps, completeFollowUp,
     // Notification preferences
     saveNotificationPrefs,
+    // Time-off requests
+    requestTimeOff,
     // Supervisor monitoring
     supervisorMonitor,
     // Message templates

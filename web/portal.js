@@ -296,6 +296,20 @@ const Portal = (() => {
     } catch (err) { toast(err.message, 'error'); }
   }
 
+  async function acknowledgeMessage(messageId, btn) {
+    try {
+      btn.disabled = true;
+      await api('POST', `/portal/messages/${messageId}/acknowledge`);
+      const item = document.getElementById(`pmsg-${messageId}`);
+      if (item) {
+        const ackBtn = item.querySelector('button[onclick*="acknowledgeMessage"]');
+        if (ackBtn) ackBtn.replaceWith(Object.assign(document.createElement('span'), {
+          style: 'font-size:0.78rem;color:#27ae60', textContent: '✓ Acknowledged',
+        }));
+      }
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+  }
+
   function renderMsgList(container, messages, limit) {
     if (!container) return;
     const items = limit ? messages.slice(0, limit) : messages;
@@ -305,7 +319,7 @@ const Portal = (() => {
     }
     const urgencyColors = { low: 'grey', normal: 'blue', high: 'red' };
     container.innerHTML = items.map((m) => `
-      <div class="p-msg-item">
+      <div class="p-msg-item" id="pmsg-${m.id}">
         <div class="p-msg-header">
           <span class="p-msg-caller">${escHtml(m.caller_name || m.caller_phone || 'Unknown caller')}</span>
           <span class="p-msg-urgency p-urg-${urgencyColors[m.urgency] || 'blue'}">${m.urgency}</span>
@@ -313,9 +327,15 @@ const Portal = (() => {
         </div>
         ${m.subject ? `<div class="p-msg-subject">${escHtml(m.subject)}</div>` : ''}
         <div class="p-msg-body">${escHtml(m.body)}</div>
-        <div class="p-msg-meta">
-          ${m.operator_name ? `<span>Taken by ${escHtml(m.operator_name)}</span>` : ''}
-          <span>${relTime(m.created_at)}</span>
+        <div class="p-msg-meta" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:12px;font-size:0.78rem;color:var(--p-text-muted,#888)">
+            ${m.operator_name ? `<span>Taken by ${escHtml(m.operator_name)}</span>` : ''}
+            <span>${relTime(m.created_at)}</span>
+            ${m.acknowledged_at ? `<span style="color:#27ae60">&#10003; Acknowledged</span>` : ''}
+          </div>
+          ${!m.acknowledged_at && m.status !== 'acknowledged' ? `
+            <button class="p-btn p-btn-sm" onclick="Portal.acknowledgeMessage('${m.id}', this)">&#10003; Mark Read</button>
+          ` : ''}
         </div>
       </div>
     `).join('');
@@ -767,7 +787,7 @@ const Portal = (() => {
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    nav, logout, loadMessages, msgPage, openComposeMessage, closeComposeMessage, sendPortalMessage,
+    nav, logout, loadMessages, msgPage, openComposeMessage, closeComposeMessage, sendPortalMessage, acknowledgeMessage,
     loadCalls, loadBilling, loadAvailability, setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,

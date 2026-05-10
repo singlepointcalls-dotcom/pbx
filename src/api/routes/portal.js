@@ -206,6 +206,21 @@ router.post('/messages', requirePortalAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/portal/messages/:id/acknowledge — portal user marks their message as read
+router.post('/messages/:id/acknowledge', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE messages
+       SET acknowledged_at = COALESCE(acknowledged_at, NOW()), status = 'acknowledged'
+       WHERE id = $1 AND client_id = $2
+       RETURNING id, acknowledged_at, status`,
+      [req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Message not found' });
+    res.json({ message: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/calls
 router.get('/calls', requirePortalAuth, async (req, res, next) => {
   try {

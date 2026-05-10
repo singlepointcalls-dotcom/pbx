@@ -1970,6 +1970,27 @@
           Message escalation
         </label>
       </div>
+
+      <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)" />
+
+      <h4 class="section-label" style="margin-bottom:8px">Request Time Off</h4>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Submit a time-off request to your supervisor.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="field" style="margin-bottom:0">
+          <label>From Date</label>
+          <input type="date" id="pf-timeoff-from" />
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>To Date</label>
+          <input type="date" id="pf-timeoff-to" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Reason (optional)</label>
+        <input type="text" id="pf-timeoff-reason" placeholder="e.g. Annual leave" />
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="App.requestTimeOff()">Submit Request</button>
+      <div id="pf-timeoff-msg" style="font-size:0.8rem;margin-top:8px"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeProfile()">Close</button>

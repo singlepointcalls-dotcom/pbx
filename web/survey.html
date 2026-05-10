@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rate Your Experience</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      color: #1a2332;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      padding: 40px 36px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo { font-size: 2.5rem; margin-bottom: 8px; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 0.9rem; color: #6b7280; margin-bottom: 28px; }
+    .stars { display: flex; justify-content: center; gap: 10px; margin-bottom: 24px; cursor: pointer; }
+    .star {
+      font-size: 2.5rem;
+      color: #d1d5db;
+      transition: color 0.12s, transform 0.12s;
+      user-select: none;
+    }
+    .star.active, .star.hover { color: #f59e0b; transform: scale(1.15); }
+    .star-label { font-size: 0.82rem; color: #9ca3af; margin-bottom: 16px; min-height: 1.2em; }
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: vertical;
+      margin-bottom: 20px;
+      color: inherit;
+      outline: none;
+    }
+    textarea:focus { border-color: #3b82f6; }
+    .btn {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .thank-you { display: none; }
+    .thank-you .big { font-size: 4rem; margin-bottom: 12px; }
+    .error { color: #ef4444; font-size: 0.85rem; margin-bottom: 12px; }
+    .rating-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: #9ca3af; margin-top: -18px; margin-bottom: 20px; padding: 0 4px; }
+  </style>
+</head>
+<body>
+  <div class="card" id="survey-card">
+    <div class="logo">&#9742;</div>
+    <h1>How did we do?</h1>
+    <p class="subtitle" id="subtitle">Your feedback helps us improve our service.</p>
+
+    <div class="stars" id="stars">
+      <span class="star" data-v="1">&#9733;</span>
+      <span class="star" data-v="2">&#9733;</span>
+      <span class="star" data-v="3">&#9733;</span>
+      <span class="star" data-v="4">&#9733;</span>
+      <span class="star" data-v="5">&#9733;</span>
+    </div>
+    <div class="rating-labels"><span>Poor</span><span>Excellent</span></div>
+    <div class="star-label" id="star-label">Tap a star to rate</div>
+
+    <textarea id="comment" rows="3" placeholder="Optional: tell us more about your experience..."></textarea>
+
+    <div class="error" id="err-msg"></div>
+    <button class="btn" id="submit-btn" onclick="submitRating()" disabled>Submit Rating</button>
+  </div>
+
+  <div class="card thank-you" id="thank-you-card">
+    <div class="big">&#127881;</div>
+    <h1>Thank you!</h1>
+    <p class="subtitle">Your feedback has been recorded. We appreciate you taking the time to rate your experience.</p>
+  </div>
+
+  <script>
+    const LABELS = ['', 'Poor', 'Below Average', 'Average', 'Good', 'Excellent'];
+    let selected = 0;
+    const token = new URLSearchParams(location.search).get('token');
+
+    if (!token) {
+      document.getElementById('subtitle').textContent = 'Invalid or missing survey link.';
+      document.getElementById('stars').style.display = 'none';
+      document.getElementById('comment').style.display = 'none';
+      document.getElementById('submit-btn').style.display = 'none';
+    }
+
+    const stars = document.querySelectorAll('.star');
+    stars.forEach((s) => {
+      s.addEventListener('mouseenter', () => highlightTo(+s.dataset.v));
+      s.addEventListener('mouseleave', () => highlightTo(selected));
+      s.addEventListener('click', () => {
+        selected = +s.dataset.v;
+        highlightTo(selected);
+        document.getElementById('star-label').textContent = LABELS[selected];
+        document.getElementById('submit-btn').disabled = false;
+      });
+    });
+
+    function highlightTo(n) {
+      stars.forEach((s) => {
+        const v = +s.dataset.v;
+        s.classList.toggle('active', v <= n && n === selected);
+        s.classList.toggle('hover', v <= n && n !== selected);
+      });
+    }
+
+    async function submitRating() {
+      const btn = document.getElementById('submit-btn');
+      const err = document.getElementById('err-msg');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      err.textContent = '';
+      try {
+        const resp = await fetch('/api/csat/respond', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            rating: selected,
+            comment: document.getElementById('comment').value.trim() || null,
+          }),
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          throw new Error(data.error || `Error ${resp.status}`);
+        }
+        document.getElementById('survey-card').style.display = 'none';
+        document.getElementById('thank-you-card').style.display = 'block';
+      } catch (e) {
+        err.textContent = e.message;
+        btn.disabled = false;
+        btn.textContent = 'Submit Rating';
+      }
+    }
+  </script>
+</body>
+</html>

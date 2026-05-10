@@ -201,6 +201,11 @@ app.get('/wallboard', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'web', 'wallboard.html'));
 });
 
+// CSAT survey landing page
+app.get('/survey', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'web', 'survey.html'));
+});
+
 // Client portal
 app.get('/portal', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'web', 'portal.html'));

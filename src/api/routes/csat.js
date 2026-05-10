@@ -55,11 +55,11 @@ async function sendCsatSurvey(callLogId) {
   if (twilioSid && twilioToken && twilioFrom) {
     try {
       const twilio = require('twilio')(twilioSid, twilioToken);
-      const rateUrl = `${appUrl}/api/csat/respond?token=${survey.token}`;
+      const surveyUrl = `${appUrl}/survey?token=${survey.token}`;
       await twilio.messages.create({
         from: twilioFrom,
         to: phone,
-        body: `How was your experience with ${call.client_name}? Rate 1-5: ${rateUrl}&rating=5 (or reply 1-5)`,
+        body: `Hi! How was your experience with ${call.client_name}? Please rate us: ${surveyUrl}`,
       });
     } catch (err) {
       console.warn('[CSAT] SMS send failed:', err.message);
