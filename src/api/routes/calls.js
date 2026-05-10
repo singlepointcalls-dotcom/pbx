@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const pool = require('../../config/database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
 
@@ -202,6 +202,62 @@ router.get('/history/:callerNumber', async (req, res, next) => {
       [req.params.callerNumber, client_id]
     );
     res.json({ calls: result.rows, messages: messages.rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/calls/profile/:phone — unified cross-client caller profile
+// Returns all calls, messages, and appointments for a given phone number (admin/supervisor only)
+router.get('/profile/:phone', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const phone = decodeURIComponent(req.params.phone);
+    const [calls, messages, appointments, contacts] = await Promise.all([
+      pool.query(
+        `SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
+         FROM call_logs cl
+         LEFT JOIN clients c ON cl.client_id = c.id
+         LEFT JOIN operators o ON cl.operator_id = o.id
+         WHERE cl.caller_id_num = $1
+         ORDER BY cl.call_start DESC LIMIT 100`,
+        [phone]
+      ),
+      pool.query(
+        `SELECT m.id, m.subject, m.body, m.urgency, m.status, m.created_at,
+                c.name AS client_name, o.full_name AS operator_name
+         FROM messages m
+         LEFT JOIN clients c ON m.client_id = c.id
+         LEFT JOIN operators o ON m.operator_id = o.id
+         WHERE m.caller_phone = $1
+         ORDER BY m.created_at DESC LIMIT 100`,
+        [phone]
+      ),
+      pool.query(
+        `SELECT a.*, c.name AS client_name
+         FROM appointments a
+         LEFT JOIN clients c ON a.client_id = c.id
+         WHERE a.caller_phone = $1
+         ORDER BY a.starts_at DESC LIMIT 50`,
+        [phone]
+      ),
+      pool.query(
+        `SELECT ct.name, ct.email, ct.title, c.name AS client_name
+         FROM contacts ct
+         JOIN clients c ON ct.client_id = c.id
+         WHERE ct.phone = $1 OR ct.sms_number = $1`,
+        [phone]
+      ),
+    ]);
+    res.json({
+      phone,
+      contacts:     contacts.rows,
+      calls:        calls.rows,
+      messages:     messages.rows,
+      appointments: appointments.rows,
+      summary: {
+        total_calls:        calls.rowCount,
+        total_messages:     messages.rowCount,
+        total_appointments: appointments.rowCount,
+      },
+    });
   } catch (err) { next(err); }
 });
 

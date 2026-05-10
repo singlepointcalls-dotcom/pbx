@@ -28,4 +28,20 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+/**
+ * Returns the set of client IDs an operator is allowed to see.
+ * Admin/supervisor always see all clients (returns null = no restriction).
+ * Operator role: if assignments exist, returns those IDs; else null (all).
+ */
+async function getAllowedClientIds(operator) {
+  if (operator.role === 'admin' || operator.role === 'supervisor') return null;
+  const pool = require('../../config/database');
+  const r = await pool.query(
+    'SELECT client_id FROM operator_client_assignments WHERE operator_id = $1',
+    [operator.id]
+  );
+  if (!r.rows.length) return null; // no restrictions
+  return r.rows.map((row) => row.client_id);
+}
+
+module.exports = { requireAuth, requireRole, getAllowedClientIds };

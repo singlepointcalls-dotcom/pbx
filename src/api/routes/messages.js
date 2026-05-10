@@ -568,4 +568,41 @@ router.post('/broadcast', requireRole('admin', 'supervisor'), async (req, res, n
   } catch (err) { next(err); }
 });
 
+// POST /api/messages/emergency — broadcast an URGENT message to ALL contacts of ALL (or specified) clients
+// Body: { subject, body, client_ids? }
+// WARNING: high-volume — use sparingly.
+router.post('/emergency', requireRole('admin'), async (req, res, next) => {
+  try {
+    const { subject, body: msgBody, client_ids } = req.body;
+    if (!subject || !msgBody) return res.status(400).json({ error: 'subject and body are required' });
+
+    // Determine which clients to notify
+    let clients;
+    if (client_ids && client_ids.length > 0) {
+      const r = await pool.query(`SELECT id FROM clients WHERE id = ANY($1::uuid[]) AND is_active = true`, [client_ids]);
+      clients = r.rows;
+    } else {
+      const r = await pool.query(`SELECT id FROM clients WHERE is_active = true`);
+      clients = r.rows;
+    }
+
+    const broadcastId = require('crypto').randomUUID();
+    let totalSent = 0;
+    for (const client of clients) {
+      const contacts = await pool.query(`SELECT id FROM contacts WHERE client_id = $1`, [client.id]);
+      for (const contact of contacts.rows) {
+        const msg = await pool.query(
+          `INSERT INTO messages (client_id, contact_id, subject, body, urgency, status, source, broadcast_id, operator_id)
+           VALUES ($1,$2,$3,$4,'urgent','pending','emergency',$5,$6) RETURNING *`,
+          [client.id, contact.id, subject, msgBody, broadcastId, req.operator.id]
+        );
+        deliverMessage(msg.rows[0]).catch(() => {});
+        broadcast('message:new', { message: msg.rows[0] });
+        totalSent++;
+      }
+    }
+    res.status(201).json({ broadcast_id: broadcastId, clients: clients.length, messages: totalSent });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

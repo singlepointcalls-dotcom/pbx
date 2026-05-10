@@ -1173,6 +1173,13 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS archived_at           TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_read_at        TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS ai_classification     JSONB;
 CREATE INDEX IF NOT EXISTS idx_messages_archived ON messages(archived_at) WHERE archived_at IS NOT NULL;
+
+-- v32 — Operator-to-client assignment (restricts which clients an operator sees)
+CREATE TABLE IF NOT EXISTS operator_client_assignments (
+  operator_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  client_id   UUID NOT NULL REFERENCES clients(id)   ON DELETE CASCADE,
+  PRIMARY KEY (operator_id, client_id)
+);
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS helpful_count     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS not_helpful_count INTEGER NOT NULL DEFAULT 0;
 -- Allow campaign_id to be NULL for widget/ad-hoc callback requests

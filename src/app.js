@@ -52,6 +52,7 @@ const voicemailRoutes      = require('./api/routes/voicemail');
 const ivrRoutes            = require('./api/routes/ivr');
 const { router: csatRoutes } = require('./api/routes/csat');
 const widgetRoutes         = require('./api/routes/widget');
+const operatorClientsRoutes = require('./api/routes/operator-clients');
 const { rateLimit }       = require('express-rate-limit');
 
 const app = express();
@@ -173,7 +174,8 @@ app.use('/api/shifts',          shiftsRoutes);
 app.use('/api/voicemail',       voicemailRoutes);
 app.use('/api/ivr',             ivrRoutes);
 app.use('/api/csat',           csatRoutes);
-app.use('/api/widget',         widgetRoutes); // public — identified by widget_token
+app.use('/api/widget',          widgetRoutes); // public — identified by widget_token
+app.use('/api/operator-clients', operatorClientsRoutes);
 
 // Health check — includes DB connectivity and basic counts for monitoring
 app.get('/api/health', async (_req, res) => {

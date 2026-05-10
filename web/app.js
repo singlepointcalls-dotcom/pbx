@@ -1496,7 +1496,7 @@ const App = (() => {
         m.archived_at ? `<span class="pill" style="background:#7f8c8d;color:#fff">&#128451; Archived</span>` : '',
         aiClass?.call_type ? `<span class="pill" style="background:#2c3e50;color:#fff" title="AI classification">&#129302; ${aiClass.call_type}</span>` : '',
         `<span>Client: <strong>${escHtml(m.client_name || '—')}</strong></span>`,
-        `<span>Caller: ${escHtml(m.caller_name || '—')}${m.caller_phone ? ` (${escHtml(m.caller_phone)})` : ''}</span>`,
+        `<span>Caller: ${escHtml(m.caller_name || '—')}${m.caller_phone ? ` (<a href="#" onclick="App.showCallerProfile('${escHtml(m.caller_phone)}');return false" style="color:var(--accent)">${escHtml(m.caller_phone)}</a>)` : ''}</span>`,
         m.assigned_to_name ? `<span style="color:#8ab4f8">&#128101; ${escHtml(m.assigned_to_name)}</span>` : '',
         `<span>${new Date(m.created_at).toLocaleString('en-GB')}</span>`,
       ].filter(Boolean).join('');
@@ -1705,6 +1705,40 @@ const App = (() => {
     const modal = el('msg-detail-modal');
     if (modal) modal.style.display = 'none';
     _detailMessageId = null;
+  }
+
+  async function showCallerProfile(phone) {
+    const modal = el('caller-profile-modal');
+    const body = el('caller-profile-body');
+    if (!modal || !body) return;
+    modal.style.display = 'flex';
+    body.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+    try {
+      const data = await api('GET', `/calls/profile/${encodeURIComponent(phone)}`);
+      body.innerHTML = `
+        <h4 style="margin-bottom:4px">${escHtml(phone)}</h4>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px">
+          Calls: ${data.summary.total_calls} &nbsp;|&nbsp; Messages: ${data.summary.total_messages} &nbsp;|&nbsp; Appointments: ${data.summary.total_appointments}
+        </p>
+        ${data.contacts.length ? `<div style="margin-bottom:10px"><strong style="font-size:0.8rem">Known as:</strong> ${data.contacts.map((c) => `${escHtml(c.name)}${c.title ? ` (${escHtml(c.title)})` : ''} @ ${escHtml(c.client_name)}`).join(', ')}</div>` : ''}
+        <h5 style="margin-bottom:6px;font-size:0.85rem">Recent Calls</h5>
+        ${data.calls.slice(0, 5).map((c) => `
+          <div style="font-size:0.78rem;padding:4px 0;border-bottom:1px solid var(--border)">
+            ${new Date(c.call_start).toLocaleString('en-GB')} &middot; ${escHtml(c.client_name || '—')} &middot; ${c.disposition} &middot; ${c.duration_seconds || 0}s
+          </div>`).join('') || '<p class="empty-state">None</p>'}
+        <h5 style="margin:10px 0 6px;font-size:0.85rem">Recent Messages</h5>
+        ${data.messages.slice(0, 5).map((m) => `
+          <div style="font-size:0.78rem;padding:4px 0;border-bottom:1px solid var(--border)">
+            ${new Date(m.created_at).toLocaleString('en-GB')} &middot; ${escHtml(m.client_name || '—')} &middot; ${escHtml(m.subject || '(no subject)')} &middot; <span class="pill">${m.status}</span>
+          </div>`).join('') || '<p class="empty-state">None</p>'}`;
+    } catch (err) {
+      body.innerHTML = `<p style="color:#e74c3c">${escHtml(err.message)}</p>`;
+    }
+  }
+
+  function closeCallerProfile() {
+    const modal = el('caller-profile-modal');
+    if (modal) modal.style.display = 'none';
   }
 
   async function redeliverMessage() {
@@ -4164,7 +4198,7 @@ const Admin = (() => {
     `).join('');
   }
 
-  function openOperatorModal(operatorId) {
+  async function openOperatorModal(operatorId) {
     editingOperatorId = operatorId || null;
     el('op-modal-title').textContent = operatorId ? 'Edit Operator' : 'Add Operator';
     el('operator-form').reset();
@@ -4173,6 +4207,27 @@ const Admin = (() => {
     el('opf-password').placeholder = operatorId ? 'Leave blank to keep current' : '';
     el('opf-active-row').style.display = operatorId ? 'flex' : 'none';
     el('operator-modal').style.display = 'flex';
+
+    // Load client assignments for operator-role editing
+    const assignWrap = el('opf-client-assign-wrap');
+    if (assignWrap && operatorId) {
+      assignWrap.style.display = '';
+      const [allClients, assigned] = await Promise.all([
+        api('GET', '/clients').catch(() => ({ clients: [] })),
+        api('GET', `/operator-clients/${operatorId}`).catch(() => ({ clients: [] })),
+      ]);
+      const assignedIds = new Set((assigned.clients || []).map((c) => c.id));
+      const list = el('opf-client-assign-list');
+      if (list) {
+        list.innerHTML = (allClients.clients || []).map((c) => `
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;cursor:pointer;padding:2px 0">
+            <input type="checkbox" value="${c.id}" ${assignedIds.has(c.id) ? 'checked' : ''}>
+            ${escHtml(c.name)} <span style="color:var(--text-muted);font-size:0.75rem">${c.is_active ? '' : '(inactive)'}</span>
+          </label>`).join('');
+      }
+    } else if (assignWrap) {
+      assignWrap.style.display = 'none';
+    }
   }
 
   function closeOperatorModal() {
@@ -4199,6 +4254,14 @@ const Admin = (() => {
         if (!pw) { toast('Password is required', 'danger'); return; }
         await api('POST', '/operators', body);
         toast('Operator created', 'success');
+      }
+      // Save client assignments
+      if (editingOperatorId) {
+        const checks = document.querySelectorAll('#opf-client-assign-list input[type=checkbox]');
+        if (checks.length > 0) {
+          const clientIds = [...checks].filter((c) => c.checked).map((c) => c.value);
+          await api('PUT', `/operator-clients/${editingOperatorId}`, { client_ids: clientIds }).catch(() => {});
+        }
       }
       closeOperatorModal();
       loadOperators();
@@ -5345,6 +5408,8 @@ const Admin = (() => {
     loadCannedResponses, openCannedModal, closeCannedModal, saveCannedResponse, deleteCannedResponse,
     // CSV exports
     exportMessagesCsv, exportCallsCsv,
+    // Caller profile
+    showCallerProfile, closeCallerProfile,
   };
 
 })();

@@ -2082,6 +2082,13 @@
           <label>Active</label>
           <label class="toggle"><input type="checkbox" id="opf-active" checked /><span></span></label>
         </div>
+        <div id="opf-client-assign-wrap" style="display:none;margin-top:1rem">
+          <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.4rem">
+            Client Access Restrictions
+            <span style="font-weight:400;font-size:0.77rem;color:var(--text-muted)"> (leave all unchecked = all clients)</span>
+          </label>
+          <div id="opf-client-assign-list" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg-secondary)"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="Admin.closeOperatorModal()">Cancel</button>
@@ -2668,6 +2675,17 @@
 <audio id="ringer" loop>
   <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA..." type="audio/wav" />
 </audio>
+
+<!-- Caller Profile Modal -->
+<div id="caller-profile-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)App.closeCallerProfile()">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>Caller Profile</h3>
+      <button class="modal-close" onclick="App.closeCallerProfile()">&#10005;</button>
+    </div>
+    <div id="caller-profile-body" class="modal-body"></div>
+  </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="/app.js"></script>
