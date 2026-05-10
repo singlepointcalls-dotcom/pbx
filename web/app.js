@@ -2390,6 +2390,7 @@ const Admin = (() => {
     else if (name === 'routing') RoutingPanel.load();
     else if (name === 'audit') AuditPanel.load();
     else if (name === 'knowledge') KnowledgeAdmin.load();
+    else if (name === 'qa') QAPanel.load();
     else if (name === 'skills') SkillsPanel.load();
     else if (name === 'dnc') DncPanel.load();
     else if (name === 'transcription') TranscriptionPanel.load();
@@ -5174,8 +5175,8 @@ const TranscriptionPanel = (() => {
     const tbody = el('transcription-tbody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
     try {
-      const data = await api('GET', '/calls?limit=100&has_recording=true');
-      render((data.calls || data.logs || []).filter((c) => c.recording_url));
+      const data = await api('GET', '/calls?limit=200&has_recording=true');
+      render(data.calls || []);
     } catch (err) { toast(`Transcription error: ${err.message}`, 'danger'); }
   }
 
@@ -5187,16 +5188,17 @@ const TranscriptionPanel = (() => {
       return;
     }
     tbody.innerHTML = rows.map((r) => {
-      const date = new Date(r.started_at || r.created_at).toLocaleString();
-      const dur = r.duration ? `${Math.floor(r.duration / 60)}m ${r.duration % 60}s` : '—';
+      const date = new Date(r.call_start || r.started_at || r.created_at).toLocaleString();
+      const secs = r.duration_seconds || r.duration || 0;
+      const dur = secs ? `${Math.floor(secs / 60)}m ${secs % 60}s` : '—';
       const hasTranscript = !!r.recording_transcript;
       const statusHtml = hasTranscript
         ? `<span style="color:#27ae60">&#10003; Done</span> <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="TranscriptionPanel.showDetail('${r.id}')">View</button>`
         : `<span style="color:#999">Pending</span>`;
       return `<tr>
         <td>${date}</td>
-        <td>${escHtml(r.client_name || r.client_id || '—')}</td>
-        <td>${escHtml(r.caller_number || '—')}</td>
+        <td>${escHtml(r.client_name || '—')}</td>
+        <td>${escHtml(r.caller_id_num || r.caller_number || '—')}</td>
         <td>${dur}</td>
         <td>${statusHtml}</td>
         <td>${!hasTranscript ? `<button class="btn btn-sm btn-primary" onclick="TranscriptionPanel.transcribe('${r.id}', this)">Transcribe</button>` : ''}</td>
@@ -5244,4 +5246,87 @@ const TranscriptionPanel = (() => {
   }
 
   return { load, transcribe, batchTranscribe, showDetail, closeDetail };
+})();
+
+/* ============================================================
+   QAPanel — QA Score History Admin
+   ============================================================ */
+const QAPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const escHtml = (...a) => App._escHtml(...a);
+  const el = (id) => document.getElementById(id);
+
+  async function load() {
+    if (!el('admin-qa')) return;
+    const tbody = el('qa-scores-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="empty-state">Loading...</td></tr>';
+    const from = el('qa-from')?.value || '';
+    const to   = el('qa-to')?.value   || '';
+    const qs   = new URLSearchParams({ limit: 100 });
+    if (from) qs.set('date_from', from);
+    if (to)   qs.set('date_to',   to);
+    try {
+      const data = await api('GET', `/qa/scores?${qs}`);
+      renderSummary(data.scores || []);
+      render(data.scores || [], data.total || 0);
+    } catch (err) { toast(`QA error: ${err.message}`, 'danger'); }
+  }
+
+  function renderSummary(rows) {
+    const el_ = el('qa-summary');
+    if (!el_) return;
+    if (!rows.length) { el_.innerHTML = ''; return; }
+    const avg = (rows.reduce((s, r) => s + (r.overall || 0), 0) / rows.length).toFixed(1);
+    const perfect = rows.filter((r) => r.overall >= 9).length;
+    const below7  = rows.filter((r) => r.overall < 7).length;
+    el_.innerHTML = `
+      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 16px;text-align:center">
+        <div style="font-size:1.5rem;font-weight:700">${avg}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Avg Overall</div>
+      </div>
+      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 16px;text-align:center">
+        <div style="font-size:1.5rem;font-weight:700;color:#27ae60">${perfect}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Score ≥ 9</div>
+      </div>
+      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 16px;text-align:center">
+        <div style="font-size:1.5rem;font-weight:700;color:#e74c3c">${below7}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Score &lt; 7</div>
+      </div>
+      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 16px;text-align:center">
+        <div style="font-size:1.5rem;font-weight:700">${rows.length}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted)">Total Scored</div>
+      </div>`;
+  }
+
+  function tick(val) { return val ? '&#10003;' : '&#10007;'; }
+
+  function render(rows, total) {
+    const tbody = el('qa-scores-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No QA scores found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const date = new Date(r.call_start || r.created_at).toLocaleString();
+      const scoreColour = r.overall >= 9 ? '#27ae60' : r.overall < 7 ? '#e74c3c' : 'inherit';
+      return `<tr>
+        <td>${date}</td>
+        <td>${escHtml(r.client_name || '—')}</td>
+        <td>${escHtml(r.caller_id_num || '—')}</td>
+        <td>${escHtml(r.operator_name || '—')}</td>
+        <td style="font-weight:700;color:${scoreColour}">${r.overall}/10</td>
+        <td style="text-align:center">${tick(r.greeting_correct)}</td>
+        <td style="text-align:center">${tick(r.script_followed)}</td>
+        <td style="text-align:center">${tick(r.info_accurate)}</td>
+        <td style="text-align:center">${tick(r.professional_tone)}</td>
+        <td style="text-align:center">${tick(r.message_complete)}</td>
+        <td>${escHtml(r.scored_by_name || '—')}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.notes || '')}">${escHtml(r.notes || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  return { load };
 })();

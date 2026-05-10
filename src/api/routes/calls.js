@@ -9,7 +9,7 @@ router.use(requireAuth);
 // GET /api/calls
 router.get('/', async (req, res, next) => {
   try {
-    const { client_id, disposition, date_from, date_to, limit = 50, offset = 0 } = req.query;
+    const { client_id, disposition, date_from, date_to, limit = 50, offset = 0, has_recording } = req.query;
 
     let query = `
       SELECT cl.*, c.name AS client_name, o.full_name AS operator_name
@@ -35,6 +35,9 @@ router.get('/', async (req, res, next) => {
     if (date_to) {
       params.push(date_to);
       query += ` AND cl.call_start <= $${params.length}`;
+    }
+    if (has_recording === 'true') {
+      query += ` AND cl.recording_url IS NOT NULL`;
     }
 
     // CSV export (admin/supervisor only, client_id required for data isolation)

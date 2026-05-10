@@ -510,6 +510,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('voicemail', event)">&#128222; Voicemail</button>
       <button class="admin-nav-item" onclick="Admin.showSection('knowledge', event)">&#128218; Knowledge</button>
       <button class="admin-nav-item" onclick="Admin.showSection('audit', event)">&#128270; Audit</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('qa', event)">&#127942; QA Scores</button>
       <button class="admin-nav-item" onclick="Admin.showSection('skills', event)">&#127775; Skills</button>
       <button class="admin-nav-item" onclick="Admin.showSection('dnc', event)">&#128683; DNC</button>
       <button class="admin-nav-item" onclick="Admin.showSection('transcription', event)">&#127908; Transcription</button>
@@ -905,6 +906,23 @@
       <table class="admin-table">
         <thead><tr><th>Time</th><th>Operator</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead>
         <tbody id="audit-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- QA Scores -->
+    <div id="admin-qa" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#127942; QA Score Report</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="date" id="qa-from" style="font-size:0.85rem" />
+          <input type="date" id="qa-to"   style="font-size:0.85rem" />
+          <button class="btn btn-secondary btn-sm" onclick="QAPanel.load()">Filter</button>
+        </div>
+      </div>
+      <div id="qa-summary" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap"></div>
+      <table class="admin-table">
+        <thead><tr><th>Date</th><th>Client</th><th>Caller</th><th>Operator</th><th>Overall</th><th>Greeting</th><th>Script</th><th>Info</th><th>Tone</th><th>Message</th><th>Scored By</th><th>Notes</th></tr></thead>
+        <tbody id="qa-scores-tbody"><tr><td colspan="12" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
 
