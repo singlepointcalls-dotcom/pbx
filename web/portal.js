@@ -796,6 +796,34 @@ const Portal = (() => {
     }
   }
 
+  /* ---- Contact self-service request ---- */
+  function openContactRequest() {
+    const form = el('p-contact-request-form');
+    if (!form) return;
+    form.style.display = 'block';
+    ['p-cr-name', 'p-cr-phone', 'p-cr-email', 'p-cr-role'].forEach((id) => { const e = el(id); if (e) e.value = ''; });
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function closeContactRequest() {
+    const form = el('p-contact-request-form');
+    if (form) form.style.display = 'none';
+  }
+
+  async function submitContactRequest() {
+    const name  = el('p-cr-name')?.value.trim();
+    const phone = el('p-cr-phone')?.value.trim();
+    const email = el('p-cr-email')?.value.trim();
+    const role  = el('p-cr-role')?.value.trim();
+    if (!name) return toast('Please enter the contact\'s full name', 'error');
+    const body = `Contact request:\nName: ${name}${phone ? `\nPhone: ${phone}` : ''}${email ? `\nEmail: ${email}` : ''}${role ? `\nRole: ${role}` : ''}`;
+    try {
+      await api('POST', '/portal/messages', { subject: 'New Contact Request', body, urgency: 'normal' });
+      toast('Request submitted — our team will add the contact shortly', 'success');
+      closeContactRequest();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
   /* ---- Appointments ---- */
   async function loadAppointments() {
     const tbody = document.getElementById('p-appts-tbody');
@@ -1003,7 +1031,7 @@ const Portal = (() => {
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
     showForgot, showLogin, doForgot, doReset,
     // Contacts
-    loadContacts, updateContactPref,
+    loadContacts, updateContactPref, openContactRequest, closeContactRequest, submitContactRequest,
     // Appointments
     loadAppointments, openNewAppt, closeNewAppt, saveNewAppt, cancelAppointment,
     // Knowledge

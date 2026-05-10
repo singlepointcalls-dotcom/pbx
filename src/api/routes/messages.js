@@ -387,4 +387,14 @@ router.post('/:id/replies', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/messages/tags — distinct tags in use (for autocomplete)
+router.get('/tags/catalog', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT unnest(tags) AS tag FROM messages WHERE cardinality(tags) > 0 ORDER BY tag ASC LIMIT 200`
+    );
+    res.json({ tags: result.rows.map((r) => r.tag) });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

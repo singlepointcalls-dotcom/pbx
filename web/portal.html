@@ -250,9 +250,24 @@
     <section id="p-contacts" class="p-section">
       <div class="p-section-header">
         <h1>&#128101; Contacts</h1>
+        <button class="p-btn p-btn-secondary" onclick="Portal.openContactRequest()">+ Request New Contact</button>
       </div>
       <p class="p-subtitle" style="margin-bottom:16px">People who receive notifications for your account. Edit your own notification preferences below.</p>
       <div id="p-contacts-list"></div>
+
+      <!-- Request new contact form (inline) -->
+      <div id="p-contact-request-form" style="display:none;margin-top:20px;padding:16px;background:var(--p-card-bg,#f8f9fa);border:1px solid #ddd;border-radius:8px;max-width:440px">
+        <h3 style="margin:0 0 12px;font-size:1rem">Request New Contact</h3>
+        <p style="font-size:0.82rem;color:#666;margin-bottom:12px">We will add this contact to your account and set up notifications.</p>
+        <div class="p-field"><label>Full Name *</label><input type="text" id="p-cr-name" class="p-input" /></div>
+        <div class="p-field"><label>Phone</label><input type="tel" id="p-cr-phone" class="p-input" placeholder="+44..." /></div>
+        <div class="p-field"><label>Email</label><input type="email" id="p-cr-email" class="p-input" /></div>
+        <div class="p-field"><label>Role / Title</label><input type="text" id="p-cr-role" class="p-input" placeholder="e.g. Finance Manager" /></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="p-btn p-btn-primary" onclick="Portal.submitContactRequest()">Submit Request</button>
+          <button class="p-btn" onclick="Portal.closeContactRequest()">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <!-- Appointments -->

@@ -923,6 +923,18 @@
           <div id="analytics-hourly-chart" style="height:120px;display:flex;align-items:flex-end;gap:2px;padding:4px 0;border-bottom:1px solid var(--border)"></div>
           <div id="analytics-hourly-wrap" class="analytics-table-wrap" style="display:none"></div>
         </div>
+
+        <!-- Portal satisfaction -->
+        <div class="analytics-chart-box" style="margin-top:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">&#11088; Client Portal Satisfaction (Star Ratings)</h4>
+          </div>
+          <div id="analytics-satisfaction-summary" style="margin-bottom:10px;font-size:0.85rem"></div>
+          <table class="admin-table" id="analytics-satisfaction-table">
+            <thead><tr><th>Client</th><th>Rated</th><th>Avg Rating</th><th>5 Star</th><th>Low (≤2)</th></tr></thead>
+            <tbody id="analytics-satisfaction-tbody"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -2188,12 +2200,15 @@
       <div id="ai-output" style="display:none;background:var(--bg-dark);border-radius:8px;padding:10px 12px;font-size:0.85rem;line-height:1.5;margin-bottom:12px;border-left:3px solid var(--primary)"></div>
       <div id="msg-detail-form-data" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:0.82rem;margin-bottom:10px;line-height:1.6"></div>
       <div id="msg-detail-deliveries" style="font-size:0.8rem;color:var(--text-muted)"></div>
+      <!-- Portal rating (client feedback) -->
+      <div id="msg-detail-rating" style="display:none;margin-top:8px;padding:6px 10px;background:var(--bg-secondary);border-radius:6px;font-size:0.82rem"></div>
       <!-- Tags -->
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-bottom:6px">&#127991; Tags</div>
         <div id="msg-detail-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:22px"></div>
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="text" id="msg-detail-tag-input" placeholder="add-tag, another-tag" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text)" onkeydown="if(event.key==='Enter')App.saveMsgTags()" />
+          <input type="text" id="msg-detail-tag-input" placeholder="add-tag, another-tag" list="tags-datalist" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text)" onkeydown="if(event.key==='Enter')App.saveMsgTags()" />
+          <datalist id="tags-datalist"></datalist>
           <button class="btn btn-sm btn-secondary" onclick="App.saveMsgTags()">Save Tags</button>
         </div>
       </div>

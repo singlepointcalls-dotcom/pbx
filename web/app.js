@@ -1540,6 +1540,18 @@ const App = (() => {
         if (replyInput) replyInput.value = '';
       } catch { /* ignore */ }
 
+      // Show portal rating if present
+      const ratingEl = el('msg-detail-rating');
+      if (ratingEl) {
+        if (m.portal_rating) {
+          const stars = '★'.repeat(m.portal_rating) + '☆'.repeat(5 - m.portal_rating);
+          ratingEl.style.display = 'block';
+          ratingEl.innerHTML = `<span style="color:#f0ad4e;font-size:1rem">${stars}</span> <span style="color:var(--text-muted)">Client rated ${m.portal_rating}/5</span>${m.portal_rating_comment ? ` — <em>${escHtml(m.portal_rating_comment)}</em>` : ''}`;
+        } else {
+          ratingEl.style.display = 'none';
+        }
+      }
+
       // Load delivery log
       try {
         const del = await api('GET', `/messages/${messageId}/deliveries`);
@@ -1547,6 +1559,15 @@ const App = (() => {
         if (deliveries.length) {
           el('msg-detail-deliveries').innerHTML = '<div style="margin-top:8px;font-size:0.78rem"><strong>Deliveries:</strong> ' +
             deliveries.map((d) => `<span class="pill ${d.status === 'sent' ? 'pill-green' : 'pill-red'}" style="margin-right:4px">${escHtml(d.channel)} · ${d.status}</span>`).join('') + '</div>';
+        }
+      } catch { /* ignore */ }
+
+      // Load tags autocomplete
+      try {
+        const tagData = await api('GET', '/messages/tags/catalog');
+        const dl = el('tags-datalist');
+        if (dl && tagData?.tags) {
+          dl.innerHTML = tagData.tags.map((t) => `<option value="${escHtml(t)}">`).join('');
         }
       } catch { /* ignore */ }
     } catch (err) {
@@ -5288,6 +5309,31 @@ const Analytics = (() => {
       renderOperatorsTable(ops?.operators || []);
       renderClientsTable(clients?.clients || []);
       renderHourlyChart(hourly?.hourly || []);
+
+      // Load satisfaction ratings (non-blocking)
+      api('GET', `/analytics/satisfaction${qs}`).then((sat) => {
+        const o = sat?.overall;
+        const summaryEl = el('analytics-satisfaction-summary');
+        if (summaryEl && o) {
+          const stars = o.avg_rating ? '★'.repeat(Math.round(Number(o.avg_rating))) + '☆'.repeat(5 - Math.round(Number(o.avg_rating))) : '—';
+          summaryEl.innerHTML = o.rated_count
+            ? `<strong>Overall:</strong> <span style="color:#f0ad4e">${stars}</span> ${o.avg_rating}/5 avg across ${o.rated_count} rated message${o.rated_count !== 1 ? 's' : ''}`
+            : '<em style="color:#888">No ratings in this period</em>';
+        }
+        const tbody = el('analytics-satisfaction-tbody');
+        if (tbody) {
+          const rows = sat?.by_client || [];
+          tbody.innerHTML = rows.length
+            ? rows.map((r) => `<tr>
+                <td>${escHtml(r.client_name)}</td>
+                <td>${r.rated_count}</td>
+                <td style="color:#f0ad4e">${r.avg_rating}/5</td>
+                <td>${r.five_star}</td>
+                <td>${r.low_rating}</td>
+              </tr>`).join('')
+            : '<tr><td colspan="5" class="empty-state">No ratings in this period</td></tr>';
+        }
+      }).catch(() => {});
     } catch (err) { toast(`Analytics error: ${err.message}`, 'danger'); }
   }
 

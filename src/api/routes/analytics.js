@@ -266,4 +266,42 @@ router.get('/calls/daily', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/analytics/satisfaction — portal star rating summary per client
+router.get('/satisfaction', async (req, res, next) => {
+  try {
+    const { from, to } = parseRange(req);
+    const params = [from, to];
+    let clientFilter = '';
+    if (req.query.client_id) {
+      params.push(req.query.client_id);
+      clientFilter = ` AND m.client_id = $${params.length}`;
+    }
+    const result = await pool.query(
+      `SELECT
+         c.id AS client_id, c.name AS client_name,
+         COUNT(m.portal_rating)::int AS rated_count,
+         ROUND(AVG(m.portal_rating)::numeric, 2)  AS avg_rating,
+         COUNT(*)::int AS total_messages,
+         COUNT(CASE WHEN m.portal_rating = 5 THEN 1 END)::int AS five_star,
+         COUNT(CASE WHEN m.portal_rating <= 2 THEN 1 END)::int AS low_rating
+       FROM messages m
+       JOIN clients c ON m.client_id = c.id
+       WHERE m.created_at BETWEEN $1 AND $2 ${clientFilter}
+       GROUP BY c.id, c.name
+       HAVING COUNT(m.portal_rating) > 0
+       ORDER BY avg_rating DESC`,
+      params
+    );
+    const overall = await pool.query(
+      `SELECT
+         COUNT(portal_rating)::int AS rated_count,
+         ROUND(AVG(portal_rating)::numeric, 2) AS avg_rating
+       FROM messages
+       WHERE created_at BETWEEN $1 AND $2 AND portal_rating IS NOT NULL`,
+      [from, to]
+    );
+    res.json({ overall: overall.rows[0], by_client: result.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
