@@ -72,6 +72,9 @@
       <button class="p-nav-btn active" onclick="Portal.nav('dashboard')">&#128202; Dashboard</button>
       <button class="p-nav-btn" onclick="Portal.nav('messages')">&#128220; Messages</button>
       <button class="p-nav-btn" onclick="Portal.nav('calls')">&#128222; Call History</button>
+      <button class="p-nav-btn" onclick="Portal.nav('contacts')">&#128101; Contacts</button>
+      <button class="p-nav-btn" onclick="Portal.nav('appointments')">&#128197; Appointments</button>
+      <button class="p-nav-btn" onclick="Portal.nav('knowledge')">&#128218; Knowledge</button>
       <button class="p-nav-btn" onclick="Portal.nav('billing')">&#128182; Billing</button>
       <button class="p-nav-btn" onclick="Portal.nav('availability')">&#9200; Availability</button>
       <button class="p-nav-btn" onclick="Portal.nav('account')">&#128100; Account</button>
@@ -194,6 +197,61 @@
         <label>Optional Note (shown to operators)</label>
         <input type="text" id="p-avail-note" placeholder="e.g. Back at 3pm, call mobile for emergencies" />
         <button class="p-btn p-btn-primary" style="margin-top:10px" onclick="Portal.saveAvailNote()">Save Note</button>
+      </div>
+    </section>
+
+    <!-- Contacts -->
+    <section id="p-contacts" class="p-section">
+      <div class="p-section-header">
+        <h1>&#128101; Contacts</h1>
+      </div>
+      <p class="p-subtitle" style="margin-bottom:16px">People who receive notifications for your account. Edit your own notification preferences below.</p>
+      <div id="p-contacts-list"></div>
+    </section>
+
+    <!-- Appointments -->
+    <section id="p-appointments" class="p-section">
+      <div class="p-section-header">
+        <h1>&#128197; Appointments</h1>
+        <div style="display:flex;gap:8px;align-items:center">
+          <a href="/api/portal/appointments/ical" download="appointments.ics" class="p-btn p-btn-secondary" style="text-decoration:none;font-size:0.82rem">&#128197; iCal</a>
+          <button class="p-btn p-btn-primary" onclick="Portal.openNewAppt()">+ New</button>
+        </div>
+      </div>
+      <div class="p-table-wrap">
+        <table class="p-table">
+          <thead><tr><th>Date &amp; Time</th><th>Title</th><th>Duration</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody id="p-appts-tbody"><tr><td colspan="5" class="p-empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- New appointment form (inline) -->
+      <div id="p-new-appt-form" style="display:none;margin-top:24px;padding:16px;background:var(--p-card-bg,#f8f9fa);border:1px solid #ddd;border-radius:8px;max-width:480px">
+        <h3 style="margin-bottom:12px;font-size:1rem">New Appointment</h3>
+        <div class="p-field"><label>Title *</label><input type="text" id="p-appt-title" class="p-input" /></div>
+        <div class="p-field"><label>Start Date &amp; Time *</label><input type="datetime-local" id="p-appt-starts" class="p-input" /></div>
+        <div class="p-field"><label>Duration (minutes)</label><input type="number" id="p-appt-duration" class="p-input" value="30" min="5" max="480" /></div>
+        <div class="p-field"><label>Notes</label><textarea id="p-appt-notes" class="p-input" rows="3"></textarea></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="p-btn p-btn-primary" onclick="Portal.saveNewAppt()">Save</button>
+          <button class="p-btn" onclick="Portal.closeNewAppt()">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Knowledge Base -->
+    <section id="p-knowledge" class="p-section">
+      <div class="p-section-header">
+        <h1>&#128218; Knowledge Base</h1>
+        <input type="text" id="p-kb-search" class="p-select" placeholder="Search articles..." oninput="Portal.searchKnowledge()" style="width:200px" />
+      </div>
+      <div id="p-kb-list"></div>
+      <!-- Article detail view -->
+      <div id="p-kb-article" style="display:none">
+        <button class="p-btn p-btn-secondary" onclick="Portal.closeArticle()" style="margin-bottom:16px">&#8592; Back</button>
+        <h2 id="p-kb-article-title" style="margin-bottom:4px"></h2>
+        <p id="p-kb-article-meta" style="color:#888;font-size:0.82rem;margin-bottom:16px"></p>
+        <div id="p-kb-article-body" style="line-height:1.7;white-space:pre-wrap"></div>
       </div>
     </section>
 

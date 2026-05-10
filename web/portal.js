@@ -180,6 +180,9 @@ const Portal = (() => {
     if (section === 'dashboard') loadDashboard();
     else if (section === 'messages') { msgOffset = 0; loadMessages(); }
     else if (section === 'calls') loadCalls();
+    else if (section === 'contacts') loadContacts();
+    else if (section === 'appointments') loadAppointments();
+    else if (section === 'knowledge') loadKnowledge();
     else if (section === 'billing') loadBilling();
     else if (section === 'availability') loadAvailability();
     else if (section === 'account') loadAccount();
@@ -570,6 +573,170 @@ const Portal = (() => {
     }
   }
 
+  /* ---- Contacts ---- */
+  async function loadContacts() {
+    const container = document.getElementById('p-contacts-list');
+    if (!container) return;
+    container.innerHTML = '<p style="color:#888">Loading...</p>';
+    try {
+      const data = await api('GET', '/portal/contacts');
+      const contacts = data.contacts || [];
+      if (!contacts.length) {
+        container.innerHTML = '<p class="p-empty">No contacts found.</p>';
+        return;
+      }
+      container.innerHTML = contacts.map((c) => `
+        <div style="border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;max-width:600px">
+          <div style="font-weight:600;font-size:1rem">${escHtml(c.name)}</div>
+          <div style="font-size:0.85rem;color:#555">${escHtml(c.email || '')} ${c.phone ? '· ' + escHtml(c.phone) : ''}</div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.82rem;color:#555">
+            <label><input type="checkbox" ${c.notify_email ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_email', this.checked)"> Email</label>
+            <label><input type="checkbox" ${c.notify_sms ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_sms', this.checked)"> SMS</label>
+            <label><input type="checkbox" ${c.notify_whatsapp ? 'checked' : ''} onchange="Portal.updateContactPref('${c.id}', 'notify_whatsapp', this.checked)"> WhatsApp</label>
+          </div>
+          <div style="font-size:0.8rem;color:#888">Priority: ${c.priority || 1} · ${c.title ? escHtml(c.title) : 'No title'}</div>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="p-empty">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function updateContactPref(contactId, field, value) {
+    try {
+      await api('PUT', `/portal/contacts/${contactId}`, { [field]: value });
+      // Show brief toast feedback
+      const msg = `${field.replace('notify_', '')} notifications ${value ? 'enabled' : 'disabled'}`;
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#27ae60;color:#fff;padding:8px 14px;border-radius:6px;z-index:9999;font-size:0.88rem';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    } catch (err) {
+      alert('Failed to update: ' + err.message);
+    }
+  }
+
+  /* ---- Appointments ---- */
+  async function loadAppointments() {
+    const tbody = document.getElementById('p-appts-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="p-empty">Loading...</td></tr>';
+    try {
+      const data = await api('GET', '/portal/appointments');
+      const appts = data.appointments || [];
+      if (!appts.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-empty">No appointments</td></tr>';
+        return;
+      }
+      const statusColor = { scheduled: '#3498db', completed: '#27ae60', cancelled: '#e74c3c', no_show: '#e67e22' };
+      tbody.innerHTML = appts.map((a) => `<tr>
+        <td>${new Date(a.starts_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</td>
+        <td>${escHtml(a.title)}</td>
+        <td>${a.duration_minutes || 30} min</td>
+        <td><span style="color:${statusColor[a.status] || '#666'}">${a.status}</span></td>
+        <td>${escHtml(a.notes || '')}</td>
+      </tr>`).join('');
+    } catch (err) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-empty">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function openNewAppt() {
+    const form = document.getElementById('p-new-appt-form');
+    if (form) form.style.display = 'block';
+  }
+
+  function closeNewAppt() {
+    const form = document.getElementById('p-new-appt-form');
+    if (form) form.style.display = 'none';
+  }
+
+  async function saveNewAppt() {
+    const title    = document.getElementById('p-appt-title')?.value?.trim();
+    const starts   = document.getElementById('p-appt-starts')?.value;
+    const duration = parseInt(document.getElementById('p-appt-duration')?.value || '30');
+    const notes    = document.getElementById('p-appt-notes')?.value?.trim() || null;
+    if (!title || !starts) { alert('Title and start time are required'); return; }
+    try {
+      await api('POST', '/portal/appointments', { title, starts_at: starts, duration_minutes: duration, notes });
+      closeNewAppt();
+      loadAppointments();
+    } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  /* ---- Knowledge Base ---- */
+  let _kbArticles = [];
+
+  async function loadKnowledge() {
+    const list = document.getElementById('p-kb-list');
+    if (!list) return;
+    list.innerHTML = '<p style="color:#888">Loading...</p>';
+    try {
+      const data = await api('GET', '/portal/knowledge');
+      _kbArticles = data.articles || [];
+      renderKbList(_kbArticles);
+    } catch (err) {
+      list.innerHTML = `<p class="p-empty">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  function renderKbList(articles) {
+    const list = document.getElementById('p-kb-list');
+    if (!list) return;
+    const articleEl = document.getElementById('p-kb-article');
+    if (articleEl) articleEl.style.display = 'none';
+    if (!articles.length) {
+      list.innerHTML = '<p class="p-empty">No articles available</p>';
+      return;
+    }
+    list.innerHTML = articles.map((a) => `
+      <div onclick="Portal.openArticle('${a.id}')"
+           style="padding:14px 16px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;cursor:pointer;max-width:640px">
+        <div style="font-weight:600;font-size:0.95rem">${escHtml(a.title)}</div>
+        ${a.category ? `<div style="font-size:0.78rem;color:#888;margin-top:2px">${escHtml(a.category)}</div>` : ''}
+        ${a.summary ? `<div style="font-size:0.82rem;color:#555;margin-top:4px">${escHtml(a.summary)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function searchKnowledge() {
+    const q = (document.getElementById('p-kb-search')?.value || '').toLowerCase();
+    if (!q) { renderKbList(_kbArticles); return; }
+    renderKbList(_kbArticles.filter((a) =>
+      (a.title || '').toLowerCase().includes(q) ||
+      (a.summary || '').toLowerCase().includes(q) ||
+      (a.category || '').toLowerCase().includes(q)
+    ));
+  }
+
+  async function openArticle(id) {
+    const list = document.getElementById('p-kb-list');
+    const article = document.getElementById('p-kb-article');
+    if (!article) return;
+    if (list) list.style.display = 'none';
+    article.style.display = 'block';
+    document.getElementById('p-kb-article-title').textContent = 'Loading...';
+    document.getElementById('p-kb-article-body').textContent  = '';
+    try {
+      const data = await api('GET', `/portal/knowledge/${id}`);
+      const a = data.article;
+      document.getElementById('p-kb-article-title').textContent = a.title || '';
+      document.getElementById('p-kb-article-meta').textContent  =
+        `${a.category ? a.category + ' · ' : ''}Updated ${new Date(a.updated_at || a.created_at).toLocaleDateString('en-GB')}`;
+      document.getElementById('p-kb-article-body').textContent  = a.content || '';
+    } catch (err) {
+      document.getElementById('p-kb-article-body').textContent = 'Error loading article.';
+    }
+  }
+
+  function closeArticle() {
+    const list = document.getElementById('p-kb-list');
+    const article = document.getElementById('p-kb-article');
+    if (list) list.style.display = 'block';
+    if (article) article.style.display = 'none';
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
   return {
@@ -578,5 +745,11 @@ const Portal = (() => {
     toggleMobileNav, enablePush, dismissPushBanner,
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
     showForgot, showLogin, doForgot, doReset,
+    // Contacts
+    loadContacts, updateContactPref,
+    // Appointments
+    loadAppointments, openNewAppt, closeNewAppt, saveNewAppt,
+    // Knowledge
+    loadKnowledge, searchKnowledge, openArticle, closeArticle,
   };
 })();
