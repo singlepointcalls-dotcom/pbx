@@ -379,7 +379,14 @@
             </div>
           </div>
           <div class="field">
-            <label>Subject</label>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <label style="margin:0">Subject</label>
+              <div id="msg-templates-wrapper" style="display:none;position:relative">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="App.toggleTemplateMenu()" id="msg-template-btn" title="Load message template">&#128196; Templates</button>
+                <div id="msg-template-menu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;min-width:200px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.2);max-height:200px;overflow-y:auto">
+                </div>
+              </div>
+            </div>
             <input type="text" id="msg-subject" placeholder="Brief subject line" />
           </div>
           <div class="field">
@@ -1270,6 +1277,7 @@
         <button type="button" class="modal-tab" id="tab-news-btn" onclick="Admin.showClientTab('news',this)" style="display:none">News</button>
         <button type="button" class="modal-tab" id="tab-portal-btn" onclick="Admin.showClientTab('portal',this)" style="display:none">Portal Users</button>
         <button type="button" class="modal-tab" id="tab-webhooks-btn" onclick="Admin.showClientTab('webhooks',this)" style="display:none">&#128268; Webhooks</button>
+        <button type="button" class="modal-tab" id="tab-msgtpl-btn" onclick="Admin.showClientTab('msgtpl',this)" style="display:none">&#128196; Msg Templates</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -1652,6 +1660,45 @@
         <table class="admin-table">
           <thead><tr><th>URL</th><th>Events</th><th>Active</th><th>Last Triggered</th><th></th></tr></thead>
           <tbody id="webhooks-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Tab: Message Templates -->
+      <div id="ctab-msgtpl" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>&#128196; Message Templates</h4>
+          <button type="button" class="btn btn-sm btn-primary" onclick="Admin.openMsgTplNew()">+ Add Template</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Define quick-fill templates that operators can load with one click when taking a message for this client.
+        </p>
+        <div id="msgtpl-new-form" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px">
+          <div style="display:grid;gap:8px">
+            <div class="field"><label>Template Name *</label><input type="text" id="msgtpl-name" placeholder="e.g. Appointment Request" /></div>
+            <div class="field"><label>Subject</label><input type="text" id="msgtpl-subject" placeholder="Optional pre-filled subject" /></div>
+            <div class="field"><label>Body *</label><textarea id="msgtpl-body" rows="3" placeholder="Pre-filled message body..."></textarea></div>
+            <div style="display:flex;gap:8px">
+              <div class="field"><label>Call Type</label>
+                <select id="msgtpl-calltype">
+                  <option value="standard">Standard Message</option>
+                  <option value="appointment">Appointment</option>
+                  <option value="callback">Callback Request</option>
+                  <option value="voicemail">Voicemail</option>
+                </select>
+              </div>
+              <div class="field"><label>Urgency</label>
+                <select id="msgtpl-urgency"><option value="normal">Normal</option><option value="low">Low</option><option value="urgent">Urgent</option></select>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-primary btn-sm" onclick="Admin.saveMsgTpl()">Save</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="Admin.closeMsgTplNew()">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <table class="admin-table">
+          <thead><tr><th>Name</th><th>Subject</th><th>Call Type</th><th>Urgency</th><th></th></tr></thead>
+          <tbody id="msgtpl-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
 

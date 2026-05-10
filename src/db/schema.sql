@@ -1084,3 +1084,19 @@ CREATE TABLE IF NOT EXISTS operator_targets (
   qa_score_target   INT NOT NULL DEFAULT 0 CHECK (qa_score_target BETWEEN 0 AND 100),
   updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================================
+-- v22 — Client message templates
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS message_templates (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID REFERENCES clients(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  subject     TEXT,
+  body        TEXT NOT NULL DEFAULT '',
+  call_type   TEXT NOT NULL DEFAULT 'standard',
+  urgency     TEXT NOT NULL DEFAULT 'normal',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_msg_templates_client ON message_templates(client_id);

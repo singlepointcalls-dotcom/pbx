@@ -307,6 +307,12 @@ const App = (() => {
     // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyboardShortcut);
 
+    // Refresh active calls list every 30s for supervisor monitoring buttons
+    if (currentOperator.role === 'admin' || currentOperator.role === 'supervisor') {
+      refreshActiveCalls();
+      setInterval(refreshActiveCalls, 30000);
+    }
+
     // Load canned responses for autocomplete
     loadCannedResponsesForAutocomplete();
 
@@ -1208,6 +1214,46 @@ const App = (() => {
   }
 
   /* ---- Custom Form Rendering ---- */
+  let _clientTemplates = [];
+
+  function toggleTemplateMenu() {
+    const menu = el('msg-template-menu');
+    if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function applyMessageTemplate(idx) {
+    const t = _clientTemplates[idx];
+    if (!t) return;
+    el('msg-subject').value = t.subject || '';
+    el('msg-body').value = t.body || '';
+    if (t.call_type) { const ct = el('msg-call-type'); if (ct) ct.value = t.call_type; }
+    if (t.urgency)   { const ur = el('msg-urgency');   if (ur) ur.value = t.urgency; }
+    const menu = el('msg-template-menu');
+    if (menu) menu.style.display = 'none';
+    onCallTypeChange();
+  }
+
+  async function _loadClientTemplates(clientId) {
+    const wrapper = el('msg-templates-wrapper');
+    const menu = el('msg-template-menu');
+    if (!wrapper || !menu) return;
+    try {
+      const data = await api('GET', `/clients/${clientId}/message-templates`);
+      _clientTemplates = data.templates || [];
+      if (_clientTemplates.length) {
+        wrapper.style.display = '';
+        menu.innerHTML = _clientTemplates.map((t, i) =>
+          `<div class="template-item" onclick="App.applyMessageTemplate(${i})" style="padding:8px 12px;cursor:pointer;font-size:0.85rem;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">${escHtml(t.name)}</div>`
+        ).join('');
+      } else {
+        wrapper.style.display = 'none';
+        menu.innerHTML = '';
+      }
+    } catch (_) {
+      wrapper.style.display = 'none';
+    }
+  }
+
   function onClientChange() {
     const clientId = el('msg-client').value;
     const container = el('custom-form-fields');
@@ -1215,6 +1261,9 @@ const App = (() => {
 
     const client = clients.find((c) => c.id === clientId);
     if (!client) return;
+
+    // Load message templates for this client
+    _loadClientTemplates(clientId);
 
     const fields = client.custom_form || [];
     if (!fields.length) return;
@@ -1579,23 +1628,60 @@ const App = (() => {
   }
 
   /* ---- Operators ---- */
+  let _activeCallsByChannel = new Map();
+
+  async function refreshActiveCalls() {
+    try {
+      const data = await api('GET', '/callcontrol/active');
+      _activeCallsByChannel = new Map((data.calls || []).map((c) => [c.channelId, c]));
+    } catch (_) { _activeCallsByChannel = new Map(); }
+  }
+
   function renderOperators(operators) {
     const container = el('operators-list');
     if (!operators.length) {
       container.innerHTML = '<p class="empty-state">No operators online</p>';
       return;
     }
+    const isSupervisor = currentOperator?.role === 'admin' || currentOperator?.role === 'supervisor';
     const statusLabel = { ready:'Ready', busy:'On Call', break:'On Break', lunch:'Lunch',
       training:'Training', admin:'Admin', offline:'Offline' };
     const dotClass = { ready:'dot-ready', busy:'dot-busy', break:'dot-break', lunch:'dot-lunch',
       training:'dot-training', admin:'dot-admin', offline:'dot-offline' };
-    container.innerHTML = operators.map((op) => `
+
+    // Find active channels if supervisor
+    const activeCalls = Array.from(_activeCallsByChannel.values());
+
+    container.innerHTML = operators.map((op) => {
+      // Find an active call for this operator (match by callLogId if we can, else skip)
+      const opCall = activeCalls.find((c) => c.operatorId === op.id);
+      const monitorBtns = isSupervisor && opCall && op.status === 'busy'
+        ? `<div style="display:flex;gap:3px;margin-top:4px">
+            <button class="btn btn-sm" style="font-size:0.65rem;padding:2px 6px" title="Listen silently" onclick="App.supervisorMonitor('${opCall.channelId}','listen')">&#128048; Listen</button>
+            <button class="btn btn-sm" style="font-size:0.65rem;padding:2px 6px" title="Whisper to operator" onclick="App.supervisorMonitor('${opCall.channelId}','whisper')">&#128172; Whisper</button>
+            <button class="btn btn-sm" style="font-size:0.65rem;padding:2px 6px" title="Join call" onclick="App.supervisorMonitor('${opCall.channelId}','barge')">&#127774; Barge</button>
+          </div>`
+        : '';
+      return `
       <div class="operator-item">
         <span class="status-dot ${dotClass[op.status] || 'dot-offline'}"></span>
-        <span class="op-name">${escHtml(op.fullName || op.username)}</span>
-        <span class="op-status" style="font-size:0.72rem;color:var(--text-muted);margin-left:4px">${statusLabel[op.status] || op.status}</span>
-      </div>
-    `).join('');
+        <div style="flex:1;min-width:0">
+          <div><span class="op-name">${escHtml(op.fullName || op.username)}</span>
+          <span class="op-status" style="font-size:0.72rem;color:var(--text-muted);margin-left:4px">${statusLabel[op.status] || op.status}</span></div>
+          ${monitorBtns}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function supervisorMonitor(channelId, mode) {
+    const ext = prompt(`Your SIP extension to join call (${mode} mode):`);
+    if (!ext) return;
+    const endpoint = mode === 'listen' ? 'monitor' : mode === 'whisper' ? 'whisper' : 'barge';
+    try {
+      await api('POST', `/callcontrol/${channelId}/${endpoint}`, { supervisor_extension: ext });
+      toast(`Connected in ${mode} mode`, 'success');
+    } catch (err) { toast(`${mode} failed: ${err.message}`, 'danger'); }
   }
 
   /* ---- Utilities ---- */
@@ -2511,6 +2597,13 @@ const App = (() => {
     if (searchRes && searchRes.style.display !== 'none' && searchWrap && !searchWrap.contains(e.target)) {
       searchRes.style.display = 'none';
     }
+    // Close template menu when clicking outside
+    const templateMenu = el('msg-template-menu');
+    const templateBtn  = el('msg-template-btn');
+    if (templateMenu && templateMenu.style.display !== 'none' &&
+        !templateMenu.contains(e.target) && e.target !== templateBtn) {
+      templateMenu.style.display = 'none';
+    }
   }, true);
 
   // On mobile: when a call is answered switch to form panel automatically
@@ -2647,6 +2740,10 @@ const App = (() => {
     loadFollowUps, completeFollowUp,
     // Notification preferences
     saveNotificationPrefs,
+    // Supervisor monitoring
+    supervisorMonitor,
+    // Message templates
+    toggleTemplateMenu, applyMessageTemplate,
     // Bulk actions
     bulkAcknowledge,
     // Caller ID hint
@@ -2739,6 +2836,7 @@ const Admin = (() => {
     if (name === 'news' && editingClientId) loadClientNewsAdmin(editingClientId);
     if (name === 'portal' && editingClientId) loadPortalUsers(editingClientId);
     if (name === 'webhooks' && editingClientId) loadWebhooks(editingClientId);
+    if (name === 'msgtpl' && editingClientId) loadMsgTemplates();
   }
 
   /* ---- Clients ---- */
@@ -2805,7 +2903,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -4330,6 +4428,60 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Client Message Templates ---- */
+  async function loadMsgTemplates() {
+    if (!editingClientId) return;
+    const tbody = el('msgtpl-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+    try {
+      const { templates } = await api('GET', `/clients/${editingClientId}/message-templates`);
+      if (!templates.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No templates defined. Add one to speed up message taking.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = templates.map((t) => `
+        <tr>
+          <td><strong>${escHtml(t.name)}</strong></td>
+          <td>${escHtml(t.subject || '—')}</td>
+          <td>${escHtml(t.call_type)}</td>
+          <td>${escHtml(t.urgency)}</td>
+          <td><button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer" onclick="Admin.deleteMsgTpl('${t.id}')">Delete</button></td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function openMsgTplNew() { el('msgtpl-new-form').style.display = 'block'; }
+  function closeMsgTplNew() { el('msgtpl-new-form').style.display = 'none'; }
+
+  async function saveMsgTpl() {
+    if (!editingClientId) return;
+    const name = el('msgtpl-name').value.trim();
+    const body = el('msgtpl-body').value.trim();
+    if (!name || !body) return toast('Name and body are required', 'danger');
+    try {
+      await api('POST', `/clients/${editingClientId}/message-templates`, {
+        name, subject: el('msgtpl-subject').value.trim() || null,
+        body, call_type: el('msgtpl-calltype').value, urgency: el('msgtpl-urgency').value,
+      });
+      toast('Template saved', 'success');
+      closeMsgTplNew();
+      loadMsgTemplates();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function deleteMsgTpl(templateId) {
+    if (!confirm('Delete this template?')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/message-templates/${templateId}`);
+      toast('Template deleted');
+      loadMsgTemplates();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
   async function removeLogo() {
     if (!editingClientId) return;
     try {
@@ -4594,6 +4746,8 @@ const Admin = (() => {
     loadWebhooks, addWebhook, testWebhook, deleteWebhook,
     sendTestEmail,
     uploadLogo, removeLogo,
+    // Message templates
+    loadMsgTemplates, openMsgTplNew, closeMsgTplNew, saveMsgTpl, deleteMsgTpl,
     // Performance
     loadPerformance,
     // Targets

@@ -491,5 +491,69 @@ router.post('/:id/webhooks/:webhookId/test', requireRole('admin', 'supervisor'),
   } catch (err) { next(err); }
 });
 
+// ── Message templates per client ────────────────────────────────────────────
+
+// GET /api/clients/:id/message-templates
+router.get('/:id/message-templates', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM message_templates WHERE client_id = $1 ORDER BY name ASC',
+      [req.params.id]
+    );
+    res.json({ templates: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/clients/:id/message-templates
+router.post('/:id/message-templates', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { name, subject, body, call_type = 'standard', urgency = 'normal' } = req.body;
+    if (!name || !body) return res.status(400).json({ error: 'name and body are required' });
+    const validCallTypes = ['standard', 'message_only', 'transfer', 'voicemail', 'appointment', 'callback',
+      'sales', 'wrong_number', 'no_information', 'email_inbound', 'portal_message'];
+    const validUrgency = ['low', 'normal', 'urgent'];
+    if (!validCallTypes.includes(call_type)) return res.status(400).json({ error: 'Invalid call_type' });
+    if (!validUrgency.includes(urgency)) return res.status(400).json({ error: 'Invalid urgency' });
+
+    const result = await pool.query(
+      `INSERT INTO message_templates (client_id, name, subject, body, call_type, urgency)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [req.params.id, name, subject || null, body, call_type, urgency]
+    );
+    res.status(201).json({ template: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/clients/:id/message-templates/:templateId
+router.put('/:id/message-templates/:templateId', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { name, subject, body, call_type, urgency } = req.body;
+    const result = await pool.query(
+      `UPDATE message_templates SET
+         name      = COALESCE($1, name),
+         subject   = COALESCE($2, subject),
+         body      = COALESCE($3, body),
+         call_type = COALESCE($4, call_type),
+         urgency   = COALESCE($5, urgency)
+       WHERE id = $6 AND client_id = $7 RETURNING *`,
+      [name, subject, body, call_type, urgency, req.params.templateId, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Template not found' });
+    res.json({ template: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/clients/:id/message-templates/:templateId
+router.delete('/:id/message-templates/:templateId', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM message_templates WHERE id = $1 AND client_id = $2 RETURNING id',
+      [req.params.templateId, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Template not found' });
+    res.json({ message: 'Template deleted' });
+  } catch (err) { next(err); }
+});
+
 router._isWithinBusinessHours = isWithinBusinessHours;
 module.exports = router;
