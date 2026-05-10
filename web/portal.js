@@ -695,6 +695,7 @@ const Portal = (() => {
         <td>${a.duration_minutes || 30} min</td>
         <td><span style="color:${statusColor[a.status] || '#666'}">${a.status}</span></td>
         <td>${escHtml(a.notes || '')}</td>
+        <td>${a.status === 'scheduled' ? `<button class="p-btn p-btn-sm" style="background:#e74c3c;color:#fff;border:none;cursor:pointer;padding:3px 10px;border-radius:4px;font-size:0.8rem" onclick="Portal.cancelAppointment('${a.id}', this)">Cancel</button>` : ''}</td>
       </tr>`).join('');
     } catch (err) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-empty">Error: ${escHtml(err.message)}</td></tr>`;
@@ -722,6 +723,15 @@ const Portal = (() => {
       closeNewAppt();
       loadAppointments();
     } catch (err) { alert('Error: ' + err.message); }
+  }
+
+  async function cancelAppointment(id, btn) {
+    if (!confirm('Cancel this appointment?')) return;
+    btn.disabled = true;
+    try {
+      await api('DELETE', `/portal/appointments/${id}`);
+      loadAppointments();
+    } catch (err) { alert('Error: ' + err.message); btn.disabled = false; }
   }
 
   /* ---- Knowledge Base ---- */
@@ -807,7 +817,7 @@ const Portal = (() => {
     // Contacts
     loadContacts, updateContactPref,
     // Appointments
-    loadAppointments, openNewAppt, closeNewAppt, saveNewAppt,
+    loadAppointments, openNewAppt, closeNewAppt, saveNewAppt, cancelAppointment,
     // Knowledge
     loadKnowledge, searchKnowledge, openArticle, closeArticle,
   };

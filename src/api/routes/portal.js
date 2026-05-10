@@ -508,6 +508,24 @@ router.post('/appointments', requirePortalAuth, async (req, res, next) => {
 
 // ── Portal self-service: knowledge base ──────────────────────────────────
 
+// DELETE /api/portal/appointments/:id — cancel a portal-booked appointment
+router.delete('/appointments/:id', requirePortalAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE appointments SET status = 'cancelled'
+       WHERE id = $1 AND client_id = $2 AND status NOT IN ('cancelled','completed')
+       RETURNING id, status`,
+      [req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Appointment not found or already cancelled' });
+    }
+    const { broadcast } = require('../../services/realtime');
+    broadcast('appointment:updated', { appointment: result.rows[0] });
+    res.json({ appointment: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/knowledge — browse client-specific knowledge articles
 router.get('/knowledge', requirePortalAuth, async (req, res, next) => {
   try {
