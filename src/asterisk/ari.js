@@ -161,6 +161,38 @@ async function handleStasisStart(event, channel) {
           clientName: client.name,
         });
         try { await channel.hangup(); } catch { /* best-effort */ }
+
+        // Notify on-call contact via SMS (fire-and-forget)
+        setImmediate(async () => {
+          try {
+            const now = new Date();
+            const dayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: client.timezone || 'UTC' }).toLowerCase();
+            const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: client.timezone || 'UTC' });
+            const oncallResult = await pool.query(
+              `SELECT c.phone AS contact_phone, c.name AS contact_name
+               FROM oncall_schedules os
+               JOIN contacts c ON os.contact_id = c.id
+               WHERE os.client_id = $1
+                 AND (os.day_of_week IS NULL OR os.day_of_week = $2)
+                 AND (os.override_start IS NULL OR NOW() BETWEEN os.override_start AND os.override_end)
+               LIMIT 1`,
+              [client.id, dayName]
+            );
+            const oncallContact = oncallResult.rows[0];
+            if (oncallContact?.contact_phone && process.env.TWILIO_ACCOUNT_SID) {
+              const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+              await twilio.messages.create({
+                body: `[${client.name}] Out-of-hours missed call from ${callerIdNum}${callerIdName ? ` (${callerIdName})` : ''} at ${timeStr}. You are on-call.`,
+                from: process.env.TWILIO_FROM,
+                to: oncallContact.contact_phone,
+              });
+              console.log(`[ARI] Out-of-hours SMS sent to on-call contact ${oncallContact.contact_name}`);
+            }
+          } catch (err) {
+            console.warn('[ARI] On-call SMS notification failed:', err.message);
+          }
+        });
+
         return;
       }
     } catch (err) {

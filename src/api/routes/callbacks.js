@@ -218,4 +218,34 @@ router.get('/queue/next', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/callbacks/direct — schedule a one-off callback from an existing message
+// Creates a callback_record directly (source='direct') without requiring a campaign.
+router.post('/direct', async (req, res, next) => {
+  try {
+    const { phone_number, caller_name, client_id, notes, message_id, scheduled_for } = req.body;
+    if (!phone_number) return res.status(400).json({ error: 'phone_number is required' });
+
+    const result = await pool.query(
+      `INSERT INTO callback_records
+         (phone_number, caller_name, client_id, notes, source, status, scheduled_for)
+       VALUES ($1, $2, $3, $4, 'direct', 'pending', $5)
+       RETURNING *`,
+      [phone_number, caller_name || null, client_id || null, notes || null, scheduled_for || null]
+    );
+    const record = result.rows[0];
+
+    // Link message to callback record if provided
+    if (message_id) {
+      await pool.query(
+        'UPDATE messages SET disposition_notes = COALESCE(disposition_notes, \'\') || $1 WHERE id = $2',
+        [`\n[Callback scheduled: ${phone_number}]`, message_id]
+      ).catch(() => { /* non-fatal */ });
+    }
+
+    await audit.log(req, 'callback.direct', { resourceId: record.id, phone_number });
+    broadcast('callback:scheduled', { record });
+    res.status(201).json({ record });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

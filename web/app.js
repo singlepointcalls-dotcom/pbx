@@ -599,6 +599,16 @@ const App = (() => {
       toast(`Portal reply on message ${data.message_id.slice(0,8)}…`, 'info', 5000);
       loadMessages();
     });
+    socket.on('message:archived', () => loadMessages());
+    socket.on('message:assigned', () => loadMessages());
+    socket.on('message:tags_updated', () => loadMessages());
+    socket.on('message:updated', () => loadMessages());
+    socket.on('call:out_of_hours', (data) => {
+      toast(`Out-of-hours call from ${data.callerIdNum || 'Unknown'} for ${data.clientName || 'client'} — logged and rejected`, 'warning', 6000);
+    });
+    socket.on('call:dnc_blocked', (data) => {
+      toast(`DNC-blocked call from ${data.callerIdNum || 'Unknown'} — rejected`, 'info', 4000);
+    });
     socket.on('client:availability', (data) => {
       // Update active call panel if it's for the current call's client
       if (activeCall?.client?.id === data.client_id) {
@@ -1466,6 +1476,7 @@ const App = (() => {
 
   let _detailMessageId = null;
   let _detailMessageBody = '';
+  let _detailMessage = null; // full message object
 
   async function showMessageDetail(messageId) {
     _detailMessageId = messageId;
@@ -1487,6 +1498,7 @@ const App = (() => {
       if (!data) return;
       const m = data.message;
       _detailMessageBody = m.body || '';
+      _detailMessage = m;
       // Mark as read (fire-and-forget)
       if (!m.read_at) api('PATCH', `/messages/${messageId}/read`, {}).catch(() => {});
       el('msg-detail-title').textContent = m.subject || 'Message';
@@ -1751,6 +1763,24 @@ const App = (() => {
       closeMsgDetail();
       loadMessages();
     } catch (err) { toast(`Redeliver failed: ${err.message}`, 'danger'); }
+  }
+
+  async function scheduleCallbackFromMsg() {
+    if (!_detailMessageId || !_detailMessage) return;
+    const phone = _detailMessage.caller_phone;
+    if (!phone) { toast('No caller phone number on this message', 'warning'); return; }
+    const notes = prompt(`Schedule callback for ${phone}\n\nAdd a note (optional):`, '');
+    if (notes === null) return; // cancelled
+    try {
+      await api('POST', '/callbacks/direct', {
+        phone_number: phone,
+        caller_name: _detailMessage.caller_name || null,
+        client_id: _detailMessage.client_id || null,
+        notes: notes.trim() || null,
+        message_id: _detailMessageId,
+      });
+      toast(`Callback scheduled for ${phone}`, 'success');
+    } catch (err) { toast(`Callback failed: ${err.message}`, 'danger'); }
   }
 
   async function toggleMsgFlag() {
@@ -5469,6 +5499,8 @@ const Admin = (() => {
     exportMessagesCsv, exportCallsCsv,
     // Caller profile
     showCallerProfile, closeCallerProfile,
+    // Callback from message
+    scheduleCallbackFromMsg,
   };
 
 })();
