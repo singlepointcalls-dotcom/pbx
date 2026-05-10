@@ -210,6 +210,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
       halo_customer_id, halo_ticket_type_id, csat_enabled, sla_minutes,
       crm_type, crm_config,
+      auto_reply_enabled, auto_reply_subject, auto_reply_body,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -258,7 +259,10 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          csat_enabled           = COALESCE($36, csat_enabled),
          sla_minutes            = COALESCE($37, sla_minutes),
          crm_type               = COALESCE($38, crm_type),
-         crm_config             = COALESCE($39, crm_config)
+         crm_config             = COALESCE($39, crm_config),
+         auto_reply_enabled     = COALESCE($40, auto_reply_enabled),
+         auto_reply_subject     = COALESCE($41, auto_reply_subject),
+         auto_reply_body        = COALESCE($42, auto_reply_body)
        WHERE id = $22
        RETURNING *`,
       [
@@ -294,6 +298,9 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         sla_minutes              !== undefined ? parseInt(sla_minutes)              : null,
         crm_type                 !== undefined ? (crm_type || null)                 : null,
         crm_config               !== undefined ? JSON.stringify(crm_config)         : null,
+        auto_reply_enabled       !== undefined ? !!auto_reply_enabled               : null,
+        auto_reply_subject       !== undefined ? (auto_reply_subject || null)       : null,
+        auto_reply_body          !== undefined ? (auto_reply_body || null)          : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });

@@ -293,4 +293,40 @@ router.get('/targets/all', requireRole('admin', 'supervisor'), async (req, res, 
   } catch (err) { next(err); }
 });
 
+// GET /api/operators/presence — live status snapshot for supervisor team view
+router.get('/presence', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         o.id, o.full_name, o.username, o.role,
+         o.current_status, o.status_changed_at,
+         o.is_active,
+         -- On break?
+         EXISTS (
+           SELECT 1 FROM operator_breaks ob
+           WHERE ob.operator_id = o.id AND ob.ended_at IS NULL
+         ) AS is_on_break,
+         -- Break type
+         (SELECT ob.break_type FROM operator_breaks ob
+          WHERE ob.operator_id = o.id AND ob.ended_at IS NULL
+          ORDER BY ob.started_at DESC LIMIT 1) AS break_type,
+         -- Active call?
+         EXISTS (
+           SELECT 1 FROM call_logs cl
+           WHERE cl.operator_id = o.id AND cl.call_end IS NULL AND cl.call_answered IS NOT NULL
+         ) AS is_on_call,
+         -- Today stats
+         COUNT(DISTINCT cl.id) FILTER (WHERE cl.call_start >= CURRENT_DATE) AS calls_today,
+         COUNT(DISTINCT m.id)  FILTER (WHERE m.created_at  >= CURRENT_DATE) AS messages_today
+       FROM operators o
+       LEFT JOIN call_logs cl ON cl.operator_id = o.id
+       LEFT JOIN messages m   ON m.operator_id  = o.id
+       WHERE o.is_active = true
+       GROUP BY o.id, o.full_name, o.username, o.role, o.current_status, o.status_changed_at, o.is_active
+       ORDER BY o.full_name`
+    );
+    res.json({ operators: result.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

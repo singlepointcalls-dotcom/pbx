@@ -1164,7 +1164,11 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id UUID;
 CREATE INDEX IF NOT EXISTS idx_messages_broadcast ON messages(broadcast_id) WHERE broadcast_id IS NOT NULL;
 
 -- v31 — Public widget token per client + KB article helpfulness ratings + widget callback source
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS widget_token VARCHAR(64) UNIQUE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS widget_token           VARCHAR(64) UNIQUE;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_enabled     BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_subject     TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_reply_body        TEXT;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS disposition_notes    TEXT;
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS helpful_count     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS not_helpful_count INTEGER NOT NULL DEFAULT 0;
 -- Allow campaign_id to be NULL for widget/ad-hoc callback requests

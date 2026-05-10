@@ -3108,6 +3108,7 @@ const Admin = (() => {
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
     else if (name === 'broadcast') BroadcastPanel.load();
+    else if (name === 'presence') PresencePanel.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -3224,6 +3225,9 @@ const Admin = (() => {
         el('cf-outbound-cli').value = c.outbound_caller_id || '';
         el('cf-private-notes').value = c.private_notes || '';
         el('cf-email-template').value = c.email_template || '';
+        if (el('cf-auto-reply-enabled')) el('cf-auto-reply-enabled').checked = !!c.auto_reply_enabled;
+        if (el('cf-auto-reply-subject')) el('cf-auto-reply-subject').value = c.auto_reply_subject || '';
+        if (el('cf-auto-reply-body')) el('cf-auto-reply-body').value = c.auto_reply_body || '';
 
         // Logo
         renderLogoPreview(c.logo_url || null);
@@ -3361,6 +3365,9 @@ const Admin = (() => {
         outbound_caller_id: el('cf-outbound-cli').value.trim() || null,
         private_notes: el('cf-private-notes').value.trim() || null,
         email_template: el('cf-email-template').value.trim() || null,
+        auto_reply_enabled: el('cf-auto-reply-enabled')?.checked || false,
+        auto_reply_subject: el('cf-auto-reply-subject')?.value.trim() || null,
+        auto_reply_body:    el('cf-auto-reply-body')?.value.trim() || null,
         whatsapp_number:  el('cf-whatsapp').value.trim() || null,
         telegram_chat_id: el('cf-telegram').value.trim() || null,
         slack_webhook:    el('cf-slack-webhook').value.trim() || null,
@@ -7248,4 +7255,50 @@ const BroadcastPanel = (() => {
   }
 
   return { load, loadContacts, toggleContact, selectAll, send };
+})();
+
+/* ============================================================
+   PresencePanel — supervisor live team status view
+   ============================================================ */
+const PresencePanel = (() => {
+  let _refreshTimer = null;
+
+  async function load() {
+    const container = el('admin-presence');
+    if (!container) return;
+    clearInterval(_refreshTimer);
+    await refresh();
+    _refreshTimer = setInterval(refresh, 15000); // auto-refresh every 15s
+  }
+
+  async function refresh() {
+    const grid = el('presence-grid');
+    if (!grid) return;
+    try {
+      const data = await api('GET', '/operators/presence');
+      const ops = data.operators || [];
+      if (!ops.length) { grid.innerHTML = '<p class="empty-state">No operators found</p>'; return; }
+      grid.innerHTML = ops.map((o) => {
+        const status = o.is_on_call ? 'on-call' : o.is_on_break ? 'on-break' : (o.current_status || 'available');
+        const statusLabel = o.is_on_call ? '📞 On Call' : o.is_on_break ? `☕ ${o.break_type || 'On Break'}` : (o.current_status === 'away' ? '⏸ Away' : '✅ Available');
+        const statusColor = o.is_on_call ? '#e74c3c' : o.is_on_break ? '#f39c12' : (o.current_status === 'away' ? '#95a5a6' : '#27ae60');
+        const since = o.status_changed_at ? ` since ${new Date(o.status_changed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '';
+        return `
+          <div class="presence-card" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:16px;min-width:180px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <div style="width:10px;height:10px;border-radius:50%;background:${statusColor};flex-shrink:0"></div>
+              <div style="font-weight:600;font-size:0.9rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escHtml(o.full_name)}</div>
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">${statusLabel}${since}</div>
+            <div style="font-size:0.75rem;color:var(--text-muted)">Calls: ${o.calls_today} &nbsp;|&nbsp; Msgs: ${o.messages_today}</div>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      el('presence-grid').innerHTML = `<p class="empty-state">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  function stop() { clearInterval(_refreshTimer); _refreshTimer = null; }
+
+  return { load, refresh, stop };
 })();

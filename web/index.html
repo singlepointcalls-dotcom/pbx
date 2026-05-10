@@ -585,6 +585,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('csat', event)">&#11088; CSAT</button>
       <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
       <button class="admin-nav-item" onclick="Admin.showSection('broadcast', event)">&#128226; Broadcast</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('presence', event)">&#128101; Team</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -1256,6 +1257,18 @@
       </div>
     </div>
 
+    <!-- Supervisor Team Presence Panel -->
+    <div id="admin-presence" class="admin-section" style="display:none">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h2>&#128101; Team Presence</h2>
+        <button class="btn btn-sm btn-secondary" onclick="PresencePanel.refresh()">&#8635; Refresh</button>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">Live status of all active operators. Auto-refreshes every 15 seconds.</p>
+      <div id="presence-grid" style="display:flex;flex-wrap:wrap;gap:12px">
+        <p class="empty-state">Loading…</p>
+      </div>
+    </div>
+
     <!-- Broadcast Message Panel -->
     <div id="admin-broadcast" class="admin-section" style="display:none">
       <div class="section-header">
@@ -1646,6 +1659,28 @@
           <textarea id="cf-email-template" rows="8" placeholder="Leave blank for default template..." style="font-family:monospace;font-size:0.78rem"></textarea>
         </div>
         <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.previewEmailTemplate()" style="margin-top:4px">Preview Email</button>
+
+        <hr style="margin:1.5rem 0">
+        <h4 style="margin-bottom:0.5rem">&#9993; Auto-Reply on New Message</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem">
+          When enabled, sends an automatic acknowledgement email to the caller (if their email is known) as soon as a new message is logged.
+          Supports <code>{name}</code>, <code>{client}</code>, <code>{subject}</code> placeholders.
+        </p>
+        <div class="form-row" style="align-items:center;gap:1rem">
+          <label class="toggle" title="Enable auto-reply">
+            <input type="checkbox" id="cf-auto-reply-enabled">
+            <span></span>
+          </label>
+          <label style="margin:0;font-size:0.85rem">Enable auto-reply</label>
+        </div>
+        <div class="field" style="margin-top:0.75rem">
+          <label>Auto-Reply Subject</label>
+          <input type="text" id="cf-auto-reply-subject" placeholder="We received your message — {client}">
+        </div>
+        <div class="field">
+          <label>Auto-Reply Body</label>
+          <textarea id="cf-auto-reply-body" rows="5" placeholder="Dear {name},&#10;&#10;Thank you for contacting {client}..."></textarea>
+        </div>
       </div>
 
       <!-- Tab: Custom Form Builder -->

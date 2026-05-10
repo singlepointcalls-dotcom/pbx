@@ -8,6 +8,56 @@ const { broadcast, broadcastToPortalClient } = require('../../services/realtime'
 
 router.use(requireAuth);
 
+/* ---- Auto-reply helper ---- */
+async function sendAutoReply(message) {
+  const clientResult = await pool.query(
+    `SELECT c.name AS client_name, c.smtp_host, c.smtp_port, c.smtp_user, c.smtp_from,
+            c.auto_reply_enabled, c.auto_reply_subject, c.auto_reply_body, c.smtp_pass
+     FROM clients c WHERE c.id = $1`,
+    [message.client_id]
+  );
+  const client = clientResult.rows[0];
+  if (!client?.auto_reply_enabled) return;
+
+  // Need a caller email — look it up from contacts
+  const contactResult = await pool.query(
+    `SELECT email FROM contacts WHERE client_id = $1 AND phone = $2 AND email IS NOT NULL LIMIT 1`,
+    [message.client_id, message.caller_phone]
+  );
+  const callerEmail = contactResult.rows[0]?.email;
+  if (!callerEmail) return;
+
+  const nodemailer = require('nodemailer');
+  const { assertValidEmail } = require('../../services/delivery');
+  try { (require('../../services/delivery')._assertValidEmail || (() => {}))(callerEmail); } catch { return; }
+
+  const subject = (client.auto_reply_subject || `We received your message — ${client.client_name}`)
+    .replace(/\{client\}/g, client.client_name)
+    .replace(/\{name\}/g, message.caller_name || 'Customer');
+  const body = (client.auto_reply_body ||
+    `Dear ${message.caller_name || 'Customer'},\n\nThank you for contacting ${client.client_name}. We have received your message and will be in touch shortly.\n\nKind regards,\n${client.client_name}`)
+    .replace(/\{client\}/g, client.client_name)
+    .replace(/\{name\}/g, message.caller_name || 'Customer')
+    .replace(/\{subject\}/g, message.subject || '');
+
+  const transporter = nodemailer.createTransport({
+    host: client.smtp_host || process.env.SMTP_HOST,
+    port: parseInt(client.smtp_port || process.env.SMTP_PORT || '587'),
+    secure: (client.smtp_host ? false : process.env.SMTP_SECURE === 'true'),
+    auth: (client.smtp_user || process.env.SMTP_USER) ? {
+      user: client.smtp_user || process.env.SMTP_USER,
+      pass: client.smtp_pass || process.env.SMTP_PASS,
+    } : undefined,
+  });
+
+  await transporter.sendMail({
+    from: client.smtp_from || process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: callerEmail,
+    subject,
+    text: body,
+  });
+}
+
 // GET /api/messages
 router.get('/', async (req, res, next) => {
   try {
@@ -187,6 +237,13 @@ router.post('/', async (req, res, next) => {
     if (auto_deliver) {
       deliverMessage(message.id).catch((err) =>
         console.error('Auto-delivery failed for message', message.id, err.message)
+      );
+    }
+
+    // Auto-reply email to caller (fire-and-forget)
+    if (message.caller_phone || message.caller_name) {
+      sendAutoReply(message).catch((err) =>
+        console.warn('[auto-reply] failed for message', message.id, err.message)
       );
     }
 
