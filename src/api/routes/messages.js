@@ -5,8 +5,19 @@ const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { deliverMessage } = require('../../services/delivery');
 const { broadcast, broadcastToPortalClient } = require('../../services/realtime');
+const { rateLimit } = require('express-rate-limit');
 
 router.use(requireAuth);
+
+// Rate limit message creation — 60 per minute per authenticated operator
+const msgCreateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => req.operator?.id || req.ip,
+  message: { error: 'Too many messages created — please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /* ---- Auto-reply helper ---- */
 async function sendAutoReply(message) {
@@ -192,7 +203,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // POST /api/messages — create a new message
-router.post('/', async (req, res, next) => {
+router.post('/', msgCreateLimit, async (req, res, next) => {
   try {
     const {
       call_log_id,
