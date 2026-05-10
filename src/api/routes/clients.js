@@ -200,7 +200,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
       escalation_rules, sla_answer_seconds, sla_abandon_threshold, data_retention_months,
       halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
-      halo_customer_id, halo_ticket_type_id, csat_enabled,
+      halo_customer_id, halo_ticket_type_id, csat_enabled, sla_minutes,
     } = req.body;
 
     if (data_retention_months !== undefined) {
@@ -246,7 +246,8 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          halo_oauth_client_secret = COALESCE($32, halo_oauth_client_secret),
          halo_customer_id       = COALESCE($33, halo_customer_id),
          halo_ticket_type_id    = COALESCE($34, halo_ticket_type_id),
-         csat_enabled           = COALESCE($36, csat_enabled)
+         csat_enabled           = COALESCE($36, csat_enabled),
+         sla_minutes            = COALESCE($37, sla_minutes)
        WHERE id = $22
        RETURNING *`,
       [
@@ -279,6 +280,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         halo_ticket_type_id      !== undefined ? (halo_ticket_type_id || null)      : null,
         sla_abandon_threshold    !== undefined ? parseInt(sla_abandon_threshold)    : null,
         csat_enabled             !== undefined ? !!csat_enabled                     : null,
+        sla_minutes              !== undefined ? parseInt(sla_minutes)              : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
@@ -552,6 +554,68 @@ router.delete('/:id/message-templates/:templateId', requireRole('admin', 'superv
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Template not found' });
     res.json({ message: 'Template deleted' });
+  } catch (err) { next(err); }
+});
+
+// ── Holiday / closure calendar ────────────────────────────────────────────
+
+// GET /api/clients/:id/holidays
+router.get('/:id/holidays', async (req, res, next) => {
+  try {
+    const { year } = req.query;
+    let where = 'WHERE client_id = $1';
+    const params = [req.params.id];
+    if (year) {
+      params.push(year);
+      where += ` AND EXTRACT(YEAR FROM holiday_date) = $${params.length}`;
+    }
+    const result = await pool.query(
+      `SELECT * FROM client_holidays ${where} ORDER BY holiday_date ASC`, params
+    );
+    res.json({ holidays: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/clients/:id/holidays
+router.post('/:id/holidays', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { holiday_date, name, closure_type = 'closed', notes } = req.body;
+    if (!holiday_date || !name) return res.status(400).json({ error: 'holiday_date and name are required' });
+    const validTypes = ['closed', 'reduced', 'emergency_only'];
+    if (!validTypes.includes(closure_type)) return res.status(400).json({ error: 'Invalid closure_type' });
+
+    const result = await pool.query(
+      `INSERT INTO client_holidays (client_id, holiday_date, name, closure_type, notes)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (client_id, holiday_date) DO UPDATE SET name=$3, closure_type=$4, notes=$5
+       RETURNING *`,
+      [req.params.id, holiday_date, name, closure_type, notes || null]
+    );
+    res.status(201).json({ holiday: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/clients/:id/holidays/:holidayId
+router.delete('/:id/holidays/:holidayId', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM client_holidays WHERE id=$1 AND client_id=$2 RETURNING id',
+      [req.params.holidayId, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Holiday not found' });
+    res.json({ message: 'Holiday deleted' });
+  } catch (err) { next(err); }
+});
+
+// GET /api/clients/:id/holidays/today — check if today is a holiday for this client
+router.get('/:id/holidays/today', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM client_holidays
+       WHERE client_id = $1 AND holiday_date = CURRENT_DATE`,
+      [req.params.id]
+    );
+    res.json({ holiday: result.rows[0] || null });
   } catch (err) { next(err); }
 });
 

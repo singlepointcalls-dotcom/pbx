@@ -2837,6 +2837,7 @@ const Admin = (() => {
     if (name === 'portal' && editingClientId) loadPortalUsers(editingClientId);
     if (name === 'webhooks' && editingClientId) loadWebhooks(editingClientId);
     if (name === 'msgtpl' && editingClientId) loadMsgTemplates();
+    if (name === 'holidays' && editingClientId) loadHolidays();
   }
 
   /* ---- Clients ---- */
@@ -2903,7 +2904,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn', 'tab-msgtpl-btn', 'tab-holidays-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -2956,6 +2957,7 @@ const Admin = (() => {
         el('cf-escalate-mins').value = escRules.length ? (escRules[0].after_minutes || 0) : 0;
         el('cf-sla-seconds').value   = c.sla_answer_seconds || 30;
         if (el('cf-sla-abandon')) el('cf-sla-abandon').value = c.sla_abandon_threshold || 3;
+        if (el('cf-sla-minutes')) el('cf-sla-minutes').value = c.sla_minutes || 60;
         if (el('cf-csat-enabled')) el('cf-csat-enabled').checked = !!c.csat_enabled;
 
         // SMTP
@@ -3061,6 +3063,7 @@ const Admin = (() => {
         escalation_rules,
         sla_answer_seconds:    parseInt(el('cf-sla-seconds').value) || 30,
         sla_abandon_threshold: parseInt(el('cf-sla-abandon')?.value) || 3,
+        sla_minutes:           parseInt(el('cf-sla-minutes')?.value) || 60,
         csat_enabled: el('cf-csat-enabled')?.checked ?? false,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
@@ -4482,6 +4485,63 @@ const Admin = (() => {
     } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
+  /* ---- Client Holidays ---- */
+  async function loadHolidays() {
+    if (!editingClientId) return;
+    const tbody = el('holidays-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+    const year = new Date().getFullYear();
+    try {
+      const { holidays } = await api('GET', `/clients/${editingClientId}/holidays?year=${year}`);
+      if (!holidays.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No holidays defined for this year</td></tr>';
+        return;
+      }
+      const typeLabel = { closed: 'Fully Closed', reduced: 'Reduced Hours', emergency_only: 'Emergency Only' };
+      tbody.innerHTML = holidays.map((h) => `
+        <tr>
+          <td>${h.holiday_date}</td>
+          <td><strong>${escHtml(h.name)}</strong></td>
+          <td><span class="pill" style="font-size:0.72rem">${typeLabel[h.closure_type] || h.closure_type}</span></td>
+          <td>${escHtml(h.notes || '—')}</td>
+          <td><button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer" onclick="Admin.deleteHoliday('${h.id}')">Delete</button></td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function openHolidayNew() { el('holiday-new-form').style.display = 'block'; }
+  function closeHolidayNew() { el('holiday-new-form').style.display = 'none'; }
+
+  async function saveHoliday() {
+    if (!editingClientId) return;
+    const date = el('holiday-date').value;
+    const name = el('holiday-name').value.trim();
+    if (!date || !name) return toast('Date and name are required', 'danger');
+    try {
+      await api('POST', `/clients/${editingClientId}/holidays`, {
+        holiday_date: date, name,
+        closure_type: el('holiday-type').value,
+        notes: el('holiday-notes').value.trim() || null,
+      });
+      toast('Holiday saved', 'success');
+      closeHolidayNew();
+      loadHolidays();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function deleteHoliday(holidayId) {
+    if (!confirm('Delete this holiday?')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/holidays/${holidayId}`);
+      toast('Holiday deleted');
+      loadHolidays();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
   async function removeLogo() {
     if (!editingClientId) return;
     try {
@@ -4748,6 +4808,8 @@ const Admin = (() => {
     uploadLogo, removeLogo,
     // Message templates
     loadMsgTemplates, openMsgTplNew, closeMsgTplNew, saveMsgTpl, deleteMsgTpl,
+    // Holidays
+    loadHolidays, openHolidayNew, closeHolidayNew, saveHoliday, deleteHoliday,
     // Performance
     loadPerformance,
     // Targets
@@ -4886,18 +4948,23 @@ const Analytics = (() => {
       setHref('analytics-operators-csv', `/analytics/operators?${from ? `from=${from}&` : ''}${to ? `to=${to}&` : ''}format=csv`);
       setHref('analytics-clients-csv',   `/analytics/clients?${from ? `from=${from}&` : ''}${to ? `to=${to}&` : ''}format=csv`);
 
-      const [calls, msgs, sla, ops, clients] = await Promise.all([
+      const days = from ? Math.round((new Date(to || Date.now()) - new Date(from)) / 86400000) : 30;
+      setHref('analytics-hourly-csv', `/analytics/calls/hourly?days=${days}&format=csv`);
+
+      const [calls, msgs, sla, ops, clients, hourly] = await Promise.all([
         api('GET', `/analytics/calls${qs}`),
         api('GET', `/analytics/messages${qs}`),
         api('GET', `/analytics/sla${qs}`),
         api('GET', `/analytics/operators?${from ? `from=${from}&` : ''}${to ? `to=${to}` : ''}`),
         api('GET', `/analytics/clients?${from ? `from=${from}&` : ''}${to ? `to=${to}` : ''}`),
+        api('GET', `/analytics/calls/hourly?days=${days}`).catch(() => null),
       ]);
       renderCallsSeries(calls?.series || []);
       renderMsgsSeries(msgs?.series || []);
       renderSLASeries(sla?.series || []);
       renderOperatorsTable(ops?.operators || []);
       renderClientsTable(clients?.clients || []);
+      renderHourlyChart(hourly?.hourly || []);
     } catch (err) { toast(`Analytics error: ${err.message}`, 'danger'); }
   }
 
@@ -4962,6 +5029,22 @@ const Analytics = (() => {
       <td>${r.messages}</td><td>${r.high_urgency}</td>
       <td>${r.calls}</td><td>${r.avg_handle_seconds}</td>
     </tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderHourlyChart(rows) {
+    const chart = el('analytics-hourly-chart');
+    if (!chart) return;
+    if (!rows.length) { chart.innerHTML = '<p style="color:#888;font-size:0.8rem">No data</p>'; return; }
+    const maxCalls = Math.max(...rows.map((r) => r.total_calls), 1);
+    chart.innerHTML = rows.map((r) => {
+      const pct = Math.round((r.total_calls / maxCalls) * 100);
+      const hourLabel = `${String(r.hour_utc).padStart(2,'0')}:00`;
+      const color = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#22c55e';
+      return `<div title="${hourLabel}: ${r.total_calls} calls (${r.answered} answered)" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="width:100%;background:${color};height:${pct}%;min-height:${r.total_calls > 0 ? 2 : 0}px;border-radius:2px 2px 0 0;transition:height 0.3s"></div>
+        <div style="font-size:0.55rem;color:var(--text-muted);transform:rotate(-45deg);transform-origin:top left;margin-top:4px;width:20px;overflow:hidden">${r.hour_utc}</div>
+      </div>`;
+    }).join('');
   }
 
   return { load };

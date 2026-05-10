@@ -12,6 +12,7 @@ const { startImapPolling }           = require('./services/email-imap');
 const { startCallbackExecutor }      = require('./services/callback-executor');
 const { startAppointmentReminders }  = require('./services/appointment-reminders');
 const { startReportScheduler }       = require('./services/report-scheduler');
+const { startSlaAlertService }       = require('./services/sla-alerts');
 const pushService                    = require('./services/push');
 
 const PORT = parseInt(process.env.PORT || '3000');
@@ -52,6 +53,9 @@ startAppointmentReminders();
 
 // Start scheduled report email service
 startReportScheduler();
+
+// Start SLA pre-breach alerting service
+startSlaAlertService();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

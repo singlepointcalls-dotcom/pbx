@@ -1100,3 +1100,29 @@ CREATE TABLE IF NOT EXISTS message_templates (
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_msg_templates_client ON message_templates(client_id);
+
+-- ============================================================
+-- v23 — Client holidays/closures, SLA alert log
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS client_holidays (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID REFERENCES clients(id) ON DELETE CASCADE,
+  holiday_date DATE NOT NULL,
+  name         TEXT NOT NULL,
+  closure_type TEXT NOT NULL DEFAULT 'closed' CHECK (closure_type IN ('closed','reduced','emergency_only')),
+  notes        TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_client_holidays_date ON client_holidays(client_id, holiday_date);
+
+CREATE TABLE IF NOT EXISTS sla_alerts (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  UUID REFERENCES messages(id) ON DELETE CASCADE,
+  alert_type  TEXT NOT NULL DEFAULT 'pre_breach',
+  sent_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sla_alerts_msg ON sla_alerts(message_id);
+
+-- Message acknowledgment SLA in minutes (distinct from call answer SLA in seconds)
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_minutes INTEGER NOT NULL DEFAULT 60;

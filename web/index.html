@@ -871,6 +871,14 @@
           </div>
           <div id="analytics-clients-wrap" class="analytics-table-wrap"></div>
         </div>
+        <div style="grid-column:1/-1">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">&#128336; Call Volume by Hour (staffing guide)</h4>
+            <a id="analytics-hourly-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-hourly-chart" style="height:120px;display:flex;align-items:flex-end;gap:2px;padding:4px 0;border-bottom:1px solid var(--border)"></div>
+          <div id="analytics-hourly-wrap" class="analytics-table-wrap" style="display:none"></div>
+        </div>
       </div>
     </div>
 
@@ -1278,6 +1286,7 @@
         <button type="button" class="modal-tab" id="tab-portal-btn" onclick="Admin.showClientTab('portal',this)" style="display:none">Portal Users</button>
         <button type="button" class="modal-tab" id="tab-webhooks-btn" onclick="Admin.showClientTab('webhooks',this)" style="display:none">&#128268; Webhooks</button>
         <button type="button" class="modal-tab" id="tab-msgtpl-btn" onclick="Admin.showClientTab('msgtpl',this)" style="display:none">&#128196; Msg Templates</button>
+        <button type="button" class="modal-tab" id="tab-holidays-btn" onclick="Admin.showClientTab('holidays',this)" style="display:none">&#128197; Holidays</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -1496,6 +1505,10 @@
             <input type="number" id="cf-sla-abandon" min="1" max="100" value="3" placeholder="3" style="max-width:100px" />
           </div>
           <div class="field">
+            <label>SLA — Message acknowledgment within (minutes)</label>
+            <input type="number" id="cf-sla-minutes" min="5" max="1440" value="60" placeholder="60" style="max-width:100px" />
+          </div>
+          <div class="field">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="cf-csat-enabled" />
               Enable CSAT surveys (send SMS rating request after each answered call)
@@ -1699,6 +1712,39 @@
         <table class="admin-table">
           <thead><tr><th>Name</th><th>Subject</th><th>Call Type</th><th>Urgency</th><th></th></tr></thead>
           <tbody id="msgtpl-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Tab: Holidays -->
+      <div id="ctab-holidays" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>&#128197; Holidays &amp; Closures</h4>
+          <button type="button" class="btn btn-sm btn-primary" onclick="Admin.openHolidayNew()">+ Add Holiday</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Holidays override regular business hours. Operators will see a notice when a client is closed due to a holiday.
+        </p>
+        <div id="holiday-new-form" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px">
+          <div style="display:grid;gap:8px">
+            <div class="field"><label>Date *</label><input type="date" id="holiday-date" /></div>
+            <div class="field"><label>Holiday Name *</label><input type="text" id="holiday-name" placeholder="e.g. Christmas Day" /></div>
+            <div class="field"><label>Closure Type</label>
+              <select id="holiday-type">
+                <option value="closed">Fully Closed</option>
+                <option value="reduced">Reduced Hours</option>
+                <option value="emergency_only">Emergency Only</option>
+              </select>
+            </div>
+            <div class="field"><label>Notes</label><input type="text" id="holiday-notes" placeholder="Optional" /></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-primary btn-sm" onclick="Admin.saveHoliday()">Save</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="Admin.closeHolidayNew()">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <table class="admin-table">
+          <thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Notes</th><th></th></tr></thead>
+          <tbody id="holidays-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
 

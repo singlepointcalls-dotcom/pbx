@@ -211,4 +211,59 @@ router.get('/operators', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/analytics/calls/hourly — call volume by hour of day (for staffing optimisation)
+router.get('/calls/hourly', async (req, res, next) => {
+  try {
+    const days = parseInt(req.query.days || '30');
+    const clientId = req.query.client_id;
+    const params = [days];
+    let clientWhere = '';
+    if (clientId) { params.push(clientId); clientWhere = `AND cl.client_id = $${params.length}`; }
+
+    const result = await pool.query(
+      `SELECT
+         EXTRACT(HOUR FROM call_start AT TIME ZONE 'UTC')::int AS hour_utc,
+         COUNT(*)::int                                          AS total_calls,
+         COUNT(*) FILTER (WHERE disposition = 'answered')::int  AS answered,
+         COUNT(*) FILTER (WHERE disposition = 'no_answer')::int AS missed,
+         ROUND(AVG(duration_seconds) FILTER (WHERE duration_seconds IS NOT NULL))::int AS avg_duration_s
+       FROM call_logs cl
+       WHERE call_start >= NOW() - ($1 || ' days')::INTERVAL ${clientWhere}
+       GROUP BY hour_utc
+       ORDER BY hour_utc ASC`,
+      params
+    );
+    const byHour = Object.fromEntries(result.rows.map((r) => [r.hour_utc, r]));
+    const full = Array.from({ length: 24 }, (_, h) => byHour[h] || {
+      hour_utc: h, total_calls: 0, answered: 0, missed: 0, avg_duration_s: 0,
+    });
+    sendCsvOrJson(res, full, 'analytics-hourly.csv', 'hourly');
+  } catch (err) { next(err); }
+});
+
+// GET /api/analytics/calls/daily — daily call volume trend
+router.get('/calls/daily', async (req, res, next) => {
+  try {
+    const days = parseInt(req.query.days || '30');
+    const clientId = req.query.client_id;
+    const params = [days];
+    let clientWhere = '';
+    if (clientId) { params.push(clientId); clientWhere = `AND client_id = $${params.length}`; }
+
+    const result = await pool.query(
+      `SELECT
+         DATE(call_start)::text AS date,
+         COUNT(*)::int                                          AS total,
+         COUNT(*) FILTER (WHERE disposition = 'answered')::int  AS answered,
+         COUNT(*) FILTER (WHERE disposition = 'no_answer')::int AS missed
+       FROM call_logs
+       WHERE call_start >= NOW() - ($1 || ' days')::INTERVAL ${clientWhere}
+       GROUP BY DATE(call_start)
+       ORDER BY date ASC`,
+      params
+    );
+    sendCsvOrJson(res, result.rows, 'analytics-daily.csv', 'daily');
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
