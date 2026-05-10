@@ -3165,6 +3165,7 @@ const Admin = (() => {
     else if (name === 'skills') SkillsPanel.load();
     else if (name === 'dnc') DncPanel.load();
     else if (name === 'transcription') TranscriptionPanel.load();
+    else if (name === 'recordings') RecordingsPanel.load();
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
@@ -4932,6 +4933,29 @@ const Admin = (() => {
     } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
+  async function loadWebhookLog() {
+    if (!editingClientId) return;
+    const wrap = el('webhook-log-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+    try {
+      const data = await api('GET', `/clients/${editingClientId}/webhook-log?limit=50`);
+      const logs = data?.logs || [];
+      if (!logs.length) { wrap.innerHTML = '<p class="empty-state">No delivery attempts yet.</p>'; return; }
+      wrap.innerHTML = `<table class="data-table" style="font-size:0.75rem">
+        <thead><tr><th>Time</th><th>Webhook URL</th><th>Status</th><th>HTTP</th><th>Attempt</th></tr></thead>
+        <tbody>${logs.map((l) => `
+          <tr>
+            <td>${new Date(l.sent_at).toLocaleString('en-GB')}</td>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(l.webhook_url)}">${escHtml(l.webhook_url)}</td>
+            <td><span class="pill ${l.success ? 'pill-green' : 'pill-red'}">${l.success ? 'OK' : 'FAIL'}</span></td>
+            <td>${l.http_status || '—'}</td>
+            <td>${l.attempt_number || 1}</td>
+          </tr>`).join('')}
+        </tbody></table>`;
+    } catch (err) { wrap.innerHTML = `<p style="color:#e74c3c">${escHtml(err.message)}</p>`; }
+  }
+
   /* ---- Client Logo Upload ---- */
   async function sendTestEmail() {
     if (!editingClientId) { toast('Save the client first', 'danger'); return; }
@@ -5392,7 +5416,7 @@ const Admin = (() => {
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser, sendPortalPasswordReset,
     generateWidgetToken, showWidgetSnippet,
-    loadWebhooks, addWebhook, testWebhook, deleteWebhook,
+    loadWebhooks, addWebhook, testWebhook, deleteWebhook, loadWebhookLog,
     sendTestEmail,
     uploadLogo, removeLogo,
     // Message templates
@@ -6942,6 +6966,90 @@ const TranscriptionPanel = (() => {
   }
 
   return { load, transcribe, batchTranscribe, showDetail, closeDetail };
+})();
+
+/* ============================================================
+   RecordingsPanel — Call Recordings Admin
+   ============================================================ */
+const RecordingsPanel = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const escHtml = (...a) => App._escHtml(...a);
+  const el = (id) => document.getElementById(id);
+
+  async function load() {
+    const clientId = el('rec-filter-client')?.value || '';
+    const dateFrom = el('rec-filter-date-from')?.value || '';
+    const dateTo   = el('rec-filter-date-to')?.value || '';
+
+    const params = new URLSearchParams({ has_recording: 'true', limit: '200' });
+    if (clientId) params.set('client_id', clientId);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo)   params.set('date_to',   dateTo);
+
+    const wrap = el('rec-table-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+
+    // Populate client filter on first load
+    if (!el('rec-filter-client')?.options.length || el('rec-filter-client').options.length < 2) {
+      try {
+        const cData = await api('GET', '/clients?limit=500');
+        const sel = el('rec-filter-client');
+        if (sel && cData?.clients) {
+          sel.innerHTML = '<option value="">All Clients</option>' +
+            cData.clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        }
+      } catch { /* ignore */ }
+    }
+
+    try {
+      const data = await api('GET', `/calls?${params}`);
+      const calls = data?.calls || [];
+      if (!calls.length) {
+        wrap.innerHTML = '<p class="empty-state">No recordings found.</p>';
+        return;
+      }
+      wrap.innerHTML = `
+        <table class="data-table">
+          <thead><tr>
+            <th>Date</th><th>Caller</th><th>Client</th><th>Duration</th><th>Disposition</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            ${calls.map((c) => `
+              <tr>
+                <td>${new Date(c.call_start).toLocaleString('en-GB')}</td>
+                <td>${escHtml(c.caller_id_num || '—')}${c.caller_id_name ? ` (${escHtml(c.caller_id_name)})` : ''}</td>
+                <td>${escHtml(c.client_name || '—')}</td>
+                <td>${c.duration_seconds || 0}s</td>
+                <td><span class="pill">${escHtml(c.disposition || '—')}</span></td>
+                <td style="white-space:nowrap">
+                  <a class="btn btn-sm btn-secondary" href="/api/calls/${c.id}/recording" target="_blank">&#9654; Play</a>
+                  <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="RecordingsPanel.deleteRecording('${c.id}', this)">&#128465; Delete</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-top:6px">${calls.length} recording(s) found</p>`;
+    } catch (err) {
+      wrap.innerHTML = `<p style="color:#e74c3c">${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function deleteRecording(callId, btn) {
+    if (!confirm('Delete this recording? This cannot be undone.')) return;
+    btn.disabled = true;
+    try {
+      await api('DELETE', `/calls/${callId}/recording`);
+      toast('Recording deleted', 'success');
+      load();
+    } catch (err) {
+      toast(`Delete failed: ${err.message}`, 'danger');
+      btn.disabled = false;
+    }
+  }
+
+  return { load, deleteRecording };
 })();
 
 /* ============================================================

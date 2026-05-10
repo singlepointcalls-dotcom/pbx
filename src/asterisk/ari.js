@@ -100,6 +100,32 @@ async function handleStasisStart(event, channel) {
     console.error('[ARI] DB lookup failed:', err.message);
   }
 
+  // DNC check — if caller is on the Do-Not-Call list for this client, reject immediately
+  if (client && callerIdNum && callerIdNum !== 'Unknown') {
+    try {
+      const dncResult = await pool.query(
+        `SELECT id FROM dnc_numbers
+         WHERE phone = $1 AND (client_id = $2 OR client_id IS NULL)
+           AND (expires_at IS NULL OR expires_at > NOW())
+         LIMIT 1`,
+        [callerIdNum, client.id]
+      );
+      if (dncResult.rows.length > 0) {
+        console.log(`[ARI] DNC: rejecting channel=${channelId} caller=${callerIdNum}`);
+        await pool.query(
+          `INSERT INTO call_logs (asterisk_channel_id, client_id, caller_id_num, caller_id_name, did, call_start, call_end, disposition)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 'dnc_blocked')`,
+          [channelId, client.id, callerIdNum, callerIdName, did]
+        );
+        broadcast('call:dnc_blocked', { channelId, callerIdNum, clientId: client.id });
+        try { await channel.hangup(); } catch { /* best-effort */ }
+        return;
+      }
+    } catch (err) {
+      console.warn('[ARI] DNC check failed (proceeding with call):', err.message);
+    }
+  }
+
   // Log the call
   let callLogId = null;
   try {

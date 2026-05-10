@@ -306,10 +306,14 @@ router.post('/messages/:id/replies', requirePortalAuth, async (req, res, next) =
     if (!body?.trim()) return res.status(400).json({ error: 'Reply body is required' });
 
     const msg = await pool.query(
-      'SELECT id FROM messages WHERE id = $1 AND client_id = $2',
+      `SELECT m.id, m.subject, m.operator_id, o.email AS operator_email, o.full_name AS operator_name
+       FROM messages m
+       LEFT JOIN operators o ON m.operator_id = o.id
+       WHERE m.id = $1 AND m.client_id = $2`,
       [req.params.id, req.portalUser.client_id]
     );
     if (!msg.rows.length) return res.status(404).json({ error: 'Message not found' });
+    const msgRow = msg.rows[0];
 
     const result = await pool.query(
       `INSERT INTO message_replies (message_id, portal_user_id, body)
@@ -321,6 +325,28 @@ router.post('/messages/:id/replies', requirePortalAuth, async (req, res, next) =
     // Notify operators via broadcast
     const { broadcast } = require('../../services/realtime');
     broadcast('message:portal_reply', { message_id: req.params.id, client_id: req.portalUser.client_id });
+
+    // Email notification to assigned operator (fire-and-forget)
+    if (msgRow.operator_email) {
+      setImmediate(async () => {
+        try {
+          const nodemailer = require('nodemailer');
+          const transport = nodemailer.createTransport({
+            host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT) || 587,
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+          });
+          await transport.sendMail({
+            from: process.env.SMTP_FROM || process.env.SMTP_USER,
+            to: msgRow.operator_email,
+            subject: `Portal reply: ${msgRow.subject || 'Message thread'}`,
+            text: `${req.portalUser.username} replied:\n\n${body.trim()}\n\nLog in to the operator console to view the full thread.`,
+          });
+        } catch (err) {
+          console.warn('[portal reply] Operator email notification failed:', err.message);
+        }
+      });
+    }
 
     res.status(201).json({ reply: { ...reply, portal_user_name: req.portalUser.username } });
   } catch (err) { next(err); }

@@ -513,6 +513,23 @@ router.post('/:id/webhooks/:webhookId/test', requireRole('admin', 'supervisor'),
   } catch (err) { next(err); }
 });
 
+// GET /api/clients/:id/webhook-log — recent webhook delivery attempts for a client
+router.get('/:id/webhook-log', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const result = await pool.query(
+      `SELECT wdl.*, cw.url AS webhook_url
+       FROM webhook_delivery_log wdl
+       JOIN client_webhooks cw ON wdl.webhook_id = cw.id
+       WHERE cw.client_id = $1
+       ORDER BY wdl.sent_at DESC
+       LIMIT $2`,
+      [req.params.id, limit]
+    );
+    res.json({ logs: result.rows });
+  } catch (err) { next(err); }
+});
+
 // ── Message templates per client ────────────────────────────────────────────
 
 // GET /api/clients/:id/message-templates

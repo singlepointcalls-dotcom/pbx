@@ -582,6 +582,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('skills', event)">&#127775; Skills</button>
       <button class="admin-nav-item" onclick="Admin.showSection('dnc', event)">&#128683; DNC</button>
       <button class="admin-nav-item" onclick="Admin.showSection('transcription', event)">&#127908; Transcription</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('recordings', event)">&#9654; Recordings</button>
       <button class="admin-nav-item" onclick="Admin.showSection('whatsapp', event)">&#128242; WhatsApp</button>
       <button class="admin-nav-item" onclick="Admin.showSection('csat', event)">&#11088; CSAT</button>
       <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
@@ -1207,6 +1208,25 @@
         </div>
         <pre id="transcription-text" style="white-space:pre-wrap;font-size:0.85rem;line-height:1.5;max-height:400px;overflow-y:auto"></pre>
         <p id="transcription-summary" style="font-size:0.85rem;color:var(--text-muted);margin-top:8px;border-top:1px solid var(--border);padding-top:8px"></p>
+      </div>
+    </div>
+
+    <!-- Recordings Management Section -->
+    <div id="admin-recordings" class="admin-section" style="display:none">
+      <div class="admin-toolbar">
+        <h2>&#9654; Call Recordings</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="rec-filter-client" onchange="RecordingsPanel.load()" style="min-width:160px">
+            <option value="">All Clients</option>
+          </select>
+          <input id="rec-filter-date-from" type="date" onchange="RecordingsPanel.load()" style="width:140px">
+          <span style="font-size:0.8rem;color:var(--text-muted)">to</span>
+          <input id="rec-filter-date-to" type="date" onchange="RecordingsPanel.load()" style="width:140px">
+          <button class="btn btn-secondary btn-sm" onclick="RecordingsPanel.load()">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="rec-table-wrap">
+        <p class="empty-state">Loading recordings…</p>
       </div>
     </div>
 
@@ -1842,6 +1862,15 @@
           <thead><tr><th>URL</th><th>Events</th><th>Active</th><th>Last Triggered</th><th></th></tr></thead>
           <tbody id="webhooks-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
         </table>
+        <div style="margin-top:18px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h5 style="margin:0;font-size:0.88rem">&#128338; Recent Delivery Attempts</h5>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.loadWebhookLog()">&#8635; Refresh</button>
+          </div>
+          <div id="webhook-log-wrap" style="font-size:0.78rem;max-height:220px;overflow-y:auto">
+            <p class="empty-state">Click Refresh to load delivery log</p>
+          </div>
+        </div>
       </div>
 
       <!-- Tab: Message Templates -->
