@@ -1490,6 +1490,10 @@ const App = (() => {
         }
       }
 
+      // Display internal notes
+      const notesEl = el('msg-detail-notes');
+      if (notesEl) notesEl.value = m.internal_notes || '';
+
       // Display tags
       const tagsEl = el('msg-detail-tags');
       const tagInput = el('msg-detail-tag-input');
@@ -1512,6 +1516,18 @@ const App = (() => {
       } catch { /* ignore */ }
     } catch (err) {
       el('msg-detail-body').textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function saveMsgNotes() {
+    if (!_detailMessageId) return;
+    const notesEl = el('msg-detail-notes');
+    if (!notesEl) return;
+    try {
+      await api('PATCH', `/messages/${_detailMessageId}/notes`, { internal_notes: notesEl.value.trim() || null });
+      toast('Notes saved', 'success');
+    } catch (err) {
+      toast(`Notes error: ${err.message}`, 'danger');
     }
   }
 
@@ -2800,7 +2816,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags,
+    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,

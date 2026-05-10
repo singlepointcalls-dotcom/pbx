@@ -275,6 +275,20 @@ router.post('/bulk/acknowledge', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// PATCH /api/messages/:id/notes — set internal operator notes on a message
+router.patch('/:id/notes', async (req, res, next) => {
+  try {
+    const { internal_notes } = req.body;
+    if (internal_notes === undefined) return res.status(400).json({ error: 'internal_notes field required' });
+    const result = await pool.query(
+      `UPDATE messages SET internal_notes = $1, updated_at = NOW() WHERE id = $2 RETURNING id, internal_notes`,
+      [internal_notes || null, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Message not found' });
+    res.json({ message: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // PATCH /api/messages/:id/tags — set tags array on a message
 router.patch('/:id/tags', async (req, res, next) => {
   try {

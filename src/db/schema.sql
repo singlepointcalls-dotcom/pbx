@@ -1130,3 +1130,6 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_minutes INTEGER NOT NULL DEFAUL
 -- v24 — Message tags
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_messages_tags ON messages USING GIN(tags);
+
+-- v25 — Internal operator notes on messages
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS internal_notes TEXT;

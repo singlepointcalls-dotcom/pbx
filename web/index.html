@@ -2166,6 +2166,14 @@
           <button class="btn btn-sm btn-secondary" onclick="App.saveMsgTags()">Save Tags</button>
         </div>
       </div>
+      <!-- Internal Notes -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);margin-bottom:6px">&#128274; Internal Notes <span style="font-weight:400;font-size:0.72rem">(not visible to clients)</span></div>
+        <textarea id="msg-detail-notes" rows="3" placeholder="Add internal notes for other operators..." style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;background:var(--bg-secondary);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5" onkeydown="if(event.ctrlKey&&event.key==='Enter')App.saveMsgNotes()"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-sm btn-secondary" onclick="App.saveMsgNotes()">Save Notes</button>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeMsgDetail()">Close</button>
