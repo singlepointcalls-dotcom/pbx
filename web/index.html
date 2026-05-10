@@ -829,10 +829,13 @@
 
     <!-- Callbacks Section -->
     <div id="admin-callbacks" class="admin-section" style="display:none">
-      <div class="admin-toolbar"><h2>&#128222; Callback Campaigns</h2></div>
+      <div class="admin-toolbar">
+        <h2>&#128222; Callback Campaigns</h2>
+        <button class="btn btn-primary btn-sm" onclick="CallbacksPanel.add()">+ New Campaign</button>
+      </div>
       <table class="admin-table">
-        <thead><tr><th>Campaign</th><th>Client</th><th>Status</th><th>Records</th><th>Created</th></tr></thead>
-        <tbody id="callbacks-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>Campaign</th><th>Client</th><th>Status</th><th>Records (done/total)</th><th>Max Attempts</th><th>Created</th><th></th></tr></thead>
+        <tbody id="callbacks-tbody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
 
@@ -840,9 +843,12 @@
     <div id="admin-scripts" class="admin-section" style="display:none">
       <div class="admin-toolbar">
         <h2>&#128196; Script Templates</h2>
-        <select id="scripts-industry-filter" onchange="ScriptsPanel.load()" style="font-size:0.85rem">
-          <option value="">All Industries</option>
-        </select>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="scripts-industry-filter" onchange="ScriptsPanel.load()" style="font-size:0.85rem">
+            <option value="">All Industries</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="ScriptsPanel.add()">+ New Template</button>
+        </div>
       </div>
       <div id="scripts-list"></div>
     </div>

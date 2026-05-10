@@ -4864,16 +4864,42 @@ const CallbacksPanel = (() => {
   function render(campaigns) {
     const tbody = el('callbacks-tbody');
     if (!tbody) return;
-    if (!campaigns.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No campaigns</td></tr>'; return; }
+    if (!campaigns.length) { tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#888">No campaigns</td></tr>'; return; }
+    const statusColor = { active: '#27ae60', paused: '#e67e22', draft: '#3498db', completed: '#888', cancelled: '#e74c3c' };
     tbody.innerHTML = campaigns.map((c) => `<tr>
       <td>${escHtml(c.name)}</td>
-      <td>${escHtml(c.client_name || '')}</td>
-      <td style="color:${c.status === 'active' ? '#27ae60' : '#e74c3c'}">${c.status}</td>
-      <td>${c.total_records || 0} / ${c.completed_records || 0} done</td>
+      <td>${escHtml(c.client_name || '—')}</td>
+      <td style="color:${statusColor[c.status] || '#666'}">${c.status}</td>
+      <td>${c.completed_records || 0} / ${c.total_records || 0}</td>
+      <td>${c.max_attempts}</td>
+      <td>${new Date(c.created_at).toLocaleDateString()}</td>
       <td>
-        <button onclick="CallbacksPanel.getNext('${c.id}')" style="font-size:0.8em">Get Next</button>
+        <button onclick="CallbacksPanel.getNext('${c.id}')" class="btn btn-sm btn-secondary">Next</button>
+        ${c.status === 'active'
+          ? `<button onclick="CallbacksPanel.setStatus('${c.id}','paused')" class="btn btn-sm btn-secondary" style="margin-left:3px">Pause</button>`
+          : c.status === 'paused' ? `<button onclick="CallbacksPanel.setStatus('${c.id}','active')" class="btn btn-sm btn-secondary" style="margin-left:3px">Resume</button>` : ''}
+        <button onclick="CallbacksPanel.del('${c.id}')" class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:3px">Delete</button>
       </td>
     </tr>`).join('');
+  }
+
+  async function add() {
+    const clientsData = await api('GET', '/clients').catch(() => ({ clients: [] }));
+    const clients = clientsData.clients || [];
+    const clientOpts = clients.map((c) => `${c.name}: ${c.id.slice(0,8)}`).join('\n');
+    const clientInput = (prompt(`Client ID (from list):\n${clientOpts}`) || '').trim();
+    if (!clientInput) return;
+    const client_id = clients.find((c) => c.id.startsWith(clientInput) || c.name === clientInput)?.id;
+    if (!client_id) { toast('Client not found', 'danger'); return; }
+    const name = (prompt('Campaign name:') || '').trim();
+    if (!name) return;
+    const from_number = (prompt('From number (E.164, used for outbound calls):') || '').trim();
+    const max_attempts = parseInt(prompt('Max attempts per record (default 3):', '3') || '3');
+    try {
+      await api('POST', '/callbacks', { client_id, name, from_number: from_number || undefined, max_attempts });
+      toast('Campaign created', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
   async function getNext(campaignId) {
@@ -4885,7 +4911,18 @@ const CallbacksPanel = (() => {
     } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, getNext };
+  async function setStatus(id, status) {
+    try { await api('PUT', `/callbacks/${id}`, { status }); load(); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this campaign and all its records?')) return;
+    try { await api('DELETE', `/callbacks/${id}`); load(); toast('Campaign deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, add, getNext, setStatus, del };
 })();
 
 /* ============================================================
@@ -4910,15 +4947,26 @@ const ScriptsPanel = (() => {
     } catch (err) { toast(`Scripts error: ${err.message}`, 'danger'); }
   }
 
+  let _templates = [];
+
   function render(templates) {
+    _templates = templates;
     const list = el('scripts-list');
     if (!list) return;
     if (!templates.length) { list.innerHTML = '<p style="color:#888">No templates</p>'; return; }
     list.innerHTML = templates.map((t) => `
-      <div style="border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:8px">
-        <strong>${escHtml(t.name)}</strong>
-        <span style="color:#888;font-size:0.85em;margin-left:8px">${escHtml(t.industry || 'General')}</span>
-        <div style="color:#666;font-size:0.875em;margin-top:4px">${escHtml((t.template_text || '').slice(0, 150))}...</div>
+      <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px;background:var(--bg-secondary)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div>
+            <strong>${escHtml(t.name)}</strong>
+            <span style="color:var(--text-muted);font-size:0.85em;margin-left:8px">${escHtml(t.industry || 'General')}</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-sm btn-secondary" onclick="ScriptsPanel.applyToClient('${t.id}')">Apply to Client</button>
+            <button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer" onclick="ScriptsPanel.del('${t.id}')">Delete</button>
+          </div>
+        </div>
+        <div style="color:var(--text-muted);font-size:0.875em;margin-top:6px;white-space:pre-wrap;max-height:80px;overflow:hidden">${escHtml((t.template_text || '').slice(0, 200))}${(t.template_text||'').length > 200 ? '…' : ''}</div>
       </div>`).join('');
   }
 
@@ -4936,7 +4984,40 @@ const ScriptsPanel = (() => {
     } catch { /* ignore */ }
   }
 
-  return { load };
+  async function add() {
+    const name = (prompt('Template name (e.g. "GP Surgery Script"):') || '').trim();
+    if (!name) return;
+    const industry = (prompt('Industry (e.g. "Medical", "Legal", "Real Estate"):') || '').trim();
+    const template_text = (prompt('Script template text (use {{caller_name}}, {{client_name}} etc. as placeholders):') || '').trim();
+    if (!template_text) return;
+    try {
+      await api('POST', '/scripts/templates', { name, industry: industry || undefined, template_text });
+      toast('Template created', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function applyToClient(templateId) {
+    const clientsData = await api('GET', '/clients').catch(() => ({ clients: [] }));
+    const clients = clientsData.clients || [];
+    const clientOpts = clients.map((c) => `${c.name}: ${c.id.slice(0,8)}`).join('\n');
+    const clientInput = (prompt(`Apply template to client:\n${clientOpts}`) || '').trim();
+    if (!clientInput) return;
+    const client = clients.find((c) => c.id.startsWith(clientInput) || c.name === clientInput);
+    if (!client) { toast('Client not found', 'danger'); return; }
+    try {
+      await api('POST', `/scripts/apply/${templateId}/client/${client.id}`, {});
+      toast(`Template applied to ${client.name}`, 'success');
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this template?')) return;
+    try { await api('DELETE', `/scripts/templates/${id}`); load(); toast('Template deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, add, applyToClient, del };
 })();
 
 /* ============================================================
