@@ -4735,13 +4735,28 @@ const IVRPanel = (() => {
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
+  async function add() {
+    const clientsData = await api('GET', '/clients').catch(() => ({ clients: [] }));
+    const clients = clientsData.clients || [];
+    const clientOpts = clients.map((c) => `${c.name} [${c.id.slice(0,8)}]`).join('\n');
+    const nameIn = (prompt('IVR flow name:') || '').trim();
+    if (!nameIn) return;
+    const clientInput = (prompt(`Client ID (copy from list below, or leave blank for global):\n${clientOpts}`) || '').trim();
+    const client_id = clients.find((c) => c.id.startsWith(clientInput) || c.name === clientInput)?.id || clientInput || null;
+    try {
+      await api('POST', '/ivr', { name: nameIn, client_id, nodes: [] });
+      toast('IVR flow created (0 nodes — configure via API)', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
   async function deleteFlow(id) {
     if (!confirm('Delete this IVR flow?')) return;
     try { await api('DELETE', `/ivr/${id}`); load(); toast('IVR flow deleted', 'info'); }
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, toggleActive, deleteFlow };
+  return { load, add, toggleActive, deleteFlow };
 })();
 
 /* ============================================================
@@ -4767,11 +4782,12 @@ const VoicemailPanel = (() => {
   function render(rows) {
     const tbody = el('voicemail-tbody');
     if (!tbody) return;
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No voicemail boxes</td></tr>'; return; }
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No voicemail boxes</td></tr>'; return; }
     tbody.innerHTML = rows.map((r) => `<tr>
       <td>${escHtml(r.mailbox_number)}</td>
-      <td>${escHtml(r.client_name)}</td>
-      <td>${r.max_message_seconds}s / ${r.retention_days}d retention</td>
+      <td>${escHtml(r.client_name || '—')}</td>
+      <td>${r.retention_days} days</td>
+      <td>${r.max_message_seconds}s</td>
       <td>${escHtml(r.notify_email || '-')}</td>
       <td>
         <button onclick="VoicemailPanel.viewMessages('${r.id}','${escHtml(r.mailbox_number)}')" style="font-size:0.8em;margin-right:4px">Messages</button>
@@ -4791,13 +4807,38 @@ const VoicemailPanel = (() => {
     } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
+  async function add() {
+    const clientsData = await api('GET', '/clients').catch(() => ({ clients: [] }));
+    const clients = clientsData.clients || [];
+    const clientOpts = clients.map((c) => `${c.name}: ${c.id.slice(0,8)}`).join('\n');
+    const clientInput = (prompt(`Client ID (paste first 8 chars from list, or leave blank):\n${clientOpts}`) || '').trim();
+    const client_id = clients.find((c) => c.id.startsWith(clientInput) || c.name === clientInput)?.id || clientInput || null;
+    const mailbox_number = (prompt('Mailbox number (3–10 digits, e.g. 001):') || '').trim();
+    if (!mailbox_number) return;
+    const pin = (prompt('PIN (4–8 digits):') || '').trim();
+    if (!pin) return;
+    const notify_email = (prompt('Notify email when message arrives (optional):') || '').trim();
+    const retention_days = parseInt(prompt('Message retention in days (default 30):', '30') || '30');
+    try {
+      await api('POST', '/voicemail', {
+        client_id: client_id || null,
+        mailbox_number,
+        pin,
+        notify_email: notify_email || undefined,
+        retention_days,
+      });
+      toast('Voicemail box created', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
   async function deleteBox(id) {
     if (!confirm('Delete this voicemail box?')) return;
     try { await api('DELETE', `/voicemail/${id}`); load(); toast('Box deleted', 'info'); }
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, viewMessages, deleteBox };
+  return { load, add, viewMessages, deleteBox };
 })();
 
 /* ============================================================
@@ -5026,18 +5067,49 @@ const RoutingPanel = (() => {
   function render(rows) {
     const tbody = el('routing-tbody');
     if (!tbody) return;
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No routing rules</td></tr>'; return; }
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" style="padding:12px;color:#888">No routing rules</td></tr>'; return; }
     tbody.innerHTML = rows.map((r) => `<tr>
       <td>${escHtml(r.name)}</td>
       <td>${escHtml(r.match_area_code || '*')}</td>
       <td>${escHtml(r.match_country || '*')}</td>
       <td>${escHtml(r.match_did || '*')}</td>
       <td>${(r.target_skills || []).map((s) => escHtml(s)).join(', ') || 'Any'}</td>
+      <td>${r.priority || 100}</td>
       <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Off'}</td>
+      <td><button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer" onclick="RoutingPanel.del('${r.id}')">Delete</button></td>
     </tr>`).join('');
   }
 
-  return { load };
+  async function add() {
+    const name = (prompt('Rule name (e.g. "UK Medical Calls"):') || '').trim();
+    if (!name) return;
+    const areaCode  = (prompt('Match area code (e.g. 020, leave blank to match all):') || '').trim();
+    const country   = (prompt('Match country code (e.g. GB, US, leave blank to match all):') || '').trim();
+    const did       = (prompt('Match specific DID (E.164, leave blank for all):') || '').trim();
+    const skillsIn  = (prompt('Required skills (comma-separated, e.g. Medical,Spanish):') || '').trim();
+    const target_skills = skillsIn ? skillsIn.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const priority  = parseInt(prompt('Priority (lower = higher priority, default 100):', '100') || '100');
+    try {
+      await api('POST', '/routing-rules', {
+        name,
+        match_area_code: areaCode || undefined,
+        match_country:   country  || undefined,
+        match_did:       did      || undefined,
+        target_skills,
+        priority,
+      });
+      toast('Routing rule added', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this routing rule?')) return;
+    try { await api('DELETE', `/routing-rules/${id}`); load(); toast('Rule deleted', 'info'); }
+    catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, add, del };
 })();
 
 /* ============================================================
@@ -5112,11 +5184,27 @@ const KnowledgeAdmin = (() => {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:#888">No articles</td></tr>'; return; }
     tbody.innerHTML = rows.map((r) => `<tr>
       <td>${escHtml(r.title)}</td>
-      <td>${escHtml(r.category || '')}</td>
-      <td>${escHtml((r.tags || []).join(', '))}</td>
-      <td style="color:${r.is_public ? '#27ae60' : '#e74c3c'}">${r.is_public ? 'Public' : 'Internal'}</td>
+      <td>${escHtml(r.category || '—')}</td>
+      <td>${escHtml((r.tags || []).join(', ') || '—')}</td>
+      <td style="color:${r.is_published ? '#27ae60' : '#e67e22'}">${r.is_published ? 'Published' : 'Draft'}</td>
       <td><button onclick="KnowledgeAdmin.delete('${r.id}')" style="font-size:0.8em">Delete</button></td>
     </tr>`).join('');
+  }
+
+  async function add() {
+    const title = (prompt('Article title:') || '').trim();
+    if (!title) return;
+    const body = (prompt('Article body/content:') || '').trim();
+    if (!body) return;
+    const category = (prompt('Category (e.g. "FAQs", "Procedures", leave blank):') || '').trim();
+    const tagsIn   = (prompt('Tags (comma-separated, leave blank for none):') || '').trim();
+    const tags = tagsIn ? tagsIn.split(',').map((t) => t.trim()).filter(Boolean) : [];
+    const is_published = confirm('Publish immediately? (Cancel = save as draft)');
+    try {
+      await api('POST', '/knowledge', { title, body, category: category || undefined, tags, is_published });
+      toast('Article created', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
   async function deleteArticle(id) {
@@ -5125,7 +5213,7 @@ const KnowledgeAdmin = (() => {
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, delete: deleteArticle };
+  return { load, add, delete: deleteArticle };
 })();
 
 /* ============================================================

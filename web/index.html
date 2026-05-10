@@ -864,36 +864,48 @@
 
     <!-- Routing Section -->
     <div id="admin-routing" class="admin-section" style="display:none">
-      <div class="admin-toolbar"><h2>&#127760; Routing Rules</h2></div>
+      <div class="admin-toolbar">
+        <h2>&#127760; Routing Rules</h2>
+        <button class="btn btn-primary btn-sm" onclick="RoutingPanel.add()">+ Add Rule</button>
+      </div>
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Area Code</th><th>Country</th><th>DID</th><th>Required Skills</th><th>Priority</th><th>Active</th></tr></thead>
-        <tbody id="routing-tbody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Area Code</th><th>Country</th><th>DID</th><th>Required Skills</th><th>Priority</th><th>Active</th><th></th></tr></thead>
+        <tbody id="routing-tbody"><tr><td colspan="8" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
 
     <!-- IVR Section -->
     <div id="admin-ivr" class="admin-section" style="display:none">
-      <div class="admin-toolbar"><h2>&#9654; IVR Flows</h2></div>
+      <div class="admin-toolbar">
+        <h2>&#9654; IVR Flows</h2>
+        <button class="btn btn-primary btn-sm" onclick="IVRPanel.add()">+ New Flow</button>
+      </div>
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Client</th><th>Active</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Client</th><th>Nodes</th><th>Status</th><th></th></tr></thead>
         <tbody id="ivr-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
 
     <!-- Voicemail Boxes Section -->
     <div id="admin-voicemail" class="admin-section" style="display:none">
-      <div class="admin-toolbar"><h2>&#128222; Voicemail Boxes</h2></div>
+      <div class="admin-toolbar">
+        <h2>&#128222; Voicemail Boxes</h2>
+        <button class="btn btn-primary btn-sm" onclick="VoicemailPanel.add()">+ New Box</button>
+      </div>
       <table class="admin-table">
-        <thead><tr><th>Mailbox #</th><th>Client</th><th>Retention (days)</th><th>Notify Email</th><th></th></tr></thead>
-        <tbody id="voicemail-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+        <thead><tr><th>Mailbox #</th><th>Client</th><th>Retention (days)</th><th>Max Msg (s)</th><th>Notify Email</th><th></th></tr></thead>
+        <tbody id="voicemail-tbody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
 
     <!-- Knowledge Section -->
     <div id="admin-knowledge" class="admin-section" style="display:none">
-      <div class="admin-toolbar"><h2>&#128218; Knowledge Base</h2></div>
+      <div class="admin-toolbar">
+        <h2>&#128218; Knowledge Base</h2>
+        <button class="btn btn-primary btn-sm" onclick="KnowledgeAdmin.add()">+ Add Article</button>
+      </div>
       <table class="admin-table">
-        <thead><tr><th>Title</th><th>Client</th><th>Category</th><th>Published</th><th></th></tr></thead>
+        <thead><tr><th>Title</th><th>Category</th><th>Tags</th><th>Published</th><th></th></tr></thead>
         <tbody id="knowledge-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
       </table>
     </div>
