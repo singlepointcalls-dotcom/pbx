@@ -3107,6 +3107,7 @@ const Admin = (() => {
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
     else if (name === 'schedules') SchedulesPanel.load();
+    else if (name === 'broadcast') BroadcastPanel.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -3708,6 +3709,8 @@ const Admin = (() => {
           } else {
             el('ctf-avail-schedule-wrap').style.display = 'none';
           }
+          // Custom fields
+          renderContactCustomFields(contact.custom_fields || {});
           onCallActionChange();
         }
       } catch (err) {
@@ -3778,6 +3781,43 @@ const Admin = (() => {
     return schedule;
   }
 
+  function renderContactCustomFields(fields) {
+    const wrap = el('ctf-custom-fields-list');
+    if (!wrap) return;
+    const entries = Object.entries(fields);
+    wrap.innerHTML = entries.length
+      ? entries.map(([k, v]) => `
+          <div class="custom-kv-row" style="display:flex;gap:0.5rem;margin-bottom:0.4rem">
+            <input class="form-control ctf-cf-key" value="${escHtml(k)}" placeholder="Key" style="flex:1">
+            <input class="form-control ctf-cf-val" value="${escHtml(v)}" placeholder="Value" style="flex:2">
+            <button class="btn btn-sm btn-danger" onclick="this.closest('.custom-kv-row').remove()">&#10005;</button>
+          </div>`).join('')
+      : '';
+  }
+
+  function addContactCustomField() {
+    const wrap = el('ctf-custom-fields-list');
+    if (!wrap) return;
+    const row = document.createElement('div');
+    row.className = 'custom-kv-row';
+    row.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.4rem';
+    row.innerHTML = `
+      <input class="form-control ctf-cf-key" placeholder="Key" style="flex:1">
+      <input class="form-control ctf-cf-val" placeholder="Value" style="flex:2">
+      <button class="btn btn-sm btn-danger" onclick="this.closest('.custom-kv-row').remove()">&#10005;</button>`;
+    wrap.appendChild(row);
+  }
+
+  function getContactCustomFields() {
+    const fields = {};
+    document.querySelectorAll('#ctf-custom-fields-list .custom-kv-row').forEach((row) => {
+      const k = row.querySelector('.ctf-cf-key')?.value.trim();
+      const v = row.querySelector('.ctf-cf-val')?.value.trim();
+      if (k) fields[k] = v || '';
+    });
+    return fields;
+  }
+
   function closeContactModal() {
     el('contact-modal').style.display = 'none';
     editingContactId = null;
@@ -3802,6 +3842,7 @@ const Admin = (() => {
       message_note: el('ctf-message-note').value.trim() || null,
       availability_type: availType,
       availability_schedule: availType === 'custom' ? getContactAvailSchedule() : {},
+      custom_fields: getContactCustomFields(),
     };
 
     try {
@@ -5218,6 +5259,7 @@ const Admin = (() => {
     addWebLink, updateWebLink, removeWebLink,
     addFormField, updateField, updateFieldOptions, updateFieldShowWhen, removeField,
     openContactModal, closeContactModal, saveContact, deleteContact,
+    addContactCustomField,
     downloadContactTemplate, importContactsCsv,
     onCallActionChange, onAvailTypeChange, toggleContactAvailDay,
     addDepartment, deleteDepartment,
@@ -7097,4 +7139,93 @@ const SchedulesPanel = (() => {
   }
 
   return { load, openNew, closeNew, save, toggleActive, del };
+})();
+
+/* ============================================================
+   BroadcastPanel — send a message to all/selected contacts of a client
+   ============================================================ */
+const BroadcastPanel = (() => {
+  let _clients = [];
+  let _contacts = [];
+  let _selectedContacts = new Set();
+
+  async function load() {
+    const container = el('admin-broadcast');
+    if (!container) return;
+    // Populate client selector
+    const sel = el('bcast-client-sel');
+    if (sel && !sel.dataset.loaded) {
+      try {
+        const data = await api('GET', '/clients');
+        _clients = data.clients || [];
+        sel.innerHTML = '<option value="">— Select client —</option>' +
+          _clients.map((c) => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+        sel.dataset.loaded = '1';
+        sel.onchange = () => loadContacts(sel.value);
+      } catch (err) { toast(err.message, 'error'); }
+    }
+    el('bcast-result')?.remove();
+  }
+
+  async function loadContacts(clientId) {
+    _contacts = [];
+    _selectedContacts.clear();
+    const tbody = el('bcast-contacts-tbody');
+    if (!tbody) return;
+    if (!clientId) { tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Select a client first</td></tr>'; return; }
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/contacts`);
+      _contacts = (data.contacts || []).filter((c) => c.is_active !== false);
+      if (!_contacts.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No contacts</td></tr>'; return; }
+      tbody.innerHTML = _contacts.map((c) => `
+        <tr>
+          <td><input type="checkbox" checked data-cid="${c.id}" onchange="BroadcastPanel.toggleContact('${c.id}',this.checked)"></td>
+          <td>${escHtml(c.name)}</td>
+          <td>${escHtml(c.email || c.phone || '—')}</td>
+        </tr>`).join('');
+      _contacts.forEach((c) => _selectedContacts.add(c.id));
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  function toggleContact(id, checked) {
+    if (checked) _selectedContacts.add(id);
+    else _selectedContacts.delete(id);
+  }
+
+  function selectAll(checked) {
+    _contacts.forEach((c) => {
+      _selectedContacts[checked ? 'add' : 'delete'](c.id);
+    });
+    document.querySelectorAll('#bcast-contacts-tbody input[type=checkbox]').forEach((cb) => {
+      cb.checked = checked;
+    });
+  }
+
+  async function send() {
+    const clientId = el('bcast-client-sel')?.value;
+    const subject  = el('bcast-subject')?.value.trim();
+    const body     = el('bcast-body')?.value.trim();
+    const urgency  = el('bcast-urgency')?.value || 'normal';
+    if (!clientId) return toast('Select a client', 'error');
+    if (!subject)  return toast('Subject is required', 'error');
+    if (!body)     return toast('Message body is required', 'error');
+    if (!_selectedContacts.size) return toast('Select at least one contact', 'error');
+
+    try {
+      const data = await api('POST', '/messages/broadcast', {
+        client_id:   clientId,
+        subject,
+        body,
+        urgency,
+        contact_ids: [..._selectedContacts],
+      });
+      toast(`Broadcast sent to ${data.count} contact${data.count !== 1 ? 's' : ''}`, 'success');
+      // Reset form
+      if (el('bcast-subject')) el('bcast-subject').value = '';
+      if (el('bcast-body')) el('bcast-body').value = '';
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  return { load, loadContacts, toggleContact, selectAll, send };
 })();

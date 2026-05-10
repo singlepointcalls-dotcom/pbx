@@ -822,6 +822,61 @@ router.get('/files/:fileId/download', requirePortalAuth, async (req, res, next) 
   } catch (err) { next(err); }
 });
 
+// GET /api/portal/stats — aggregated dashboard stats for this client (last 30/90 days)
+router.get('/stats', requirePortalAuth, async (req, res, next) => {
+  try {
+    const clientId = req.portalUser.client_id;
+    const [msgStats, callStats, apptStats, satisfactionStats] = await Promise.all([
+      pool.query(
+        `SELECT
+           COUNT(*)::int                                                            AS total_messages,
+           COUNT(*) FILTER (WHERE status IN ('pending','delivered'))::int          AS pending_messages,
+           COUNT(*) FILTER (WHERE status = 'acknowledged')::int                   AS acknowledged_messages,
+           COUNT(*) FILTER (WHERE urgency = 'urgent')::int                        AS urgent_messages,
+           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int  AS messages_30d,
+           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '90 days')::int  AS messages_90d,
+           ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) FILTER (
+             WHERE status = 'acknowledged' AND updated_at IS NOT NULL
+           ))::int AS avg_response_seconds
+         FROM messages WHERE client_id = $1`,
+        [clientId]
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*)::int                                                            AS total_calls,
+           COUNT(*) FILTER (WHERE disposition = 'answered')::int                  AS answered_calls,
+           COUNT(*) FILTER (WHERE disposition = 'no_answer')::int                 AS missed_calls,
+           COUNT(*) FILTER (WHERE call_start >= NOW() - INTERVAL '30 days')::int  AS calls_30d,
+           ROUND(AVG(duration_seconds) FILTER (WHERE disposition='answered'))::int AS avg_duration_seconds
+         FROM call_logs WHERE client_id = $1`,
+        [clientId]
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS total_appointments,
+           COUNT(*) FILTER (WHERE status = 'scheduled')::int  AS upcoming_appointments,
+           COUNT(*) FILTER (WHERE status = 'completed')::int  AS completed_appointments
+         FROM appointments WHERE client_id = $1`,
+        [clientId]
+      ),
+      pool.query(
+        `SELECT
+           ROUND(AVG(portal_rating), 2)::float AS avg_rating,
+           COUNT(*) FILTER (WHERE portal_rating IS NOT NULL)::int AS rated_count
+         FROM messages WHERE client_id = $1`,
+        [clientId]
+      ),
+    ]);
+
+    res.json({
+      messages:     msgStats.rows[0],
+      calls:        callStats.rows[0],
+      appointments: apptStats.rows[0],
+      satisfaction: satisfactionStats.rows[0],
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/portal/data-export — GDPR Subject Access Request: download all data for this client
 router.get('/data-export', requirePortalAuth, async (req, res, next) => {
   try {

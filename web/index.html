@@ -584,6 +584,7 @@
       <button class="admin-nav-item" onclick="Admin.showSection('whatsapp', event)">&#128242; WhatsApp</button>
       <button class="admin-nav-item" onclick="Admin.showSection('csat', event)">&#11088; CSAT</button>
       <button class="admin-nav-item" onclick="Admin.showSection('schedules', event)">&#128337; Schedules</button>
+      <button class="admin-nav-item" onclick="Admin.showSection('broadcast', event)">&#128226; Broadcast</button>
       <button class="admin-nav-item" onclick="Admin.showSection('settings', event)">Settings</button>
     </div>
 
@@ -1251,6 +1252,52 @@
             <button class="btn btn-primary" onclick="SchedulesPanel.save()">Save Schedule</button>
             <button class="btn btn-secondary" onclick="SchedulesPanel.closeNew()">Cancel</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Broadcast Message Panel -->
+    <div id="admin-broadcast" class="admin-section" style="display:none">
+      <div class="section-header">
+        <h2>&#128226; Broadcast Message</h2>
+        <p style="font-size:0.85rem;color:var(--text-muted)">Send a message to multiple contacts of a client at once.</p>
+      </div>
+      <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div class="form-group">
+            <label>Client</label>
+            <select id="bcast-client-sel" class="form-control"><option value="">— Select client —</option></select>
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input id="bcast-subject" class="form-control" placeholder="Message subject">
+          </div>
+          <div class="form-group">
+            <label>Body</label>
+            <textarea id="bcast-body" class="form-control" rows="5" placeholder="Message body…"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Urgency</label>
+            <select id="bcast-urgency" class="form-control">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="BroadcastPanel.send()">&#128226; Send Broadcast</button>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <label style="margin:0">Contacts</label>
+            <span style="font-size:0.8rem">
+              <a href="#" onclick="BroadcastPanel.selectAll(true);return false">All</a> /
+              <a href="#" onclick="BroadcastPanel.selectAll(false);return false">None</a>
+            </span>
+          </div>
+          <table class="data-table">
+            <thead><tr><th></th><th>Name</th><th>Email / Phone</th></tr></thead>
+            <tbody id="bcast-contacts-tbody"><tr><td colspan="3" class="empty-state">Select a client</td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1942,6 +1989,10 @@
           <div class="field"><label>Email Notify</label><label class="toggle"><input type="checkbox" id="ctf-notify-email" checked /><span></span></label></div>
           <div class="field"><label>SMS Notify</label><label class="toggle"><input type="checkbox" id="ctf-notify-sms" /><span></span></label></div>
           <div class="field"><label>Private &#9888;</label><label class="toggle"><input type="checkbox" id="ctf-private" /><span></span></label></div>
+        </div>
+        <div class="form-group">
+          <label>Custom Fields <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addContactCustomField()" style="margin-left:0.5rem;font-size:0.75rem">+ Add</button></label>
+          <div id="ctf-custom-fields-list"></div>
         </div>
       </div>
       <div class="modal-footer">

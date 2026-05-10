@@ -297,36 +297,36 @@ const Portal = (() => {
 
     // Stats
     try {
-      const [callData, msgData, msgStats] = await Promise.all([
-        api('GET', '/portal/calls?days=30'),
+      const [msgData, stats] = await Promise.all([
         api('GET', '/portal/messages?limit=5'),
-        api('GET', '/portal/messages/stats').catch(() => null),
+        api('GET', '/portal/stats').catch(() => null),
       ]);
       const statCards = [];
-      if (callData) {
-        const s = callData.summary;
+      if (stats) {
+        const s = stats.calls;
+        const m = stats.messages;
+        const sat = stats.satisfaction;
         statCards.push(
-          { label: 'Total Calls (30d)', value: s.total,         color: 'blue' },
-          { label: 'Answered',          value: s.answered,       color: 'green' },
-          { label: 'Missed',            value: s.missed,         color: 'red' },
-          { label: 'Call Minutes (30d)', value: s.total_minutes, color: 'orange' },
+          { label: 'Calls (30d)',       value: s.calls_30d,            color: 'blue' },
+          { label: 'Answered',          value: s.answered_calls,        color: 'green' },
+          { label: 'Missed',            value: s.missed_calls,          color: 'red' },
+          { label: 'Avg Duration',      value: s.avg_duration_seconds ? `${Math.round(s.avg_duration_seconds / 60)}m` : '—', color: 'orange' },
+          { label: 'Messages (30d)',    value: m.messages_30d,          color: 'blue' },
+          { label: 'Pending',           value: m.pending_messages,      color: 'orange' },
+          { label: 'Acknowledged',      value: m.acknowledged_messages, color: 'green' },
+          { label: 'Avg Response',      value: m.avg_response_seconds ? `${Math.round(m.avg_response_seconds / 60)}m` : '—', color: 'purple' },
         );
+        if (sat.rated_count > 0) {
+          statCards.push({ label: `Satisfaction (${sat.rated_count} rated)`, value: `${(sat.avg_rating || 0).toFixed(1)} ★`, color: 'yellow' });
+        }
       }
-      if (msgStats?.stats) {
-        const ms = msgStats.stats;
-        statCards.push(
-          { label: 'Messages (30d)',   value: ms.last_30_days, color: 'blue' },
-          { label: 'Pending',          value: ms.pending,       color: 'orange' },
-          { label: 'Acknowledged',     value: ms.acknowledged,  color: 'green' },
-          { label: 'Urgent (all time)', value: ms.urgent,       color: 'red' },
-        );
-      }
-      el('p-stats').innerHTML = statCards.map((c) => `
-        <div class="p-stat-card p-stat-${c.color}">
-          <div class="p-stat-value">${c.value ?? 0}</div>
-          <div class="p-stat-label">${c.label}</div>
-        </div>
-      `).join('');
+      el('p-stats').innerHTML = statCards.length
+        ? statCards.map((c) => `
+          <div class="p-stat-card p-stat-${c.color}">
+            <div class="p-stat-value">${c.value ?? 0}</div>
+            <div class="p-stat-label">${c.label}</div>
+          </div>`).join('')
+        : '<p class="p-empty">No stats available</p>';
       if (msgData) {
         renderMsgList(el('p-dash-messages'), msgData.messages, 5);
       }

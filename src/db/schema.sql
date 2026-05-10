@@ -1156,3 +1156,9 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_rating_comment TEXT;
 ALTER TABLE message_replies ADD COLUMN IF NOT EXISTS portal_user_id UUID REFERENCES client_portal_users(id) ON DELETE SET NULL;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_messages_flagged ON messages(is_flagged) WHERE is_flagged = true;
+
+-- v30 — Contact custom fields + broadcast message tracking
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS source VARCHAR(50);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id UUID;
+CREATE INDEX IF NOT EXISTS idx_messages_broadcast ON messages(broadcast_id) WHERE broadcast_id IS NOT NULL;

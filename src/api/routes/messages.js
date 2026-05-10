@@ -418,4 +418,56 @@ router.get('/tags/catalog', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/messages/broadcast — send one message per contact of a client
+// Body: { client_id, subject, body, urgency?, contact_ids? }
+// If contact_ids omitted, broadcasts to ALL active contacts of the client.
+router.post('/broadcast', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { client_id, subject, body: msgBody, urgency = 'normal', contact_ids } = req.body;
+    if (!client_id || !subject || !msgBody) {
+      return res.status(400).json({ error: 'client_id, subject, body required' });
+    }
+    const broadcastId = require('crypto').randomUUID();
+
+    // Fetch contacts to broadcast to
+    let contacts;
+    if (contact_ids && contact_ids.length > 0) {
+      const r = await pool.query(
+        `SELECT id FROM contacts WHERE client_id = $1 AND id = ANY($2::uuid[])`,
+        [client_id, contact_ids]
+      );
+      contacts = r.rows;
+    } else {
+      const r = await pool.query(
+        `SELECT id FROM contacts WHERE client_id = $1`,
+        [client_id]
+      );
+      contacts = r.rows;
+    }
+
+    if (!contacts.length) {
+      return res.status(400).json({ error: 'No contacts found for broadcast' });
+    }
+
+    const created = [];
+    for (const contact of contacts) {
+      const msg = await pool.query(
+        `INSERT INTO messages (client_id, contact_id, subject, body, urgency, status, source, broadcast_id, operator_id)
+         VALUES ($1, $2, $3, $4, $5, 'pending', 'broadcast', $6, $7)
+         RETURNING *`,
+        [client_id, contact.id, subject, msgBody, urgency, broadcastId, req.operator.id]
+      );
+      const message = msg.rows[0];
+      created.push(message);
+      // Fire-and-forget delivery
+      deliverMessage(message).catch((err) =>
+        console.warn('[broadcast] delivery failed for contact', contact.id, err.message)
+      );
+      broadcast('message:new', { message });
+    }
+
+    res.status(201).json({ broadcast_id: broadcastId, count: created.length });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

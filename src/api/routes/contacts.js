@@ -38,6 +38,7 @@ router.post('/:clientId/contacts', requireRole('admin', 'supervisor'), async (re
       is_private = false, priority = 1,
       department_id, call_action = 'message', transfer_extension, message_note,
       availability_type = 'always', availability_schedule = {},
+      custom_fields = {},
     } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
@@ -46,14 +47,14 @@ router.post('/:clientId/contacts', requireRole('admin', 'supervisor'), async (re
          (client_id, name, title, phone, email, sms_number,
           notify_email, notify_sms, notify_webhook, is_private, priority,
           department_id, call_action, transfer_extension, message_note,
-          availability_type, availability_schedule)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          availability_type, availability_schedule, custom_fields)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         req.params.clientId, name, title, phone, email, sms_number,
         notify_email, notify_sms, notify_webhook, is_private, priority,
         department_id || null, call_action, transfer_extension || null, message_note || null,
-        availability_type, JSON.stringify(availability_schedule),
+        availability_type, JSON.stringify(availability_schedule), JSON.stringify(custom_fields),
       ]
     );
     res.status(201).json({ contact: result.rows[0] });
@@ -69,7 +70,7 @@ router.put('/:clientId/contacts/:contactId', requireRole('admin', 'supervisor'),
       name, title, phone, email, sms_number,
       notify_email, notify_sms, notify_webhook, is_private, priority, is_active,
       department_id, call_action, transfer_extension, message_note,
-      availability_type, availability_schedule,
+      availability_type, availability_schedule, custom_fields,
     } = req.body;
 
     const result = await pool.query(
@@ -90,8 +91,9 @@ router.put('/:clientId/contacts/:contactId', requireRole('admin', 'supervisor'),
          transfer_extension    = COALESCE($14, transfer_extension),
          message_note          = COALESCE($15, message_note),
          availability_type     = COALESCE($16, availability_type),
-         availability_schedule = COALESCE($17, availability_schedule)
-       WHERE id = $18 AND client_id = $19
+         availability_schedule = COALESCE($17, availability_schedule),
+         custom_fields         = COALESCE($18, custom_fields)
+       WHERE id = $19 AND client_id = $20
        RETURNING *`,
       [
         name, title, phone, email, sms_number,
@@ -100,6 +102,7 @@ router.put('/:clientId/contacts/:contactId', requireRole('admin', 'supervisor'),
         call_action, transfer_extension, message_note,
         availability_type || null,
         availability_schedule !== undefined ? JSON.stringify(availability_schedule) : null,
+        custom_fields !== undefined ? JSON.stringify(custom_fields) : null,
         req.params.contactId, req.params.clientId,
       ]
     );
