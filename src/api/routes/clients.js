@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { isPrivateUrl } = require('../../services/delivery');
 
 // All client routes require authentication
 router.use(requireAuth);
@@ -368,6 +369,9 @@ router.post('/:id/webhooks', requireRole('admin', 'supervisor'), async (req, res
     }
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return res.status(400).json({ error: 'url must use http or https' });
+    }
+    if (isPrivateUrl(url)) {
+      return res.status(400).json({ error: 'Webhook URL must not point to a private/internal network address' });
     }
 
     // Verify the client exists
