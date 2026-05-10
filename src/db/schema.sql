@@ -1016,3 +1016,10 @@ CREATE TABLE IF NOT EXISTS operator_reset_tokens (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_op_reset_token_op ON operator_reset_tokens(operator_id);
+
+
+-- ============================================================
+-- v18 — TOTP backup codes column
+-- ============================================================
+
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT[] NOT NULL DEFAULT '{}';

@@ -115,11 +115,48 @@ const App = (() => {
     }
   }
 
+  let usingBackupCode = false;
+
+  function showBackupCodeEntry(e) {
+    if (e) e.preventDefault();
+    usingBackupCode = !usingBackupCode;
+    const row = el('backup-code-row');
+    const totpInput = el('totp-input');
+    if (row) row.style.display = usingBackupCode ? 'block' : 'none';
+    if (totpInput) totpInput.style.display = usingBackupCode ? 'none' : '';
+  }
+
   async function verify2FA() {
-    const code = el('totp-input').value.trim();
     const errorEl = el('twofa-error');
     errorEl.classList.add('hidden');
-    if (!code || !pendingTwoFAToken) return;
+    if (!pendingTwoFAToken) return;
+
+    if (usingBackupCode) {
+      const code = el('backup-code-input')?.value?.trim().replace(/-/g, '').toUpperCase();
+      if (!code) return;
+      try {
+        const data = await fetch('/api/auth/2fa/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ temp_token: pendingTwoFAToken, backup_code: code }),
+        }).then((r) => r.json());
+        if (!data.token) throw new Error(data.error || 'Invalid backup code');
+        pendingTwoFAToken = null;
+        usingBackupCode = false;
+        el('twofa-modal').style.display = 'none';
+        _finishLogin(data);
+        if (data.remaining_backup_codes <= 2) {
+          toast(`Warning: only ${data.remaining_backup_codes} backup code(s) remaining`, 'warning');
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    const code = el('totp-input').value.trim();
+    if (!code) return;
     try {
       const data = await fetch('/api/auth/verify-2fa', {
         method: 'POST',
@@ -138,6 +175,11 @@ const App = (() => {
 
   function cancel2FA() {
     pendingTwoFAToken = null;
+    usingBackupCode = false;
+    const row = el('backup-code-row');
+    if (row) row.style.display = 'none';
+    const totpInput = el('totp-input');
+    if (totpInput) totpInput.style.display = '';
     el('twofa-modal').style.display = 'none';
   }
 
@@ -376,19 +418,41 @@ const App = (() => {
     }
   }
 
+  let _backupCodes = [];
+
   async function confirm2FA() {
     const code = el('twofa-confirm-code').value.trim();
     const errorEl = el('twofa-setup-error');
     errorEl.classList.add('hidden');
     if (!code) return;
     try {
-      await api('POST', '/auth/2fa/confirm', { totp_code: code });
-      toast('2FA enabled successfully', 'success');
+      const data = await api('POST', '/auth/2fa/confirm', { totp_code: code });
       currentOperator.totp_enabled = true;
-      el('twofa-setup-modal').style.display = 'none';
+      _backupCodes = data.backup_codes || [];
+
+      if (_backupCodes.length) {
+        const grid = el('twofa-backup-grid');
+        if (grid) grid.innerHTML = _backupCodes.map((c) => `<span>${c}</span>`).join('');
+        const backupDiv = el('twofa-backup-codes');
+        if (backupDiv) backupDiv.style.display = 'block';
+        const enableBtn = el('twofa-enable-btn');
+        if (enableBtn) { enableBtn.textContent = 'Done'; enableBtn.onclick = close2FASetup; }
+      } else {
+        toast('2FA enabled successfully', 'success');
+        el('twofa-setup-modal').style.display = 'none';
+      }
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.remove('hidden');
+    }
+  }
+
+  function copyBackupCodes() {
+    if (_backupCodes.length) {
+      navigator.clipboard.writeText(_backupCodes.join('\n')).then(
+        () => toast('Backup codes copied', 'success'),
+        () => toast('Copy failed — please copy manually', 'warning')
+      );
     }
   }
 
@@ -2357,7 +2421,7 @@ const App = (() => {
     verify2FA, cancel2FA, startDemo,
     showMyProfile, closeProfile, showPwStrength, changePassword,
     showForgotPassword, showLogin, doForgotPassword, doResetPassword,
-    setup2FA, confirm2FA, close2FASetup, disable2FA,
+    setup2FA, confirm2FA, close2FASetup, disable2FA, copyBackupCodes, showBackupCodeEntry,
     // Noticeboard
     openNoticeEditor, closeNoticeEditor, saveNotice,
     // Disposition
@@ -3450,6 +3514,10 @@ const Admin = (() => {
   /* ---- Reports ---- */
   async function loadReports() {
     const days = el('report-days')?.value || 30;
+    // Update CSV download links
+    const setHref = (id, path) => { const a = el(id); if (a) a.href = '/api' + path; };
+    setHref('report-ops-csv-btn',     `/reports/operators?days=${days}&format=csv`);
+    setHref('report-clients-csv-btn', `/reports/clients?days=${days}&format=csv`);
 
     try {
       const s = await api('GET', '/reports/summary');
@@ -4586,7 +4654,42 @@ const SMSInbox = (() => {
     } catch (err) { toast(`Send failed: ${err.message}`, 'danger'); }
   }
 
-  return { load, openThread, sendReply, loadThreads };
+  async function openCompose() {
+    const modal = el('sms-compose-modal');
+    if (!modal) return;
+    el('sms-compose-to').value   = '';
+    el('sms-compose-body').value = '';
+    const sel = el('sms-compose-client');
+    if (sel && sel.options.length <= 1) {
+      try {
+        const data = await api('GET', '/clients');
+        (data?.clients || []).forEach((c) => {
+          const o = document.createElement('option');
+          o.value = c.id; o.textContent = c.name;
+          sel.appendChild(o);
+        });
+      } catch { /* ignore */ }
+    }
+    modal.style.display = 'flex';
+    setTimeout(() => el('sms-compose-to').focus(), 100);
+  }
+
+  function closeCompose() { const m = el('sms-compose-modal'); if (m) m.style.display = 'none'; }
+
+  async function sendComposed() {
+    const to       = el('sms-compose-to')?.value?.trim();
+    const body     = el('sms-compose-body')?.value?.trim();
+    const clientId = el('sms-compose-client')?.value || null;
+    if (!to || !body) { toast('To and message are required', 'danger'); return; }
+    try {
+      await api('POST', '/sms/reply', { to, body, client_id: clientId });
+      closeCompose();
+      loadThreads();
+      toast('SMS sent', 'success');
+    } catch (err) { toast(`Send failed: ${err.message}`, 'danger'); }
+  }
+
+  return { load, openThread, sendReply, loadThreads, openCompose, closeCompose, sendComposed };
 })();
 
 /* ============================================================
@@ -4766,7 +4869,52 @@ const ShiftsPanel = (() => {
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, deleteShift, reviewTimeOff, loadTimeOff };
+  async function openNew() {
+    const modal = el('shift-modal');
+    if (!modal) return;
+    el('shift-modal-date').value  = el('shifts-date')?.value || new Date().toISOString().slice(0, 10);
+    el('shift-modal-start').value = '09:00';
+    el('shift-modal-end').value   = '17:00';
+    el('shift-modal-type').value  = 'regular';
+    el('shift-modal-notes').value = '';
+    const sel = el('shift-modal-operator');
+    if (sel && sel.options.length <= 1) {
+      try {
+        const data = await api('GET', '/operators');
+        (data?.operators || []).forEach((op) => {
+          const o = document.createElement('option');
+          o.value = op.id; o.textContent = op.full_name || op.username;
+          sel.appendChild(o);
+        });
+      } catch { /* ignore */ }
+    }
+    modal.style.display = 'flex';
+  }
+
+  function closeNew() { const m = el('shift-modal'); if (m) m.style.display = 'none'; }
+
+  async function saveNew() {
+    const body = {
+      operator_id: el('shift-modal-operator')?.value,
+      shift_date:  el('shift-modal-date')?.value,
+      start_time:  el('shift-modal-start')?.value,
+      end_time:    el('shift-modal-end')?.value,
+      shift_type:  el('shift-modal-type')?.value || 'regular',
+      notes:       el('shift-modal-notes')?.value?.trim() || null,
+    };
+    if (!body.operator_id || !body.shift_date || !body.start_time || !body.end_time) {
+      toast('Operator, date, start and end time are required', 'danger');
+      return;
+    }
+    try {
+      await api('POST', '/shifts', body);
+      closeNew();
+      load();
+      toast('Shift added', 'success');
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, deleteShift, reviewTimeOff, loadTimeOff, openNew, closeNew, saveNew };
 })();
 
 /* ============================================================

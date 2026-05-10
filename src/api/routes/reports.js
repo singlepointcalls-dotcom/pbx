@@ -8,6 +8,13 @@ const { getConnectedOperators } = require('../../services/realtime');
 router.use(requireAuth);
 router.use(requireRole('admin', 'supervisor'));
 
+function toCsv(rows) {
+  if (!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  return [headers.join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\r\n');
+}
+
 // GET /api/reports/summary — today's headline figures
 router.get('/summary', async (req, res, next) => {
   try {
@@ -86,6 +93,11 @@ router.get('/operators', async (req, res, next) => {
       GROUP BY o.id, o.full_name, o.username
       ORDER BY calls_answered DESC
     `, [days]);
+    if (req.query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="operator-report.csv"');
+      return res.send(toCsv(result.rows));
+    }
     res.json({ days, operators: result.rows });
   } catch (err) {
     next(err);
@@ -117,6 +129,11 @@ router.get('/clients', async (req, res, next) => {
       GROUP BY c.id, c.name, c.account_number
       ORDER BY total_calls DESC
     `, [days]);
+    if (req.query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="client-report.csv"');
+      return res.send(toCsv(result.rows));
+    }
     res.json({ days, clients: result.rows });
   } catch (err) {
     next(err);

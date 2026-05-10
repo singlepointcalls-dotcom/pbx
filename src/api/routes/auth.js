@@ -264,7 +264,7 @@ router.get('/2fa/setup', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST /api/auth/2fa/confirm — verify TOTP code and enable 2FA
+// POST /api/auth/2fa/confirm — verify TOTP code, enable 2FA, and return one-time backup codes
 router.post('/2fa/confirm', requireAuth, async (req, res, next) => {
   try {
     const { totp_code } = req.body;
@@ -277,8 +277,56 @@ router.post('/2fa/confirm', requireAuth, async (req, res, next) => {
     const valid = speakeasy.totp.verify({ secret, encoding: 'base32', token: totp_code, window: 1 });
     if (!valid) return res.status(400).json({ error: 'Invalid code. Please try again.' });
 
-    await pool.query('UPDATE operators SET totp_enabled = true WHERE id = $1', [req.operator.id]);
-    res.json({ message: '2FA enabled successfully' });
+    // Generate 10 single-use backup codes (plaintext returned once, bcrypt-hashed stored)
+    const backupCodes = Array.from({ length: 10 }, () => crypto.randomBytes(4).toString('hex').toUpperCase());
+    const hashedCodes = await Promise.all(backupCodes.map((c) => bcrypt.hash(c, 10)));
+
+    await pool.query(
+      'UPDATE operators SET totp_enabled = true, totp_backup_codes = $1 WHERE id = $2',
+      [hashedCodes, req.operator.id]
+    );
+    res.json({ message: '2FA enabled successfully', backup_codes: backupCodes });
+  } catch (err) { next(err); }
+});
+
+// POST /api/auth/2fa/backup — consume a backup code in lieu of TOTP (during verify-2fa flow)
+router.post('/2fa/backup', async (req, res, next) => {
+  try {
+    const { temp_token, backup_code } = req.body;
+    if (!temp_token || !backup_code) return res.status(400).json({ error: 'temp_token and backup_code required' });
+
+    let payload;
+    try { payload = jwt.verify(temp_token, process.env.JWT_SECRET); } catch {
+      return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
+    }
+    if (payload.phase !== '2fa') return res.status(400).json({ error: 'Invalid token phase' });
+
+    const result = await pool.query(
+      'SELECT id, username, role, totp_backup_codes FROM operators WHERE id = $1 AND is_active = true',
+      [payload.id]
+    );
+    const operator = result.rows[0];
+    if (!operator?.totp_backup_codes?.length) {
+      return res.status(400).json({ error: 'No backup codes available' });
+    }
+
+    // Find and consume a matching backup code
+    let matchIdx = -1;
+    for (let i = 0; i < operator.totp_backup_codes.length; i++) {
+      if (await bcrypt.compare(backup_code.toUpperCase().replace(/-/g, ''), operator.totp_backup_codes[i])) {
+        matchIdx = i; break;
+      }
+    }
+    if (matchIdx === -1) return res.status(400).json({ error: 'Invalid backup code' });
+
+    // Remove used code
+    const remaining = [...operator.totp_backup_codes];
+    remaining.splice(matchIdx, 1);
+    await pool.query('UPDATE operators SET totp_backup_codes = $1 WHERE id = $2', [remaining, operator.id]);
+
+    const lifetimeHours = await getTokenLifetimeHours();
+    const token = signOperatorToken(operator, lifetimeHours);
+    res.json({ token, expiresInHours: lifetimeHours, remaining_backup_codes: remaining.length });
   } catch (err) { next(err); }
 });
 
