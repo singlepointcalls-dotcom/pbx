@@ -8,11 +8,12 @@
  * - 80%+ through their SLA window (based on client.sla_minutes or 60 min default)
  * - Not already alerted
  *
- * Sends a summary email to all admin/supervisor operators.
+ * Sends: email to admins/supervisors + Slack/Teams webhooks per affected client.
  */
 
 const pool = require('../config/database');
 const nodemailer = require('nodemailer');
+const { isPrivateUrl } = require('./delivery');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const SLA_WARN_PCT = 0.80; // alert at 80% of SLA elapsed
@@ -22,7 +23,7 @@ async function runSlaAlertCheck() {
     // Find messages approaching SLA breach with no pre-breach alert sent
     const result = await pool.query(`
       SELECT m.id, m.subject, m.urgency, m.created_at,
-             c.name AS client_name,
+             c.name AS client_name, c.slack_webhook, c.teams_webhook,
              COALESCE(c.sla_minutes, 60) AS sla_minutes,
              EXTRACT(EPOCH FROM (NOW() - m.created_at)) / 60 AS age_minutes
       FROM messages m
@@ -78,6 +79,33 @@ async function runSlaAlertCheck() {
     });
 
     console.log(`[SLA Alerts] Sent pre-breach warning for ${result.rows.length} message(s) to ${recipients.length} supervisor(s)`);
+
+    // Push to client Slack/Teams webhooks
+    const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
+    for (const msg of result.rows) {
+      const sla = msg.sla_minutes || 60;
+      const pct = Math.round((msg.age_minutes / sla) * 100);
+      const text = `⚠️ SLA Warning [${msg.client_name}]: "${msg.subject || '(no subject)'}" — ${Math.round(msg.age_minutes)}/${sla} min (${pct}% elapsed)`;
+
+      if (msg.slack_webhook && !isPrivateUrl(msg.slack_webhook)) {
+        fetch(msg.slack_webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        }).catch((e) => console.warn('[SLA Alerts] Slack push failed:', e.message));
+      }
+
+      if (msg.teams_webhook && !isPrivateUrl(msg.teams_webhook)) {
+        fetch(msg.teams_webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            '@type': 'MessageCard', '@context': 'http://schema.org/extensions',
+            summary: text, themeColor: 'FF8C00', text,
+          }),
+        }).catch((e) => console.warn('[SLA Alerts] Teams push failed:', e.message));
+      }
+    }
   } catch (err) {
     console.error('[SLA Alerts] Check failed:', err.message);
   }

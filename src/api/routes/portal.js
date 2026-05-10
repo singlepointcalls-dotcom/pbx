@@ -642,6 +642,26 @@ router.get('/knowledge/:id', requirePortalAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/portal/knowledge/:id/rate — mark article as helpful or not
+router.post('/knowledge/:id/rate', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { helpful } = req.body;
+    if (typeof helpful !== 'boolean') {
+      return res.status(400).json({ error: 'helpful (boolean) is required' });
+    }
+    const col = helpful ? 'helpful_count' : 'not_helpful_count';
+    const result = await pool.query(
+      `UPDATE knowledge_articles
+       SET ${col} = ${col} + 1
+       WHERE id = $1 AND (client_id = $2 OR client_id IS NULL) AND is_public = true
+       RETURNING id, helpful_count, not_helpful_count`,
+      [req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Article not found' });
+    res.json({ article: result.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // ---- Portal user management (requires operator JWT, not portal JWT) ----
 const { requireAuth, requireRole } = require('../middleware/auth');
 

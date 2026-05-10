@@ -1777,6 +1777,20 @@
           <thead><tr><th>Username</th><th>Email</th><th>Active</th><th></th></tr></thead>
           <tbody id="portal-users-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
         </table>
+
+        <hr style="margin:1.5rem 0">
+        <h4 style="margin-bottom:0.5rem">&#128204; Callback Widget</h4>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem">
+          Embed a "Request Callback" button on the client's website. The widget identifies this client automatically via a secure token.
+        </p>
+        <button type="button" class="btn btn-sm btn-secondary" id="widget-gen-btn"
+          onclick="Admin.generateWidgetToken(editingClientId)">&#128204; Generate Embed Token</button>
+        <div id="widget-snippet-wrap" style="display:none;margin-top:0.75rem">
+          <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Copy this snippet into your website's HTML:</label>
+          <textarea id="widget-snippet" rows="2" class="form-control" readonly
+            style="font-family:monospace;font-size:0.75rem"
+            onclick="this.select()"></textarea>
+        </div>
       </div>
 
       <div id="ctab-webhooks" class="modal-body ctab" style="display:none">

@@ -313,6 +313,15 @@
         <h2 id="p-kb-article-title" style="margin-bottom:4px"></h2>
         <p id="p-kb-article-meta" style="color:#888;font-size:0.82rem;margin-bottom:16px"></p>
         <div id="p-kb-article-body" style="line-height:1.7;white-space:pre-wrap"></div>
+        <div id="p-kb-rate-wrap" style="margin-top:2rem;padding-top:1rem;border-top:1px solid #eee;display:flex;align-items:center;gap:1rem;font-size:0.85rem;color:#666">
+          <span>Was this helpful?</span>
+          <button class="p-btn p-btn-sm p-btn-secondary" onclick="Portal.rateArticle(true)" style="font-size:0.82rem">
+            &#128077; Yes (<span class="p-kb-helpful-count">0</span>)
+          </button>
+          <button class="p-btn p-btn-sm p-btn-secondary" onclick="Portal.rateArticle(false)" style="font-size:0.82rem">
+            &#128078; No (<span class="p-kb-nothelpful-count">0</span>)
+          </button>
+        </div>
       </div>
     </section>
 

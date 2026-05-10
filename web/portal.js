@@ -948,8 +948,33 @@ const Portal = (() => {
       document.getElementById('p-kb-article-meta').textContent  =
         `${a.category ? a.category + ' · ' : ''}Updated ${new Date(a.updated_at || a.created_at).toLocaleDateString('en-GB')}`;
       document.getElementById('p-kb-article-body').textContent  = a.content || '';
+      // Helpfulness rating
+      const rateWrap = document.getElementById('p-kb-rate-wrap');
+      if (rateWrap) {
+        rateWrap.dataset.articleId = id;
+        rateWrap.dataset.voted = '';
+        rateWrap.querySelector('.p-kb-helpful-count').textContent = a.helpful_count || 0;
+        rateWrap.querySelector('.p-kb-nothelpful-count').textContent = a.not_helpful_count || 0;
+      }
     } catch (err) {
       document.getElementById('p-kb-article-body').textContent = 'Error loading article.';
+    }
+  }
+
+  async function rateArticle(helpful) {
+    const wrap = document.getElementById('p-kb-rate-wrap');
+    if (!wrap || wrap.dataset.voted) return;
+    const id = wrap.dataset.articleId;
+    if (!id) return;
+    wrap.dataset.voted = '1';
+    try {
+      const data = await api('POST', `/portal/knowledge/${id}/rate`, { helpful });
+      wrap.querySelector('.p-kb-helpful-count').textContent = data.article.helpful_count;
+      wrap.querySelector('.p-kb-nothelpful-count').textContent = data.article.not_helpful_count;
+      toast(helpful ? 'Thanks for the feedback!' : 'Feedback recorded', 'success');
+    } catch (err) {
+      wrap.dataset.voted = '';
+      toast(err.message, 'error');
     }
   }
 
@@ -1065,7 +1090,7 @@ const Portal = (() => {
     // Appointments
     loadAppointments, openNewAppt, closeNewAppt, saveNewAppt, cancelAppointment,
     // Knowledge
-    loadKnowledge, searchKnowledge, openArticle, closeArticle,
+    loadKnowledge, searchKnowledge, openArticle, closeArticle, rateArticle,
     // Files
     loadFiles,
     // Replies

@@ -743,4 +743,4 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { deliverMessage, sendQuickNotify, _assertValidEmail: assertValidEmail };
+module.exports = { deliverMessage, sendQuickNotify, _assertValidEmail: assertValidEmail, isPrivateUrl };

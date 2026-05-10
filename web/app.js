@@ -4748,6 +4748,25 @@ const Admin = (() => {
     }
   }
 
+  async function generateWidgetToken(clientId) {
+    if (!confirm('Generate a new callback widget token? Any existing embed code will stop working.')) return;
+    try {
+      const data = await api('POST', `/widget/clients/${clientId}/token`);
+      showWidgetSnippet(clientId, data.widget_token);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'error');
+    }
+  }
+
+  function showWidgetSnippet(clientId, token) {
+    const origin = window.location.origin;
+    const snippet = `<script src="${origin}/api/widget/${token}/embed.js"><\/script>`;
+    const wrap = el('widget-snippet-wrap');
+    const ta = el('widget-snippet');
+    if (wrap) wrap.style.display = '';
+    if (ta) ta.value = snippet;
+  }
+
   /* ---- Webhooks ---- */
   async function loadWebhooks(clientId) {
     const tbody = el('webhooks-tbody');
@@ -5275,6 +5294,7 @@ const Admin = (() => {
     loadClientTimeline,
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser, sendPortalPasswordReset,
+    generateWidgetToken, showWidgetSnippet,
     loadWebhooks, addWebhook, testWebhook, deleteWebhook,
     sendTestEmail,
     uploadLogo, removeLogo,

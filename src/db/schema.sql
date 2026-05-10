@@ -1162,3 +1162,14 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAU
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS source VARCHAR(50);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS broadcast_id UUID;
 CREATE INDEX IF NOT EXISTS idx_messages_broadcast ON messages(broadcast_id) WHERE broadcast_id IS NOT NULL;
+
+-- v31 — Public widget token per client + KB article helpfulness ratings + widget callback source
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS widget_token VARCHAR(64) UNIQUE;
+ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS helpful_count     INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE knowledge_articles ADD COLUMN IF NOT EXISTS not_helpful_count INTEGER NOT NULL DEFAULT 0;
+-- Allow campaign_id to be NULL for widget/ad-hoc callback requests
+ALTER TABLE callback_records ALTER COLUMN campaign_id DROP NOT NULL;
+ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS client_id  UUID REFERENCES clients(id) ON DELETE CASCADE;
+ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS caller_phone VARCHAR(50);
+ALTER TABLE callback_records ADD COLUMN IF NOT EXISTS source VARCHAR(30) NOT NULL DEFAULT 'campaign';
+CREATE INDEX IF NOT EXISTS idx_cbrecord_client ON callback_records(client_id) WHERE client_id IS NOT NULL;
