@@ -1147,3 +1147,7 @@ CREATE TABLE IF NOT EXISTS message_replies (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_message_replies_msg ON message_replies(message_id);
+
+-- v28 — Portal message ratings (client-side CSAT for message interactions)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_rating         SMALLINT CHECK (portal_rating BETWEEN 1 AND 5);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_rating_comment TEXT;

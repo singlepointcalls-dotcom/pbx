@@ -115,12 +115,13 @@
     <section id="p-messages" class="p-section">
       <div class="p-section-header">
         <h1>Messages</h1>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="search" id="p-msg-search" class="p-input" placeholder="&#128269; Search messages…" style="width:180px;font-size:0.85rem" oninput="Portal.onMsgSearch()" />
           <select id="p-msg-filter" onchange="Portal.loadMessages()" class="p-select">
             <option value="">All Status</option>
             <option value="pending">Pending</option>
             <option value="delivered">Delivered</option>
-            <option value="failed">Failed</option>
+            <option value="acknowledged">Acknowledged</option>
           </select>
           <button class="p-btn p-btn-primary" onclick="Portal.openComposeMessage()">+ New Message</button>
         </div>

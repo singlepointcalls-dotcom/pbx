@@ -4075,7 +4075,11 @@ const Admin = (() => {
   async function loadReports() {
     const days = el('report-days')?.value || 30;
     // Update CSV download links
-    const setHref = (id, path) => { const a = el(id); if (a) a.href = '/api' + path; };
+    const _tok = localStorage.getItem('as_token');
+    const setHref = (id, path) => {
+      const a = el(id);
+      if (a) a.href = '/api' + path + (_tok ? `&token=${encodeURIComponent(_tok)}` : '');
+    };
     setHref('report-ops-csv-btn',     `/reports/operators?days=${days}&format=csv`);
     setHref('report-clients-csv-btn', `/reports/clients?days=${days}&format=csv`);
 
@@ -5065,6 +5069,34 @@ const Admin = (() => {
     }
   }
 
+  /* ---- CSV downloads with JWT auth ---- */
+  function _csvDownload(url, filename) {
+    const t = localStorage.getItem('as_token');
+    const fullUrl = t ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(t)}` : url;
+    const a = document.createElement('a');
+    a.href = fullUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function exportMessagesCsv() {
+    const days = el('report-days')?.value || 30;
+    const clientId = el('msg-filter-client')?.value || el('report-client-filter')?.value || '';
+    let url = '/api/messages?format=csv';
+    if (clientId) url += `&client_id=${encodeURIComponent(clientId)}`;
+    _csvDownload(url, 'messages.csv');
+  }
+
+  function exportCallsCsv() {
+    const days = el('report-days')?.value || 30;
+    const clientId = el('msg-filter-client')?.value || '';
+    let url = '/api/calls?format=csv';
+    if (clientId) url += `&client_id=${encodeURIComponent(clientId)}`;
+    _csvDownload(url, 'calls.csv');
+  }
+
   /* ---- Public ---- */
   return {
     init, showSection, showClientTab,
@@ -5103,6 +5135,8 @@ const Admin = (() => {
     toggleTargetsPanel, loadTargets, openTargetsModal, closeTargetsModal, saveTargets,
     // Canned
     loadCannedResponses, openCannedModal, closeCannedModal, saveCannedResponse, deleteCannedResponse,
+    // CSV exports
+    exportMessagesCsv, exportCallsCsv,
   };
 
 })();
@@ -5225,10 +5259,12 @@ const Analytics = (() => {
     try {
       const qs = `?granularity=${period}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
       const baseUrl = '/api';
-      const token = localStorage.getItem('as_token') || '';
-      // Update CSV download links (auth via URL param fallback not available — links open API directly)
+      const _atok = localStorage.getItem('as_token') || '';
       const csvQs = qs + '&format=csv';
-      const setHref = (id, path) => { const a = el(id); if (a) a.href = baseUrl + path; };
+      const setHref = (id, path) => {
+        const a = el(id);
+        if (a) a.href = baseUrl + path + (_atok ? `&token=${encodeURIComponent(_atok)}` : '');
+      };
       setHref('analytics-calls-csv',     `/analytics/calls${csvQs}`);
       setHref('analytics-msgs-csv',      `/analytics/messages${csvQs}`);
       setHref('analytics-sla-csv',       `/analytics/sla${csvQs}`);

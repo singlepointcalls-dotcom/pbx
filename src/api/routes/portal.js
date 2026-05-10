@@ -175,7 +175,7 @@ router.get('/messages/stats', requirePortalAuth, async (req, res, next) => {
 // GET /api/portal/messages
 router.get('/messages', requirePortalAuth, async (req, res, next) => {
   try {
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status, q, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT m.*, op.full_name AS operator_name
       FROM messages m
@@ -184,6 +184,11 @@ router.get('/messages', requirePortalAuth, async (req, res, next) => {
     `;
     const params = [req.portalUser.client_id];
     if (status) { params.push(status); query += ` AND m.status = $${params.length}`; }
+    if (q && q.trim()) {
+      const term = `%${q.trim()}%`;
+      params.push(term);
+      query += ` AND (m.subject ILIKE $${params.length} OR m.body ILIKE $${params.length})`;
+    }
     params.push(parseInt(limit)); query += ` ORDER BY m.created_at DESC LIMIT $${params.length}`;
     params.push(parseInt(offset)); query += ` OFFSET $${params.length}`;
 
@@ -225,6 +230,24 @@ router.post('/messages', requirePortalAuth, async (req, res, next) => {
     broadcast('message:new', { messageId: message.id, clientId: portalUser.client_id, source: 'portal' });
 
     res.status(201).json({ message });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/messages/:id/rate — portal user rates a message interaction (1-5 stars)
+router.post('/messages/:id/rate', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { rating, comment } = req.body;
+    const r = parseInt(rating);
+    if (!r || r < 1 || r > 5) return res.status(400).json({ error: 'rating must be 1–5' });
+    const result = await pool.query(
+      `UPDATE messages
+       SET portal_rating = $1, portal_rating_comment = $2
+       WHERE id = $3 AND client_id = $4
+       RETURNING id, portal_rating, portal_rating_comment`,
+      [r, comment || null, req.params.id, req.portalUser.client_id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Message not found' });
+    res.json({ message: result.rows[0] });
   } catch (err) { next(err); }
 });
 

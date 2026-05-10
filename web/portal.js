@@ -338,8 +338,10 @@ const Portal = (() => {
   /* ---- Messages ---- */
   async function loadMessages() {
     const status = el('p-msg-filter')?.value;
+    const q = el('p-msg-search')?.value.trim();
     let path = `/portal/messages?limit=${MSG_LIMIT}&offset=${msgOffset}`;
     if (status) path += `&status=${status}`;
+    if (q) path += `&q=${encodeURIComponent(q)}`;
     try {
       const data = await api('GET', path);
       if (!data) return;
@@ -350,6 +352,12 @@ const Portal = (() => {
     } catch (err) {
       el('p-messages-list').innerHTML = `<p class="p-empty">Error: ${escHtml(err.message)}</p>`;
     }
+  }
+
+  let _msgSearchTimer = null;
+  function onMsgSearch() {
+    clearTimeout(_msgSearchTimer);
+    _msgSearchTimer = setTimeout(() => { msgOffset = 0; loadMessages(); }, 300);
   }
 
   function msgPage(dir) {
@@ -400,7 +408,18 @@ const Portal = (() => {
           style: 'font-size:0.78rem;color:#27ae60', textContent: '✓ Acknowledged',
         }));
       }
+      msgOffset = 0;
+      loadMessages();
     } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+  }
+
+  async function rateMessage(messageId, stars) {
+    try {
+      await api('POST', `/portal/messages/${messageId}/rate`, { rating: stars });
+      toast(`Thank you for your ${stars}-star rating!`, 'success');
+      msgOffset = 0;
+      loadMessages();
+    } catch (err) { toast(err.message, 'error'); }
   }
 
   function renderMsgList(container, messages, limit) {
@@ -426,7 +445,11 @@ const Portal = (() => {
             <span>${relTime(m.created_at)}</span>
             ${m.acknowledged_at ? `<span style="color:#27ae60">&#10003; Acknowledged</span>` : ''}
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${(m.status === 'acknowledged' || m.acknowledged_at) && !m.portal_rating ? `
+              <span style="font-size:0.78rem;color:var(--p-text-muted,#888)">Rate:</span>
+              ${[1,2,3,4,5].map((s) => `<button class="p-btn p-btn-sm" title="${s} star${s>1?'s':''}" onclick="Portal.rateMessage('${m.id}',${s})" style="padding:2px 6px;font-size:1rem;background:none;border:none;cursor:pointer;color:#f0ad4e">&#9733;</button>`).join('')}
+            ` : m.portal_rating ? `<span style="font-size:0.82rem;color:#f0ad4e">${'&#9733;'.repeat(m.portal_rating)}${'&#9734;'.repeat(5-m.portal_rating)}</span>` : ''}
             <button class="p-btn p-btn-sm p-btn-secondary" onclick="Portal.toggleMsgReplies('${m.id}', this)">&#128140; Replies</button>
             ${!m.acknowledged_at && m.status !== 'acknowledged' ? `
               <button class="p-btn p-btn-sm" onclick="Portal.acknowledgeMessage('${m.id}', this)">&#10003; Mark Read</button>
@@ -974,7 +997,7 @@ const Portal = (() => {
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    nav, logout, loadMessages, msgPage, openComposeMessage, closeComposeMessage, sendPortalMessage, acknowledgeMessage,
+    nav, logout, loadMessages, onMsgSearch, msgPage, openComposeMessage, closeComposeMessage, sendPortalMessage, acknowledgeMessage, rateMessage,
     loadCalls, loadBilling, loadAvailability, setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
     loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,

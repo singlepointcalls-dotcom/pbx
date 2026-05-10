@@ -636,8 +636,8 @@
             <option value="30" selected>Last 30 days</option>
             <option value="90">Last 90 days</option>
           </select>
-          <a id="export-messages-btn" href="/api/messages?format=csv" class="btn btn-sm btn-secondary">&#11015; Messages CSV</a>
-          <a id="export-calls-btn" href="/api/calls?format=csv" class="btn btn-sm btn-secondary">&#11015; Calls CSV</a>
+          <button class="btn btn-sm btn-secondary" onclick="Admin.exportMessagesCsv()">&#11015; Messages CSV</button>
+          <button class="btn btn-sm btn-secondary" onclick="Admin.exportCallsCsv()">&#11015; Calls CSV</button>
         </div>
       </div>
       <div id="report-summary" class="report-cards"></div>

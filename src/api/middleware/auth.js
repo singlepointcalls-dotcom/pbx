@@ -4,11 +4,13 @@ const jwt = require('jsonwebtoken');
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
+  // Allow token as query param for file download links (GET only)
+  const queryToken = req.method === 'GET' ? req.query.token : null;
+  if (!queryToken && (!header || !header.startsWith('Bearer '))) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const token = header.slice(7);
+  const token = queryToken || header.slice(7);
   try {
     req.operator = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     next();
