@@ -1330,31 +1330,116 @@ const App = (() => {
     `).join('');
   }
 
+  let _detailMessageId = null;
+  let _detailMessageBody = '';
+
   async function showMessageDetail(messageId) {
+    _detailMessageId = messageId;
+    _detailMessageBody = '';
+    const modal = el('msg-detail-modal');
+    if (!modal) {
+      // Fallback to old behavior if modal not in DOM
+      return _showMessageDetailLegacy(messageId);
+    }
+    el('msg-detail-title').textContent = 'Loading…';
+    el('msg-detail-meta').innerHTML = '';
+    el('msg-detail-body').textContent = '';
+    el('msg-detail-deliveries').innerHTML = '';
+    const aiOut = el('ai-output');
+    if (aiOut) { aiOut.style.display = 'none'; aiOut.textContent = ''; }
+    modal.style.display = 'flex';
     try {
       const data = await api('GET', `/messages/${messageId}`);
       if (!data) return;
       const m = data.message;
-      const detail = [
-        `Client: ${m.client_name}`,
-        `Caller: ${m.caller_name || '—'} ${m.caller_phone ? `(${m.caller_phone})` : ''}${m.caller_company ? ` — ${m.caller_company}` : ''}`,
-        `Priority: ${m.urgency.toUpperCase()}`,
-        `Status: ${m.status}`,
-        '',
-        m.subject ? `Subject: ${m.subject}` : '',
-        '',
-        m.body,
-      ].filter((l) => l !== undefined).join('\n');
+      _detailMessageBody = m.body || '';
+      el('msg-detail-title').textContent = m.subject || 'Message';
+      el('msg-detail-meta').innerHTML = [
+        `<span class="pill pill-${m.urgency === 'high' ? 'red' : 'blue'}">${m.urgency}</span>`,
+        `<span class="pill">${m.status}</span>`,
+        `<span>Client: <strong>${escHtml(m.client_name || '—')}</strong></span>`,
+        `<span>Caller: ${escHtml(m.caller_name || '—')}${m.caller_phone ? ` (${escHtml(m.caller_phone)})` : ''}</span>`,
+        `<span>${new Date(m.created_at).toLocaleString('en-GB')}</span>`,
+      ].join('');
+      el('msg-detail-body').textContent = m.body || '(no body)';
 
-      const action = confirm(`${detail}\n\nClick OK to redeliver, Cancel to dismiss.`);
-      if (action) {
+      // Load delivery log
+      try {
+        const del = await api('GET', `/messages/${messageId}/deliveries`);
+        const deliveries = del.deliveries || [];
+        if (deliveries.length) {
+          el('msg-detail-deliveries').innerHTML = '<div style="margin-top:8px;font-size:0.78rem"><strong>Deliveries:</strong> ' +
+            deliveries.map((d) => `<span class="pill ${d.status === 'sent' ? 'pill-green' : 'pill-red'}" style="margin-right:4px">${escHtml(d.channel)} · ${d.status}</span>`).join('') + '</div>';
+        }
+      } catch { /* ignore */ }
+    } catch (err) {
+      el('msg-detail-body').textContent = 'Error: ' + err.message;
+    }
+  }
+
+  async function _showMessageDetailLegacy(messageId) {
+    try {
+      const data = await api('GET', `/messages/${messageId}`);
+      if (!data) return;
+      const m = data.message;
+      const detail = [`Client: ${m.client_name}`, `Caller: ${m.caller_name || '—'}`, `Status: ${m.status}`, '', m.body].join('\n');
+      if (confirm(`${detail}\n\nRedeliver?`)) {
         await api('POST', `/messages/${messageId}/deliver`, {});
         toast('Message delivered', 'success');
         loadMessages();
       }
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  function closeMsgDetail() {
+    const modal = el('msg-detail-modal');
+    if (modal) modal.style.display = 'none';
+    _detailMessageId = null;
+  }
+
+  async function redeliverMessage() {
+    if (!_detailMessageId) return;
+    try {
+      await api('POST', `/messages/${_detailMessageId}/deliver`, {});
+      toast('Message redelivered', 'success');
+      closeMsgDetail();
+      loadMessages();
+    } catch (err) { toast(`Redeliver failed: ${err.message}`, 'danger'); }
+  }
+
+  /* ---- AI Features ---- */
+  async function _aiRequest(endpoint, payload, outputLabel) {
+    const btn = el(endpoint.includes('summarise') ? 'ai-summarise-btn' :
+                   endpoint.includes('translate') ? 'ai-translate-btn' : 'ai-suggest-btn');
+    const out = el('ai-output');
+    if (!out) return;
+    if (btn) btn.disabled = true;
+    out.style.display = 'block';
+    out.textContent = 'Thinking…';
+    try {
+      const data = await api('POST', endpoint, payload);
+      const result = data.summary || data.translation || data.suggestion || data.result || JSON.stringify(data);
+      out.innerHTML = `<strong>${outputLabel}:</strong><br>${escHtml(result)}`;
     } catch (err) {
-      toast(`Error: ${err.message}`, 'danger');
+      out.textContent = `AI error: ${err.message}`;
+    } finally {
+      if (btn) btn.disabled = false;
     }
+  }
+
+  function aiSummarise() {
+    if (!_detailMessageBody) return;
+    _aiRequest('/ai/summarise', { text: _detailMessageBody }, 'Summary');
+  }
+
+  function aiTranslate() {
+    if (!_detailMessageBody) return;
+    _aiRequest('/ai/translate', { text: _detailMessageBody, target_language: 'English' }, 'Translation');
+  }
+
+  function aiSuggestReply() {
+    if (!_detailMessageBody) return;
+    _aiRequest('/ai/suggest-reply', { message: _detailMessageBody }, 'Suggested Reply');
   }
 
   async function submitMessage(andDeliver = true) {
@@ -2417,7 +2502,9 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, switchView, onClientChange, onCallTypeChange,
+    showMessageDetail, closeMsgDetail, redeliverMessage,
+    aiSummarise, aiTranslate, aiSuggestReply,
+    switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,
     showMyProfile, closeProfile, showPwStrength, changePassword,
     showForgotPassword, showLogin, doForgotPassword, doResetPassword,
@@ -2523,6 +2610,7 @@ const Admin = (() => {
     else if (name === 'skills') SkillsPanel.load();
     else if (name === 'dnc') DncPanel.load();
     else if (name === 'transcription') TranscriptionPanel.load();
+    else if (name === 'whatsapp') WAInbox.load();
   }
 
   /* ---- Client Modal Tabs ---- */
@@ -5867,4 +5955,92 @@ const QAPanel = (() => {
   }
 
   return { load };
+})();
+
+/* ============================================================
+   WhatsApp Inbox Panel
+   ============================================================ */
+const WAInbox = (() => {
+  const api = (...a) => App._api(...a);
+  const toast = (...a) => App._toast(...a);
+  const el = (id) => document.getElementById(id);
+  const escHtml = (...a) => App._escHtml(...a);
+  let activeThread = null;
+
+  async function load() {
+    if (!el('admin-whatsapp')) return;
+    loadThreads();
+  }
+
+  async function loadThreads() {
+    const list = el('wa-thread-list');
+    if (!list) return;
+    list.innerHTML = '<p style="color:#666;padding:8px">Loading...</p>';
+    try {
+      const data = await api('GET', '/whatsapp/threads');
+      const threads = data?.threads || [];
+      if (!threads.length) { list.innerHTML = '<p style="color:#888;padding:8px">No WhatsApp threads</p>'; return; }
+      list.innerHTML = threads.map((t) => `
+        <div class="sms-thread-item ${t.unread > 0 ? 'unread' : ''}"
+             onclick="WAInbox.openThread('${escHtml(t.from_number)}','${escHtml(t.client_name || '')}')"
+             style="padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer">
+          <strong>${escHtml(t.from_number)}</strong>
+          ${t.unread > 0 ? `<span style="background:#25d366;color:#fff;border-radius:999px;padding:1px 6px;font-size:0.75em;margin-left:4px">${t.unread}</span>` : ''}
+          <span style="color:#888;font-size:0.85em;float:right">${escHtml(t.client_name || '')}</span>
+          <div style="color:#666;font-size:0.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.last_body || '')}</div>
+        </div>`).join('');
+    } catch (err) { toast(`WhatsApp error: ${err.message}`, 'danger'); }
+  }
+
+  async function openThread(number, clientName) {
+    activeThread = number;
+    el('wa-thread-title') && (el('wa-thread-title').textContent = `${number}${clientName ? ` — ${clientName}` : ''}`);
+    const msgs = el('wa-messages');
+    if (msgs) msgs.innerHTML = '<p style="color:#666">Loading...</p>';
+    try {
+      const data = await api('GET', `/whatsapp/thread/${encodeURIComponent(number)}`);
+      const messages = data?.messages || [];
+      if (msgs) {
+        if (!messages.length) { msgs.innerHTML = '<p style="color:#888">No messages</p>'; return; }
+        msgs.innerHTML = messages.map((m) => `
+          <div style="display:flex;flex-direction:${m.direction === 'outbound' ? 'row-reverse' : 'row'};margin:4px 0">
+            <div style="max-width:70%;padding:8px 12px;border-radius:12px;
+                        background:${m.direction === 'outbound' ? '#25d366' : '#f0f0f0'};
+                        color:${m.direction === 'outbound' ? '#fff' : '#333'}">
+              ${escHtml(m.body)}
+              <div style="font-size:0.75em;opacity:0.7;margin-top:2px">${new Date(m.created_at).toLocaleString()}</div>
+            </div>
+          </div>`).join('');
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    } catch (err) { toast(`Error loading thread: ${err.message}`, 'danger'); }
+    loadThreads();
+  }
+
+  async function sendReply() {
+    if (!activeThread) return;
+    const input = el('wa-reply-input');
+    const body  = input?.value?.trim();
+    if (!body) return;
+    try {
+      await api('POST', '/whatsapp/send', { to: activeThread, body });
+      input.value = '';
+      openThread(activeThread, '');
+      toast('WhatsApp message sent', 'success');
+    } catch (err) { toast(`Send failed: ${err.message}`, 'danger'); }
+  }
+
+  async function openCompose() {
+    const to   = prompt('WhatsApp number (e.g. +447700900000):');
+    if (!to) return;
+    const body = prompt('Message:');
+    if (!body) return;
+    try {
+      await api('POST', '/whatsapp/send', { to, body });
+      toast('WhatsApp message sent', 'success');
+      loadThreads();
+    } catch (err) { toast(`Send failed: ${err.message}`, 'danger'); }
+  }
+
+  return { load, openThread, sendReply, loadThreads, openCompose };
 })();

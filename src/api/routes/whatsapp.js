@@ -182,4 +182,27 @@ router.get('/threads', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/whatsapp/thread/:number — messages in a conversation
+router.get('/thread/:number', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT s.*, c.name AS client_name
+       FROM sms_messages s
+       LEFT JOIN clients c ON s.client_id = c.id
+       WHERE s.provider = 'whatsapp_cloud'
+         AND (s.from_number = $1 OR s.to_number = $1)
+       ORDER BY s.created_at ASC
+       LIMIT 200`,
+      [req.params.number]
+    );
+    // Mark inbound messages as read
+    await pool.query(
+      `UPDATE sms_messages SET status = 'read'
+       WHERE provider = 'whatsapp_cloud' AND from_number = $1 AND status = 'received'`,
+      [req.params.number]
+    );
+    res.json({ messages: result.rows });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
