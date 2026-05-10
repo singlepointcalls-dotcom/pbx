@@ -7,6 +7,22 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { validatePassword } = require('./auth');
 const audit = require('../../services/audit');
 
+// Close any open status log entry and open a new one
+async function logStatusChange(operatorId, newStatus) {
+  const now = new Date();
+  await pool.query(
+    `UPDATE operator_status_log
+     SET ended_at = $1,
+         duration_seconds = EXTRACT(EPOCH FROM ($1 - started_at))::INTEGER
+     WHERE operator_id = $2 AND ended_at IS NULL`,
+    [now, operatorId]
+  );
+  await pool.query(
+    `INSERT INTO operator_status_log (operator_id, status, started_at) VALUES ($1, $2, $3)`,
+    [operatorId, newStatus, now]
+  );
+}
+
 router.use(requireAuth);
 
 // GET /api/operators
@@ -172,13 +188,13 @@ router.delete('/:id/2fa', requireRole('admin'), async (req, res, next) => {
 router.post('/me/status', async (req, res, next) => {
   try {
     const { status } = req.body;
-    const allowed = ['ready', 'busy', 'break', 'lunch', 'training', 'admin', 'offline'];
+    const allowed = ['ready', 'busy', 'break', 'lunch', 'comfort', 'training', 'admin', 'meeting', 'offline'];
     if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     await pool.query(
       'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
       [status, req.operator.id]
     );
-    // Also emit via Socket.io
+    await logStatusChange(req.operator.id, status);
     const { broadcast } = require('../../services/realtime');
     broadcast('operator:status_change', { operator_id: req.operator.id, status });
     res.json({ status });
@@ -189,9 +205,8 @@ router.post('/me/status', async (req, res, next) => {
 router.post('/me/break/start', async (req, res, next) => {
   try {
     const { break_type = 'break', notes } = req.body;
-    const allowed = ['break', 'lunch', 'training', 'admin'];
+    const allowed = ['break', 'lunch', 'comfort', 'training', 'admin', 'meeting'];
     if (!allowed.includes(break_type)) return res.status(400).json({ error: 'Invalid break_type' });
-    // End any open break first
     await pool.query(
       `UPDATE operator_breaks SET ended_at = NOW()
        WHERE operator_id = $1 AND ended_at IS NULL`,
@@ -206,6 +221,7 @@ router.post('/me/break/start', async (req, res, next) => {
       'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
       [break_type, req.operator.id]
     );
+    await logStatusChange(req.operator.id, break_type);
     res.json({ break: result.rows[0] });
   } catch (err) { next(err); }
 });
@@ -222,6 +238,7 @@ router.post('/me/break/end', async (req, res, next) => {
       'UPDATE operators SET current_status = $1, status_changed_at = NOW() WHERE id = $2',
       ['ready', req.operator.id]
     );
+    await logStatusChange(req.operator.id, 'ready');
     res.json({ message: 'Break ended' });
   } catch (err) { next(err); }
 });
@@ -238,6 +255,83 @@ router.get('/me/breaks', async (req, res, next) => {
     res.json({ breaks: result.rows });
   } catch (err) { next(err); }
 });
+
+// GET /api/operators/me/time-report — own status time breakdown
+// GET /api/operators/time-report?operator_id=uuid — admin view of any operator
+router.get('/me/time-report', async (req, res, next) => {
+  try {
+    const { period = 'day' } = req.query;
+    const rows = await queryTimeReport(req.operator.id, period);
+    res.json({ operator_id: req.operator.id, period, rows });
+  } catch (err) { next(err); }
+});
+
+router.get('/time-report', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { operator_id, period = 'day' } = req.query;
+    if (!operator_id) return res.status(400).json({ error: 'operator_id required' });
+    const rows = await queryTimeReport(operator_id, period);
+    res.json({ operator_id, period, rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/operators/time-report/all — summary for all operators (admin)
+router.get('/time-report/all', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { period = 'day' } = req.query;
+    const since = periodStart(period);
+    const result = await pool.query(
+      `SELECT o.id, o.full_name, o.username,
+              sl.status,
+              COUNT(*)::INT AS occurrences,
+              SUM(COALESCE(sl.duration_seconds,
+                EXTRACT(EPOCH FROM (NOW() - sl.started_at))::INTEGER))::INT AS total_seconds
+       FROM operator_status_log sl
+       JOIN operators o ON o.id = sl.operator_id
+       WHERE sl.started_at >= $1
+       GROUP BY o.id, o.full_name, o.username, sl.status
+       ORDER BY o.full_name, total_seconds DESC`,
+      [since]
+    );
+    res.json({ period, rows: result.rows });
+  } catch (err) { next(err); }
+});
+
+function periodStart(period) {
+  const now = new Date();
+  switch (period) {
+    case 'week':  { const d = new Date(now); d.setDate(d.getDate() - 7); return d; }
+    case 'month': { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d; }
+    case 'year':  { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); return d; }
+    default:      return new Date(now.getFullYear(), now.getMonth(), now.getDate()); // today
+  }
+}
+
+async function queryTimeReport(operatorId, period) {
+  const since = periodStart(period);
+  const result = await pool.query(
+    `SELECT
+       status,
+       COUNT(*)::INT                                                                       AS occurrences,
+       SUM(COALESCE(duration_seconds,
+         EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER))::INT                         AS total_seconds,
+       ROUND(AVG(COALESCE(duration_seconds,
+         EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER)))::INT                        AS avg_seconds,
+       MIN(started_at)                                                                     AS first_seen,
+       MAX(COALESCE(ended_at, NOW()))                                                      AS last_seen
+     FROM operator_status_log
+     WHERE operator_id = $1
+       AND started_at >= $2
+     GROUP BY status
+     ORDER BY total_seconds DESC`,
+    [operatorId, since]
+  );
+  const grand = result.rows.reduce((s, r) => s + (r.total_seconds || 0), 0);
+  return result.rows.map(r => ({
+    ...r,
+    pct: grand > 0 ? Math.round((r.total_seconds / grand) * 100) : 0,
+  }));
+}
 
 // GET /api/operators/performance — operator performance stats (admin/supervisor)
 router.get('/performance', requireRole('admin', 'supervisor'), async (req, res, next) => {

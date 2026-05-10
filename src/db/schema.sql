@@ -1240,3 +1240,17 @@ CREATE TABLE IF NOT EXISTS conference_sessions (
   ended_at        TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_conf_sessions_call ON conference_sessions(call_log_id);
+
+-- ============================================================
+-- v35 — Operator status time tracking
+-- ============================================================
+CREATE TABLE IF NOT EXISTS operator_status_log (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  operator_id      UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  status           VARCHAR(50) NOT NULL,
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at         TIMESTAMPTZ,
+  duration_seconds INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_op_status_log_operator ON operator_status_log(operator_id);
+CREATE INDEX IF NOT EXISTS idx_op_status_log_started  ON operator_status_log(started_at);

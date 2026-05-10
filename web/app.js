@@ -2567,6 +2567,110 @@ const App = (() => {
   function showShortcuts() { el('shortcuts-modal').style.display = 'flex'; }
   function closeShortcuts() { el('shortcuts-modal').style.display = 'none'; }
 
+  /* ---- My Time Report ---- */
+  const STATUS_META = {
+    ready:    { label: 'Ready',         color: '#16a34a', icon: '✅' },
+    busy:     { label: 'On Call',       color: '#d97706', icon: '📞' },
+    break:    { label: 'Short Break',   color: '#0ea5e9', icon: '☕' },
+    lunch:    { label: 'Lunch',         color: '#8b5cf6', icon: '🍽️' },
+    comfort:  { label: 'Comfort Break', color: '#ec4899', icon: '🚻' },
+    training: { label: 'Training',      color: '#06b6d4', icon: '📚' },
+    meeting:  { label: 'Meeting',       color: '#f59e0b', icon: '👥' },
+    admin:    { label: 'Admin Work',    color: '#6366f1', icon: '📋' },
+    offline:  { label: 'Offline',       color: '#94a3b8', icon: '⭕' },
+  };
+
+  function fmtSeconds(s) {
+    if (!s) return '0s';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+
+  function showMyTime() {
+    el('my-time-modal').style.display = 'flex';
+    loadMyTime('day');
+  }
+  function closeMyTime() { el('my-time-modal').style.display = 'none'; }
+
+  async function loadMyTime(period) {
+    // Update button styles
+    ['day','week','month','year'].forEach(p => {
+      const btn = el(`myt-btn-${p}`);
+      if (btn) { btn.className = `btn btn-sm ${p === period ? 'btn-primary' : 'btn-secondary'}`; }
+    });
+    const labels = { day: 'Today', week: 'This Week', month: 'This Month', year: 'This Year' };
+    el('myt-period-label').textContent = labels[period] || '';
+    el('myt-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Loading…</td></tr>';
+    el('myt-bars').innerHTML = '';
+    el('myt-totals').innerHTML = '';
+    try {
+      const data = await api('GET', `/operators/me/time-report?period=${period}`);
+      const rows = data.rows || [];
+      if (!rows.length) {
+        el('myt-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">No status data for this period yet</td></tr>';
+        return;
+      }
+      const grandTotal = rows.reduce((s, r) => s + (r.total_seconds || 0), 0);
+
+      // Totals bar
+      el('myt-totals').innerHTML = `
+        <div style="text-align:center">
+          <div style="font-size:1.5rem;font-weight:800;color:var(--text)">${fmtSeconds(grandTotal)}</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em">Total Tracked</div>
+        </div>
+        ${rows.slice(0, 4).map(r => {
+          const m = STATUS_META[r.status] || { label: r.status, color: '#64748b', icon: '◉' };
+          return `<div style="text-align:center">
+            <div style="font-size:1.1rem;font-weight:700;color:${m.color}">${fmtSeconds(r.total_seconds)}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted)">${m.icon} ${m.label}</div>
+          </div>`;
+        }).join('')}`;
+
+      // Bar chart
+      el('myt-bars').innerHTML = rows.map(r => {
+        const m = STATUS_META[r.status] || { label: r.status, color: '#64748b', icon: '◉' };
+        const pct = r.pct || 0;
+        return `<div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${m.icon} ${m.label}</span>
+            <span style="font-size:0.78rem;color:var(--text-muted)">${fmtSeconds(r.total_seconds)} &nbsp;(${pct}%)</span>
+          </div>
+          <div style="height:10px;border-radius:5px;background:var(--border);overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${m.color};border-radius:5px;transition:width 0.4s ease;min-width:${pct > 0 ? 4 : 0}px"></div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // Detail table
+      el('myt-tbody').innerHTML = rows.map(r => {
+        const m = STATUS_META[r.status] || { label: r.status, color: '#64748b', icon: '◉' };
+        return `<tr>
+          <td data-label="Status"><span style="display:inline-flex;align-items:center;gap:6px">
+            <span style="width:8px;height:8px;border-radius:50%;background:${m.color};display:inline-block;flex-shrink:0"></span>
+            ${m.icon} ${escHtml(m.label)}
+          </span></td>
+          <td data-label="Occurrences">${r.occurrences}</td>
+          <td data-label="Total Time"><strong>${fmtSeconds(r.total_seconds)}</strong></td>
+          <td data-label="Avg Duration">${fmtSeconds(r.avg_seconds)}</td>
+          <td data-label="% of Shift">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:6px;border-radius:3px;background:var(--border);min-width:60px">
+                <div style="height:100%;width:${r.pct}%;background:${m.color};border-radius:3px"></div>
+              </div>
+              <span style="font-size:0.78rem;min-width:32px;text-align:right">${r.pct}%</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      el('myt-tbody').innerHTML = `<tr><td colspan="5" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
   /* ---- Canned Response Autocomplete ---- */
   let cannedResponses = [];
 
@@ -2907,9 +3011,11 @@ const App = (() => {
       }
       // Update UI
       const dotClasses = { ready: 'dot-ready', busy: 'dot-busy', break: 'dot-break',
-        lunch: 'dot-lunch', training: 'dot-training', admin: 'dot-admin', offline: 'dot-offline' };
-      const labels = { ready: 'Ready', busy: 'Busy', break: 'On Break', lunch: 'Lunch',
-        training: 'Training', admin: 'Admin', offline: 'Offline' };
+        lunch: 'dot-lunch', comfort: 'dot-break', training: 'dot-training',
+        meeting: 'dot-training', admin: 'dot-admin', offline: 'dot-offline' };
+      const labels = { ready: 'Ready', busy: 'On Call', break: 'Short Break', lunch: 'Lunch',
+        comfort: 'Comfort Break', training: 'Training', meeting: 'Meeting',
+        admin: 'Admin', offline: 'Offline' };
       const dot = el('break-status-dot');
       const label = el('break-status-label');
       if (dot) { dot.className = `status-dot ${dotClasses[status] || 'dot-offline'}`; }
@@ -3191,6 +3297,7 @@ const App = (() => {
     toggleDarkMode,
     // Shortcuts
     showShortcuts, closeShortcuts,
+    showMyTime, closeMyTime, loadMyTime,
     // Chat
     toggleChat, sendChat,
     // Break / status
@@ -3252,14 +3359,56 @@ const Admin = (() => {
   /* ---- Init ---- */
   async function init() {
     if (!initialized) initialized = true;
+    // Auto-wrap bare admin-tables in a scroll container (for mobile)
+    document.querySelectorAll('#view-admin .admin-table').forEach(t => {
+      if (!t.closest('.admin-table-wrap') && !t.closest('[id$="-wrap"]') && !t.closest('[id$="-tbody"]')) {
+        const wrap = document.createElement('div');
+        wrap.className = 'admin-table-wrap';
+        t.parentNode.insertBefore(wrap, t);
+        wrap.appendChild(t);
+      }
+    });
     showSection('clients');
+  }
+
+  function filterNav(query) {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('.admin-nav-item').forEach((btn) => {
+      const label = (btn.dataset.label || btn.textContent).toLowerCase();
+      btn.style.display = (!q || label.includes(q)) ? '' : 'none';
+    });
+    document.querySelectorAll('.admin-nav-group').forEach((group) => {
+      const anyVisible = Array.from(group.querySelectorAll('.admin-nav-item')).some(b => b.style.display !== 'none');
+      group.style.display = anyVisible ? '' : 'none';
+    });
+  }
+
+  function toggleMobileNav() {
+    const nav = el('admin-nav');
+    const overlay = el('admin-nav-overlay');
+    const hamburger = el('admin-hamburger');
+    const isOpen = nav.classList.contains('mobile-open');
+    nav.classList.toggle('mobile-open', !isOpen);
+    overlay.classList.toggle('active', !isOpen);
+    hamburger.classList.toggle('open', !isOpen);
+  }
+
+  function closeMobileNav() {
+    el('admin-nav')?.classList.remove('mobile-open');
+    el('admin-nav-overlay')?.classList.remove('active');
+    el('admin-hamburger')?.classList.remove('open');
   }
 
   function showSection(name, evt) {
     document.querySelectorAll('.admin-section').forEach((s) => s.style.display = 'none');
     document.querySelectorAll('.admin-nav-item').forEach((b) => b.classList.remove('active'));
     el(`admin-${name}`).style.display = 'block';
-    if (evt && evt.target) evt.target.classList.add('active');
+    if (evt && evt.target) {
+      evt.target.classList.add('active');
+      const titleEl = el('admin-mobile-title');
+      if (titleEl) titleEl.textContent = evt.target.dataset.label || evt.target.textContent.trim();
+    }
+    closeMobileNav();
 
     if (name === 'clients') loadClients();
     else if (name === 'operators') loadOperators();
@@ -3289,7 +3438,7 @@ const Admin = (() => {
     else if (name === 'recordings') RecordingsPanel.load();
     else if (name === 'queue') QueuePanel.load();
     else if (name === 'intake-submissions') IntakeSubmissionsPanel.load();
-    else if (name === 'op-performance') OperatorPerfPanel.load();
+    else if (name === 'op-performance') { OperatorPerfPanel.load(); StatusTimePanel.load(); }
     else if (name === 'bulk-sms') BulkSmsPanel.load();
     else if (name === 'whatsapp') WAInbox.load();
     else if (name === 'csat') CsatPanel.load();
@@ -5589,7 +5738,7 @@ const Admin = (() => {
 
   /* ---- Public ---- */
   return {
-    init, showSection, showClientTab,
+    init, showSection, showClientTab, filterNav, toggleMobileNav, closeMobileNav,
     searchClients,
     openClientModal, closeClientModal, saveClient, toggleClient,
     toggleDayClosed,
@@ -7459,6 +7608,114 @@ const OperatorPerfPanel = (() => {
         </table>`;
     } catch (err) {
       wrap.innerHTML = `<p class="empty-state" style="color:var(--danger)">Failed to load: ${err.message}</p>`;
+    }
+  }
+
+  return { load };
+})();
+
+/* ============================================================
+   StatusTimePanel — per-operator status time breakdown (admin)
+   ============================================================ */
+const StatusTimePanel = (() => {
+  const STATUS_META_ADMIN = {
+    ready:    { label: 'Ready',         color: '#16a34a', icon: '✅' },
+    busy:     { label: 'On Call',       color: '#d97706', icon: '📞' },
+    break:    { label: 'Short Break',   color: '#0ea5e9', icon: '☕' },
+    lunch:    { label: 'Lunch',         color: '#8b5cf6', icon: '🍽️' },
+    comfort:  { label: 'Comfort Break', color: '#ec4899', icon: '🚻' },
+    training: { label: 'Training',      color: '#06b6d4', icon: '📚' },
+    meeting:  { label: 'Meeting',       color: '#f59e0b', icon: '👥' },
+    admin:    { label: 'Admin Work',    color: '#6366f1', icon: '📋' },
+    offline:  { label: 'Offline',       color: '#94a3b8', icon: '⭕' },
+  };
+
+  function fmt(s) {
+    if (!s) return '—';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+
+  async function populateOperators() {
+    const sel = document.getElementById('stime-op-sel');
+    if (!sel || sel.options.length > 1) return;
+    try {
+      const data = await api('GET', '/operators?limit=200');
+      const ops = data.operators || data || [];
+      ops.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.full_name;
+        sel.appendChild(opt);
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function load() {
+    await populateOperators();
+    const opId = document.getElementById('stime-op-sel')?.value;
+    const period = document.getElementById('stime-period-sel')?.value || 'day';
+    const wrap = document.getElementById('stime-table-wrap');
+    const bars = document.getElementById('stime-bars');
+    if (!opId) {
+      if (wrap) wrap.innerHTML = '<p class="empty-state">Select an operator to view their status time breakdown.</p>';
+      if (bars) bars.innerHTML = '';
+      return;
+    }
+    if (wrap) wrap.innerHTML = '<p class="empty-state">Loading…</p>';
+    if (bars) bars.innerHTML = '';
+    try {
+      const data = await api('GET', `/operators/time-report?operator_id=${opId}&period=${period}`);
+      const rows = data.rows || [];
+      if (!rows.length) {
+        wrap.innerHTML = '<p class="empty-state">No status data for this operator in the selected period.</p>';
+        return;
+      }
+
+      // Bar chart
+      bars.innerHTML = rows.map(r => {
+        const m = STATUS_META_ADMIN[r.status] || { label: r.status, color: '#64748b', icon: '◉' };
+        return `<div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:0.8rem;font-weight:600">${m.icon} ${escHtml(m.label)}</span>
+            <span style="font-size:0.76rem;color:var(--text-muted)">${fmt(r.total_seconds)} &nbsp;(${r.pct}%)</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:var(--border)">
+            <div style="height:100%;width:${r.pct}%;background:${m.color};border-radius:4px;min-width:${r.pct > 0 ? 4 : 0}px"></div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // Table
+      wrap.innerHTML = `<div class="admin-table-wrap"><table class="admin-table">
+        <thead><tr><th>Status</th><th>Occurrences</th><th>Total Time</th><th>Avg Duration</th><th>% of Period</th></tr></thead>
+        <tbody>${rows.map(r => {
+          const m = STATUS_META_ADMIN[r.status] || { label: r.status, color: '#64748b', icon: '◉' };
+          return `<tr>
+            <td data-label="Status">
+              <span style="display:inline-flex;align-items:center;gap:6px">
+                <span style="width:8px;height:8px;border-radius:50%;background:${m.color};display:inline-block"></span>
+                ${m.icon} ${escHtml(m.label)}
+              </span>
+            </td>
+            <td data-label="Occurrences">${r.occurrences}</td>
+            <td data-label="Total Time"><strong>${fmt(r.total_seconds)}</strong></td>
+            <td data-label="Avg Duration">${fmt(r.avg_seconds)}</td>
+            <td data-label="% of Period">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;height:6px;border-radius:3px;background:var(--border);min-width:50px">
+                  <div style="height:100%;width:${r.pct}%;background:${m.color};border-radius:3px"></div>
+                </div>
+                <span style="font-size:0.76rem;min-width:30px;text-align:right">${r.pct}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
+    } catch (err) {
+      wrap.innerHTML = `<p class="empty-state" style="color:var(--danger)">Error: ${escHtml(err.message)}</p>`;
     }
   }
 

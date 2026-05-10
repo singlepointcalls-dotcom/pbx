@@ -467,7 +467,7 @@ body {
   font-size: 1.3rem;
   cursor: pointer;
   padding: 4px 6px;
-  color: var(--text);
+  color: #ffffff;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -489,11 +489,11 @@ body {
     display: none;
     position: fixed;
     top: 52px; left: 0; right: 0;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    box-shadow: var(--shadow);
+    background: var(--brand-dark);
+    border-bottom: 1px solid #0a1626;
+    box-shadow: 0 4px 16px rgba(16,30,51,0.4);
     padding: 8px 12px;
-    gap: 4px;
+    gap: 2px;
     z-index: 190;
     flex-direction: column;
   }
@@ -505,7 +505,10 @@ body {
     padding: 10px 14px;
     font-size: 0.88rem;
     border-radius: var(--radius);
+    color: rgba(255,255,255,0.75);
   }
+  .p-nav-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .p-nav-btn.active { background: #CFFF5E; color: #101E33; }
 
   .p-hamburger { display: block; }
 
