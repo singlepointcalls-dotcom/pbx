@@ -95,6 +95,10 @@
     <button class="p-btn p-btn-sm" onclick="Portal.dismissPushBanner()">Later</button>
   </div>
 
+  <!-- Live notification toast -->
+  <div id="p-live-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:var(--p-primary,#1a3a5c);color:#fff;padding:12px 18px;border-radius:8px;font-size:0.88rem;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.25);max-width:320px;cursor:pointer" onclick="Portal.dismissLiveToast()"></div>
+
+  <!-- Message notification badge overlay on nav button -->
   <!-- Main content -->
   <div class="p-content">
 
@@ -341,6 +345,7 @@
   </div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script src="/portal.js"></script>
 </body>
 </html>

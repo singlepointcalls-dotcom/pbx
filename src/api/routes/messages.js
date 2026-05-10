@@ -4,7 +4,7 @@ const router = require('express').Router();
 const pool = require('../../config/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { deliverMessage } = require('../../services/delivery');
-const { broadcast } = require('../../services/realtime');
+const { broadcast, broadcastToPortalClient } = require('../../services/realtime');
 
 router.use(requireAuth);
 
@@ -160,6 +160,8 @@ router.post('/', async (req, res, next) => {
 
     // Broadcast to all connected operators
     broadcast('message:new', { message });
+    // Notify portal users for this client
+    if (message.client_id) broadcastToPortalClient(message.client_id, 'portal:message:new', { id: message.id, subject: message.subject, created_at: message.created_at });
 
     // Auto-deliver if requested
     if (auto_deliver) {

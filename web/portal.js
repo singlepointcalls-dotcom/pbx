@@ -92,6 +92,7 @@ const Portal = (() => {
   }
 
   function logout() {
+    disconnectRealtime();
     token = null; currentUser = null;
     localStorage.removeItem('portal_token');
     showLogin();
@@ -157,6 +158,65 @@ const Portal = (() => {
     } catch (err) { errEl.textContent = err.message; }
   }
 
+  /* ---- Real-time Socket.io connection ---- */
+  let _socket = null;
+  let _liveToastTimer = null;
+  let _unreadCount = 0;
+
+  function connectRealtime() {
+    if (typeof io === 'undefined') return;
+    if (_socket) { _socket.disconnect(); _socket = null; }
+    _socket = io({ auth: { token } });
+    _socket.on('connect', () => {});
+    _socket.on('disconnect', () => {});
+
+    // New message created for this client by an operator
+    _socket.on('message:new', (data) => {
+      const msg = data.message;
+      if (msg && msg.client_id && currentUser && msg.client_id === currentUser.client_id) {
+        _unreadCount++;
+        showLiveToast(`&#128220; New message from ${msg.caller_name || msg.caller_phone || 'a caller'}`, () => {
+          nav('messages');
+        });
+      }
+    });
+
+    // Portal-targeted new message event (more specific)
+    _socket.on('portal:message:new', (data) => {
+      _unreadCount++;
+      showLiveToast(`&#128220; New message received`, () => { nav('messages'); });
+      // If messages section is open, refresh it
+      const msgSection = el('p-messages');
+      if (msgSection && msgSection.classList.contains('active')) loadMessages();
+    });
+
+    // Appointment updated
+    _socket.on('appointment:updated', () => {
+      const apptSection = el('p-appointments');
+      if (apptSection && apptSection.classList.contains('active')) loadAppointments();
+    });
+  }
+
+  function disconnectRealtime() {
+    if (_socket) { _socket.disconnect(); _socket = null; }
+  }
+
+  function showLiveToast(html, onClick) {
+    const toast = el('p-live-toast');
+    if (!toast) return;
+    if (_liveToastTimer) { clearTimeout(_liveToastTimer); _liveToastTimer = null; }
+    toast.innerHTML = html + ' <span style="opacity:0.6;font-size:0.78rem;float:right;margin-left:8px">✕</span>';
+    toast.style.display = 'block';
+    if (onClick) toast.onclick = () => { dismissLiveToast(); onClick(); };
+    _liveToastTimer = setTimeout(dismissLiveToast, 6000);
+  }
+
+  function dismissLiveToast() {
+    const toast = el('p-live-toast');
+    if (toast) toast.style.display = 'none';
+    if (_liveToastTimer) { clearTimeout(_liveToastTimer); _liveToastTimer = null; }
+  }
+
   function showApp() {
     el('portal-login').classList.remove('active');
     el('portal-app').classList.add('active');
@@ -164,6 +224,7 @@ const Portal = (() => {
     el('p-company-name').textContent = currentUser.client_name || 'Client Portal';
     nav('dashboard');
     initPush();
+    connectRealtime();
   }
 
   /* ---- Navigation ---- */
@@ -861,5 +922,7 @@ const Portal = (() => {
     loadKnowledge, searchKnowledge, openArticle, closeArticle,
     // Files
     loadFiles,
+    // Realtime
+    dismissLiveToast,
   };
 })();

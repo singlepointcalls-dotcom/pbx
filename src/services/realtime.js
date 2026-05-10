@@ -37,19 +37,34 @@ function initSocketIO(httpServer) {
     },
   });
 
-  // Authenticate socket connections using JWT
+  // Authenticate socket connections using JWT (operator or portal)
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) return next(new Error('Authentication required'));
     try {
       socket.operator = jwt.verify(token, process.env.JWT_SECRET);
-      next();
-    } catch {
-      next(new Error('Invalid token'));
-    }
+      return next();
+    } catch { /* try portal secret */ }
+    try {
+      const portalSecret = process.env.PORTAL_JWT_SECRET || process.env.JWT_SECRET;
+      const payload = jwt.verify(token, portalSecret);
+      if (payload.type === 'portal') {
+        socket.portalUser = payload;
+        return next();
+      }
+    } catch { /* fall through */ }
+    next(new Error('Invalid token'));
   });
 
   io.on('connection', (socket) => {
+    // Portal user connection — join client room, no operator tracking
+    if (socket.portalUser) {
+      const clientRoom = `portal:client:${socket.portalUser.client_id}`;
+      socket.join(clientRoom);
+      socket.on('disconnect', () => {});
+      return;
+    }
+
     const op = socket.operator;
     console.log(`[Socket.io] Operator connected: ${op.username} (${socket.id})`);
 
@@ -101,6 +116,11 @@ function broadcast(event, data) {
   io.emit(event, data);
 }
 
+function broadcastToPortalClient(clientId, event, data) {
+  if (!io) return;
+  io.to(`portal:client:${clientId}`).emit(event, data);
+}
+
 function broadcastOperatorList() {
   broadcast('operators:list', { operators: Array.from(connectedOperators.values()) });
 }
@@ -109,4 +129,4 @@ function getConnectedOperators() {
   return Array.from(connectedOperators.values());
 }
 
-module.exports = { initSocketIO, broadcast, getConnectedOperators };
+module.exports = { initSocketIO, broadcast, broadcastToPortalClient, getConnectedOperators };
