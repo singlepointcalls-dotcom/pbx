@@ -3956,6 +3956,20 @@ const Admin = (() => {
   }
 
   /* ---- Client Logo Upload ---- */
+  async function sendTestEmail() {
+    if (!editingClientId) { toast('Save the client first', 'danger'); return; }
+    const to = (el('cf-test-email-to')?.value || '').trim();
+    const resultEl = el('cf-test-email-result');
+    if (!to) { if (resultEl) resultEl.textContent = 'Enter an email address'; return; }
+    if (resultEl) { resultEl.style.color = 'inherit'; resultEl.textContent = 'Sending...'; }
+    try {
+      await api('POST', `/clients/${editingClientId}/test-email`, { to });
+      if (resultEl) { resultEl.style.color = '#27ae60'; resultEl.textContent = `✓ Sent to ${to}`; }
+    } catch (err) {
+      if (resultEl) { resultEl.style.color = '#e74c3c'; resultEl.textContent = `✗ ${err.message}`; }
+    }
+  }
+
   async function uploadLogo() {
     if (!editingClientId) { toast('Save the client first', 'danger'); return; }
     const fileInput = el('cf-logo-file');
@@ -4168,6 +4182,7 @@ const Admin = (() => {
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
     loadWebhooks, addWebhook, testWebhook, deleteWebhook,
+    sendTestEmail,
     uploadLogo, removeLogo,
     // Performance
     loadPerformance,
@@ -4892,40 +4907,100 @@ const DIDsPanel = (() => {
   const el = (id) => document.getElementById(id);
   const escHtml = (...a) => App._escHtml(...a);
 
+  let _allDids = [];
+  let _clients = [];
+
   async function load() {
     const container = el('admin-dids');
     if (!container) return;
     const tbody = el('dids-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#666">Loading...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#666">Loading...</td></tr>';
     try {
-      const data = await api('GET', '/dids');
-      render(data?.dids || []);
+      const [didData, clientData] = await Promise.all([
+        api('GET', '/dids'),
+        api('GET', '/clients'),
+      ]);
+      _allDids   = didData?.dids     || [];
+      _clients   = clientData?.clients || [];
+      render(_allDids);
     } catch (err) { toast(`DIDs error: ${err.message}`, 'danger'); }
+  }
+
+  function filter() {
+    const q = (el('did-search')?.value || '').toLowerCase();
+    render(q ? _allDids.filter((d) =>
+      (d.number || '').includes(q) ||
+      (d.label  || '').toLowerCase().includes(q) ||
+      (d.client_name || '').toLowerCase().includes(q) ||
+      (d.provider || '').toLowerCase().includes(q)
+    ) : _allDids);
   }
 
   function render(rows) {
     const tbody = el('dids-tbody');
     if (!tbody) return;
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:12px;color:#888">No DIDs registered</td></tr>'; return; }
-    tbody.innerHTML = rows.map((r) => `<tr>
-      <td><code>${escHtml(r.number)}</code></td>
-      <td>${escHtml(r.label || '')}</td>
-      <td>${escHtml(r.client_name || 'Unassigned')}</td>
-      <td>${escHtml(r.provider || '')}</td>
-      <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Inactive'}</td>
-      <td>
-        <button onclick="DIDsPanel.deleteDID('${r.id}')" style="font-size:0.8em">Delete</button>
-      </td>
-    </tr>`).join('');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="padding:12px;color:#888">No DIDs found</td></tr>'; return; }
+    tbody.innerHTML = rows.map((r) => {
+      const clientOpts = ['<option value="">— Unassigned —</option>',
+        ..._clients.map((c) => `<option value="${c.id}" ${c.id === r.client_id ? 'selected' : ''}>${escHtml(c.name)}</option>`)
+      ].join('');
+      return `<tr>
+        <td><code>${escHtml(r.number)}</code></td>
+        <td>${escHtml(r.label || '—')}</td>
+        <td>
+          <select style="font-size:0.82rem" onchange="DIDsPanel.assignClient('${r.id}', this.value)">
+            ${clientOpts}
+          </select>
+        </td>
+        <td>${escHtml(r.provider || '—')}</td>
+        <td>${r.monthly_cost ? '£' + parseFloat(r.monthly_cost).toFixed(2) : '—'}</td>
+        <td style="color:${r.is_active ? '#27ae60' : '#e74c3c'}">${r.is_active ? 'Active' : 'Inactive'}</td>
+        <td>
+          <button onclick="DIDsPanel.toggleActive('${r.id}', ${!r.is_active})" class="btn btn-sm btn-secondary">${r.is_active ? 'Deactivate' : 'Activate'}</button>
+          <button onclick="DIDsPanel.deleteDID('${r.id}')" class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:4px">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function add() {
+    const number = (prompt('DID number (E.164, e.g. +441604000001):') || '').trim();
+    if (!number) return;
+    const label    = (prompt('Label (e.g. "Main Reception line"):') || '').trim();
+    const provider = (prompt('Provider (e.g. Twilio, VoIP.ms):') || '').trim();
+    const costStr  = (prompt('Monthly cost (£, leave blank to skip):') || '').trim();
+    const monthly_cost = costStr ? parseFloat(costStr) : undefined;
+    try {
+      await api('POST', '/dids', { number, label: label || undefined, provider: provider || undefined, monthly_cost });
+      toast('DID added', 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function assignClient(didId, clientId) {
+    try {
+      await api('PUT', `/dids/${didId}`, { client_id: clientId || null });
+      const d = _allDids.find((x) => x.id === didId);
+      if (d) { d.client_id = clientId || null; d.client_name = _clients.find((c) => c.id === clientId)?.name || null; }
+      toast('DID assigned', 'success');
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); load(); }
+  }
+
+  async function toggleActive(id, active) {
+    try {
+      await api('PUT', `/dids/${id}`, { is_active: active });
+      toast(active ? 'DID activated' : 'DID deactivated', 'info');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
   async function deleteDID(id) {
-    if (!confirm('Delete this DID?')) return;
+    if (!confirm('Delete this DID? This cannot be undone.')) return;
     try { await api('DELETE', `/dids/${id}`); load(); toast('DID deleted', 'info'); }
     catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
-  return { load, deleteDID };
+  return { load, filter, add, assignClient, toggleActive, deleteDID };
 })();
 
 /* ============================================================

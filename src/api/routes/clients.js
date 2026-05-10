@@ -399,6 +399,49 @@ router.delete('/:id/webhooks/:webhookId', requireRole('admin'), async (req, res,
   } catch (err) { next(err); }
 });
 
+// POST /api/clients/:id/test-email — send a test delivery email using the client's SMTP config
+router.post('/:id/test-email', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { to } = req.body;
+    if (!to) return res.status(400).json({ error: 'to address is required' });
+
+    const r = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
+    const client = r.rows[0];
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const nodemailer = require('nodemailer');
+    let transport;
+    if (client.smtp_host && client.smtp_user) {
+      transport = nodemailer.createTransport({
+        host:   client.smtp_host,
+        port:   parseInt(client.smtp_port || '587'),
+        secure: client.smtp_port === '465',
+        auth:   { user: client.smtp_user, pass: client.smtp_pass },
+      });
+    } else {
+      transport = nodemailer.createTransport({
+        host:   process.env.SMTP_HOST,
+        port:   parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_PORT === '465',
+        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+    }
+
+    const from = client.smtp_from || process.env.SMTP_FROM || 'noreply@singlepointcalls.co.uk';
+    await transport.sendMail({
+      from,
+      to,
+      subject: `[Test] Delivery test for ${client.name}`,
+      text: `This is a test email from SinglePoint Calls for client: ${client.name}.\n\nSMTP config is working correctly.`,
+      html: `<p>This is a test email from <strong>SinglePoint Calls</strong> for client: <strong>${client.name}</strong>.</p><p>SMTP delivery is configured correctly.</p>`,
+    });
+
+    res.json({ success: true, from, to });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // POST /api/clients/:id/webhooks/:webhookId/test — fire a test payload to one webhook
 router.post('/:id/webhooks/:webhookId/test', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
