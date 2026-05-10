@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm test 2>&1)",
+      "Bash(npm audit)",
+      "Bash(npm audit 2>&1)",
+      "Bash(npm show *)",
+      "Bash(npm ls)",
+      "Bash(npm ls *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(npm install *)",
+      "Bash(npm install)",
+      "Bash(node --test *)",
+      "Bash(mkdir -p *)"
+    ]
+  }
+}

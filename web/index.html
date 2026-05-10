@@ -13,6 +13,7 @@
   <div class="login-box">
     <h1>SinglePoint Calls</h1>
     <p class="subtitle">Operator Console</p>
+    <!-- Step 1: Normal login -->
     <form id="login-form">
       <div class="field">
         <label>Username</label>
@@ -24,7 +25,47 @@
       </div>
       <div id="login-error" class="error-msg hidden"></div>
       <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+      <div style="text-align:center;margin-top:10px">
+        <a href="#" style="font-size:0.85rem;color:var(--text-muted)" onclick="App.showForgotPassword(event)">Forgot password?</a>
+      </div>
     </form>
+    <!-- Step 2: Forgot password — enter username -->
+    <div id="forgot-step" style="display:none">
+      <h3 style="margin-bottom:12px">Reset Password</h3>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px">Enter your username and we'll send a reset link to your registered email.</p>
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="forgot-username" autocomplete="username" />
+      </div>
+      <div id="forgot-error" class="error-msg hidden"></div>
+      <div id="forgot-success" class="hidden" style="font-size:0.85rem;color:var(--success);margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" onclick="App.doForgotPassword()">Send Reset Link</button>
+        <button class="btn btn-secondary" onclick="App.showLogin()">Back</button>
+      </div>
+    </div>
+    <!-- Step 3: Reset password — enter token + new password -->
+    <div id="reset-step" style="display:none">
+      <h3 style="margin-bottom:12px">Set New Password</h3>
+      <div class="field">
+        <label>Reset Token</label>
+        <input type="text" id="reset-token" autocomplete="off" placeholder="Paste token from email" />
+      </div>
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="reset-username" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>New Password</label>
+        <input type="password" id="reset-password" autocomplete="new-password" />
+      </div>
+      <div id="reset-error" class="error-msg hidden"></div>
+      <div id="reset-success" class="hidden" style="font-size:0.85rem;color:var(--success);margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" onclick="App.doResetPassword()">Reset Password</button>
+        <button class="btn btn-secondary" onclick="App.showLogin()">Back</button>
+      </div>
+    </div>
   </div>
 </div>
 
