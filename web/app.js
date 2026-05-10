@@ -2459,6 +2459,7 @@ const Admin = (() => {
         const escRules = Array.isArray(c.escalation_rules) ? c.escalation_rules : [];
         el('cf-escalate-mins').value = escRules.length ? (escRules[0].after_minutes || 0) : 0;
         el('cf-sla-seconds').value   = c.sla_answer_seconds || 30;
+        if (el('cf-sla-abandon')) el('cf-sla-abandon').value = c.sla_abandon_threshold || 3;
 
         // SMTP
         el('cf-smtp-host').value = c.smtp_host || '';
@@ -2561,7 +2562,8 @@ const Admin = (() => {
         slack_webhook:    el('cf-slack-webhook').value.trim() || null,
         teams_webhook:    el('cf-teams-webhook').value.trim() || null,
         escalation_rules,
-        sla_answer_seconds: parseInt(el('cf-sla-seconds').value) || 30,
+        sla_answer_seconds:    parseInt(el('cf-sla-seconds').value) || 30,
+        sla_abandon_threshold: parseInt(el('cf-sla-abandon')?.value) || 3,
       };
       if (smtpPass) body.smtp_pass = smtpPass;
 
@@ -2994,6 +2996,32 @@ const Admin = (() => {
       loadContacts(clientId);
     } catch (err) {
       toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  function downloadContactTemplate() {
+    const a = document.createElement('a');
+    a.href = `/api/clients/${editingClientId}/contacts/import/template`;
+    a.download = 'contacts-template.csv';
+    a.click();
+  }
+
+  async function importContactsCsv(event) {
+    const file = event.target.files[0];
+    if (!file || !editingClientId) return;
+    event.target.value = '';
+    const csv = await file.text();
+    try {
+      const data = await api('POST', `/clients/${editingClientId}/contacts/import`,
+        { csv }, { 'Content-Type': 'application/json' });
+      toast(`Imported ${data.imported} contacts${data.skipped ? `, ${data.skipped} skipped` : ''}.`, 'success');
+      if (data.errors?.length) {
+        console.warn('CSV import errors:', data.errors);
+        toast(`${data.errors.length} row(s) had errors — check the browser console.`, 'warning');
+      }
+      loadContacts(editingClientId);
+    } catch (err) {
+      toast(`Import failed: ${err.message}`, 'danger');
     }
   }
 
@@ -3949,6 +3977,7 @@ const Admin = (() => {
     addWebLink, updateWebLink, removeWebLink,
     addFormField, updateField, updateFieldOptions, updateFieldShowWhen, removeField,
     openContactModal, closeContactModal, saveContact, deleteContact,
+    downloadContactTemplate, importContactsCsv,
     onCallActionChange, onAvailTypeChange, toggleContactAvailDay,
     addDepartment, deleteDepartment,
     addVip, removeVip,
@@ -4332,7 +4361,8 @@ const AppointmentsPanel = (() => {
       <td><span style="color:${statusColor[r.status] || '#666'}">${r.status}</span></td>
       <td>
         <button onclick="AppointmentsPanel.updateStatus('${r.id}','completed')" style="font-size:0.8em;margin-right:4px">Done</button>
-        <button onclick="AppointmentsPanel.updateStatus('${r.id}','cancelled')" style="font-size:0.8em">Cancel</button>
+        <button onclick="AppointmentsPanel.updateStatus('${r.id}','cancelled')" style="font-size:0.8em;margin-right:4px">Cancel</button>
+        <a href="/api/appointments/${r.id}/ical" download style="font-size:0.8em;color:var(--primary)">&#128197; iCal</a>
       </td>
     </tr>`).join('');
   }

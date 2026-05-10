@@ -101,11 +101,26 @@ router.get(
   }
 );
 
+// Inline auth for SSE: EventSource cannot send Authorization headers,
+// so we accept the JWT as a query param for this one endpoint only.
+function requireAuthSse(req, res, next) {
+  const jwt = require('jsonwebtoken');
+  const raw = req.query.token ||
+    (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (!raw) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    req.operator = jwt.verify(raw, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
 // GET /api/wallboard/live — SSE stream pushing stats every 10 s
 // Clients: new EventSource('/api/wallboard/live?token=<jwt>')
 router.get(
   '/live',
-  requireAuth,
+  requireAuthSse,
   requireRole('admin', 'supervisor', 'operator'),
   async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');

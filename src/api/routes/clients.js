@@ -198,7 +198,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
       web_links, outbound_caller_id, email_template, private_notes,
       whatsapp_number, telegram_chat_id, slack_webhook, teams_webhook,
-      escalation_rules, sla_answer_seconds, data_retention_months,
+      escalation_rules, sla_answer_seconds, sla_abandon_threshold, data_retention_months,
       halo_psa_url, halo_oauth_client_id, halo_oauth_client_secret,
       halo_customer_id, halo_ticket_type_id,
     } = req.body;
@@ -239,6 +239,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
          teams_webhook       = COALESCE($26, teams_webhook),
          escalation_rules       = COALESCE($27, escalation_rules),
          sla_answer_seconds     = COALESCE($28, sla_answer_seconds),
+         sla_abandon_threshold  = COALESCE($35, sla_abandon_threshold),
          data_retention_months  = COALESCE($29, data_retention_months),
          halo_psa_url           = COALESCE($30, halo_psa_url),
          halo_oauth_client_id   = COALESCE($31, halo_oauth_client_id),
@@ -275,6 +276,7 @@ router.put('/:id', requireRole('admin', 'supervisor'), async (req, res, next) =>
         halo_oauth_client_secret !== undefined ? (halo_oauth_client_secret || null) : null,
         halo_customer_id         !== undefined ? (halo_customer_id || null)         : null,
         halo_ticket_type_id      !== undefined ? (halo_ticket_type_id || null)      : null,
+        sla_abandon_threshold    !== undefined ? parseInt(sla_abandon_threshold)    : null,
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
