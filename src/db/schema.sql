@@ -1023,3 +1023,12 @@ CREATE INDEX IF NOT EXISTS idx_op_reset_token_op ON operator_reset_tokens(operat
 -- ============================================================
 
 ALTER TABLE operators ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT[] NOT NULL DEFAULT '{}';
+
+-- ============================================================
+-- v19 — Operator notification preferences
+-- ============================================================
+
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_new_message BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_missed_call BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_sla_breach  BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE operators ADD COLUMN IF NOT EXISTS notify_escalation  BOOLEAN NOT NULL DEFAULT false;

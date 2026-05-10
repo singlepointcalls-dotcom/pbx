@@ -338,7 +338,7 @@ const App = (() => {
   }
 
   /* ---- My Profile ---- */
-  function showMyProfile() {
+  async function showMyProfile() {
     if (!currentOperator) return;
     el('profile-info').innerHTML =
       `Logged in as <strong>${escHtml(currentOperator.username)}</strong> &bull; Role: <strong>${escHtml(currentOperator.role)}</strong>`;
@@ -359,7 +359,31 @@ const App = (() => {
           <button class="btn btn-sm btn-secondary" onclick="App.setup2FA()">Enable 2FA</button>`;
       }
     }
+    // Load notification preferences from server
+    try {
+      const data = await api('GET', '/auth/me');
+      const op = data.operator || {};
+      const setCheck = (id, val) => { const e = el(id); if (e) e.checked = !!val; };
+      setCheck('pf-notify-message',   op.notify_new_message);
+      setCheck('pf-notify-missed',    op.notify_missed_call);
+      setCheck('pf-notify-sla',       op.notify_sla_breach);
+      setCheck('pf-notify-escalation', op.notify_escalation);
+    } catch { /* ignore — toggles just stay unchecked */ }
     el('profile-modal').style.display = 'flex';
+  }
+
+  async function saveNotificationPrefs() {
+    try {
+      await api('PATCH', '/operators/me/notifications', {
+        notify_new_message: !!(el('pf-notify-message')?.checked),
+        notify_missed_call: !!(el('pf-notify-missed')?.checked),
+        notify_sla_breach:  !!(el('pf-notify-sla')?.checked),
+        notify_escalation:  !!(el('pf-notify-escalation')?.checked),
+      });
+      toast('Notification preferences saved', 'success');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
   }
 
   function closeProfile() {
@@ -2108,6 +2132,66 @@ const App = (() => {
     msgBody.focus();
   }
 
+  /* ---- Global Search ---- */
+  let _searchTimer = null;
+
+  function globalSearch(q) {
+    clearTimeout(_searchTimer);
+    const results = el('global-search-results');
+    if (!results) return;
+    if (!q || q.length < 2) { results.style.display = 'none'; return; }
+    results.style.display = 'block';
+    results.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:0.82rem">Searching…</div>';
+    _searchTimer = setTimeout(async () => {
+      try {
+        const data = await api('GET', `/search?q=${encodeURIComponent(q)}&limit=15`);
+        const items = data.results || [];
+        if (!items.length) {
+          results.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:0.82rem">No results</div>';
+          return;
+        }
+        const typeIcon = { message: '&#128220;', contact: '&#128100;', client: '&#128188;', call: '&#128222;' };
+        const typePill = { message: 'pill-blue', contact: 'pill-green', client: 'pill-orange', call: '' };
+        results.innerHTML = items.map((r) => `
+          <div class="search-result-item" onclick="App._handleSearchResult('${r.type}','${r.id}')"
+               style="padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:0.75rem">${typeIcon[r.type] || '?'}</span>
+              <span class="pill ${typePill[r.type] || ''}" style="font-size:0.7rem;padding:1px 6px">${r.type}</span>
+              <span style="font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${escHtml(r.title || '—')}</span>
+            </div>
+            ${r.snippet ? `<div style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(String(r.snippet))}</div>` : ''}
+            ${r.client_name ? `<div style="font-size:0.72rem;color:var(--text-muted)">${escHtml(r.client_name)}</div>` : ''}
+          </div>`).join('');
+      } catch (err) {
+        results.innerHTML = `<div style="padding:10px;color:var(--danger);font-size:0.82rem">Error: ${escHtml(err.message)}</div>`;
+      }
+    }, 250);
+  }
+
+  function closeSearch() {
+    const results = el('global-search-results');
+    if (results) results.style.display = 'none';
+    const input = el('global-search-input');
+    if (input) input.value = '';
+  }
+
+  async function _handleSearchResult(type, id) {
+    closeSearch();
+    if (type === 'message') {
+      showMessageDetail(id);
+    } else if (type === 'client') {
+      // Open client in admin
+      App.switchView('admin');
+      // Load client directly
+      try { Admin.openClientModal(id); } catch { /* ignore */ }
+    } else if (type === 'call') {
+      toast(`Call ID: ${id}`, 'info');
+    } else if (type === 'contact') {
+      toast(`Contact: ${id}`, 'info');
+    }
+  }
+
   /* ---- Follow-up Calls ---- */
   async function loadFollowUps() {
     const container = el('followups-list');
@@ -2407,6 +2491,12 @@ const App = (() => {
         !drawer.contains(e.target) && e.target !== btn) {
       drawer.classList.remove('open');
     }
+    // Close search results when clicking outside
+    const searchWrap = el('global-search-input')?.parentElement;
+    const searchRes  = el('global-search-results');
+    if (searchRes && searchRes.style.display !== 'none' && searchWrap && !searchWrap.contains(e.target)) {
+      searchRes.style.display = 'none';
+    }
   }, true);
 
   // On mobile: when a call is answered switch to form panel automatically
@@ -2537,8 +2627,12 @@ const App = (() => {
     mobileSwitchPanel, toggleMobileMenu, closeMobileMenu, closeSidebars, mobileAutoSwitchOnCall,
     // Push notifications
     enablePushNotifications, dismissPushPrompt, togglePushNotifications,
+    // Global search
+    globalSearch, closeSearch, _handleSearchResult,
     // Follow-ups
     loadFollowUps, completeFollowUp,
+    // Notification preferences
+    saveNotificationPrefs,
     // Bulk actions
     bulkAcknowledge,
     // Caller ID hint

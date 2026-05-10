@@ -77,8 +77,14 @@
     <div class="topbar-left">
       <span class="logo"><span class="logo-icon">&#9742;</span>SinglePoint Calls</span>
     </div>
-    <div class="topbar-center">
+    <div class="topbar-center" style="display:flex;align-items:center;gap:8px;flex:1;max-width:480px">
       <span id="status-badge" class="status-badge ready">READY</span>
+      <div style="position:relative;flex:1;max-width:260px">
+        <input type="search" id="global-search-input" placeholder="&#128269; Search messages, contacts, calls…"
+          style="width:100%;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 10px;font-size:0.8rem;outline:none"
+          oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape')App.closeSearch()" autocomplete="off" />
+        <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:999;max-height:400px;overflow-y:auto"></div>
+      </div>
     </div>
     <div class="topbar-right">
       <nav class="topbar-nav" id="topbar-nav">
@@ -1761,6 +1767,29 @@
 
       <h4 class="section-label" style="margin-bottom:8px">Two-Factor Authentication</h4>
       <div id="twofa-status"></div>
+
+      <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)" />
+
+      <h4 class="section-label" style="margin-bottom:8px">Email Notifications</h4>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">Receive email alerts for these events (requires your email address to be set).</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:10px;font-size:0.85rem;cursor:pointer">
+          <label class="toggle"><input type="checkbox" id="pf-notify-message" onchange="App.saveNotificationPrefs()" /><span></span></label>
+          New message created
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-size:0.85rem;cursor:pointer">
+          <label class="toggle"><input type="checkbox" id="pf-notify-missed" onchange="App.saveNotificationPrefs()" /><span></span></label>
+          Missed call
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-size:0.85rem;cursor:pointer">
+          <label class="toggle"><input type="checkbox" id="pf-notify-sla" onchange="App.saveNotificationPrefs()" /><span></span></label>
+          SLA breach
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;font-size:0.85rem;cursor:pointer">
+          <label class="toggle"><input type="checkbox" id="pf-notify-escalation" onchange="App.saveNotificationPrefs()" /><span></span></label>
+          Message escalation
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeProfile()">Close</button>

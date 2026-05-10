@@ -104,6 +104,25 @@ router.put('/me/password', async (req, res, next) => {
   }
 });
 
+// PATCH /api/operators/me/notifications — update operator notification preferences
+router.patch('/me/notifications', async (req, res, next) => {
+  try {
+    const allowed = ['notify_new_message', 'notify_missed_call', 'notify_sla_breach', 'notify_escalation'];
+    const updates = {};
+    for (const key of allowed) {
+      if (typeof req.body[key] === 'boolean') updates[key] = req.body[key];
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid notification fields provided' });
+    const sets = Object.keys(updates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+    const vals = [...Object.values(updates), req.operator.id];
+    await pool.query(
+      `UPDATE operators SET ${sets} WHERE id = $${vals.length}`,
+      vals
+    );
+    res.json({ message: 'Notification preferences updated' });
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/operators/:id/2fa — admin reset 2FA for any operator
 router.delete('/:id/2fa', requireRole('admin'), async (req, res, next) => {
   try {
