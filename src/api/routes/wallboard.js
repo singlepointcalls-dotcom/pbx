@@ -21,6 +21,7 @@ router.get(
         slaResult,
         avgHandleResult,
         unackMessagesResult,
+        operatorsResult,
       ] = await Promise.all([
         // Active calls: answered but not yet ended
         pool.query(
@@ -76,6 +77,15 @@ router.get(
              AND status = 'delivered'
              AND created_at >= NOW() - INTERVAL '4 hours'`
         ),
+        // Active operators with their current status
+        pool.query(
+          `SELECT id, full_name, current_status, last_seen_at
+           FROM operators
+           WHERE is_active = true
+           ORDER BY
+             CASE current_status WHEN 'ready' THEN 0 WHEN 'busy' THEN 1 ELSE 2 END,
+             full_name ASC`
+        ),
       ]);
 
       res.json({
@@ -94,6 +104,7 @@ router.get(
                                  : null,
           unack_messages:      parseInt(unackMessagesResult.rows[0].count),
         },
+        operators: operatorsResult.rows,
       });
     } catch (err) {
       next(err);
@@ -130,7 +141,7 @@ router.get(
 
     const sendStats = async () => {
       try {
-        const [active, queue, todayCalls, answered, msgs, missed, sla, aht, unack] =
+        const [active, queue, todayCalls, answered, msgs, missed, sla, aht, unack, ops] =
           await Promise.all([
             pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_end IS NULL AND call_answered IS NOT NULL`),
             pool.query(`SELECT COUNT(*) FROM call_logs WHERE call_start >= NOW() - INTERVAL '5 minutes' AND call_answered IS NULL AND call_end IS NULL`),
@@ -141,6 +152,7 @@ router.get(
             pool.query(`SELECT ROUND(100.0*SUM(CASE WHEN sla_met THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),1) AS pct FROM call_logs WHERE call_start >= CURRENT_DATE AND call_answered IS NOT NULL`),
             pool.query(`SELECT ROUND(AVG(duration_seconds)) AS avg FROM call_logs WHERE call_start >= CURRENT_DATE AND duration_seconds IS NOT NULL`),
             pool.query(`SELECT COUNT(*) FROM messages WHERE acknowledged_at IS NULL AND status='delivered' AND created_at >= NOW() - INTERVAL '4 hours'`),
+            pool.query(`SELECT id, full_name, current_status, last_seen_at FROM operators WHERE is_active = true ORDER BY CASE current_status WHEN 'ready' THEN 0 WHEN 'busy' THEN 1 ELSE 2 END, full_name ASC`),
           ]);
         const payload = JSON.stringify({
           active_calls: parseInt(active.rows[0].count),
@@ -152,6 +164,7 @@ router.get(
           sla_met_pct: sla.rows[0].pct !== null ? parseFloat(sla.rows[0].pct) : null,
           avg_handle_seconds: aht.rows[0].avg !== null ? parseInt(aht.rows[0].avg) : null,
           unack_messages: parseInt(unack.rows[0].count),
+          operators: ops.rows,
           ts: Date.now(),
         });
         res.write(`data: ${payload}\n\n`);

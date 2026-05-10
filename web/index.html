@@ -1031,6 +1031,7 @@
         <button type="button" class="modal-tab" id="tab-files-btn" onclick="Admin.showClientTab('files',this)" style="display:none">Files</button>
         <button type="button" class="modal-tab" id="tab-news-btn" onclick="Admin.showClientTab('news',this)" style="display:none">News</button>
         <button type="button" class="modal-tab" id="tab-portal-btn" onclick="Admin.showClientTab('portal',this)" style="display:none">Portal Users</button>
+        <button type="button" class="modal-tab" id="tab-webhooks-btn" onclick="Admin.showClientTab('webhooks',this)" style="display:none">&#128268; Webhooks</button>
       </div>
 
       <!-- Tab: Basic Info -->
@@ -1387,6 +1388,21 @@
         <table class="admin-table">
           <thead><tr><th>Username</th><th>Email</th><th>Active</th><th></th></tr></thead>
           <tbody id="portal-users-tbody"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div id="ctab-webhooks" class="modal-body ctab" style="display:none">
+        <div class="admin-toolbar" style="margin-bottom:12px">
+          <h4>&#128268; Integration Webhooks</h4>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="Admin.addWebhook()">+ Add Webhook</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px">
+          Webhooks deliver events (new message, call ended, etc.) as HTTP POST requests to your endpoint.
+          Each event is signed with HMAC-SHA256 using your webhook secret.
+        </p>
+        <table class="admin-table">
+          <thead><tr><th>URL</th><th>Events</th><th>Active</th><th>Last Triggered</th><th></th></tr></thead>
+          <tbody id="webhooks-tbody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
 

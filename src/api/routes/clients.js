@@ -399,5 +399,52 @@ router.delete('/:id/webhooks/:webhookId', requireRole('admin'), async (req, res,
   } catch (err) { next(err); }
 });
 
+// POST /api/clients/:id/webhooks/:webhookId/test — fire a test payload to one webhook
+router.post('/:id/webhooks/:webhookId/test', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const whResult = await pool.query(
+      `SELECT * FROM client_webhooks WHERE id = $1 AND client_id = $2`,
+      [req.params.webhookId, req.params.id]
+    );
+    const webhook = whResult.rows[0];
+    if (!webhook) return res.status(404).json({ error: 'Webhook not found' });
+
+    const axios = require('axios');
+    const crypto = require('crypto');
+
+    const payload = {
+      event: 'test',
+      timestamp: new Date().toISOString(),
+      client_id: req.params.id,
+      message: 'This is a test event from SinglePoint Calls',
+    };
+
+    const headers = { 'Content-Type': 'application/json', 'X-SP-Event': 'test' };
+    if (webhook.secret) {
+      const sig = crypto.createHmac('sha256', webhook.secret)
+        .update(JSON.stringify(payload)).digest('hex');
+      headers['X-SP-Signature-256'] = `sha256=${sig}`;
+    }
+
+    let responseStatus;
+    let responseBody;
+    try {
+      const r = await axios.post(webhook.url, payload, { headers, timeout: 10000 });
+      responseStatus = r.status;
+      responseBody   = String(r.data || '').slice(0, 500);
+    } catch (e) {
+      responseStatus = e.response?.status || 0;
+      responseBody   = e.message;
+    }
+
+    res.json({
+      success:         responseStatus >= 200 && responseStatus < 300,
+      status:          responseStatus,
+      response_body:   responseBody,
+      payload_sent:    payload,
+    });
+  } catch (err) { next(err); }
+});
+
 router._isWithinBusinessHours = isWithinBusinessHours;
 module.exports = router;

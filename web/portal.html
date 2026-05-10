@@ -185,6 +185,23 @@
       <a id="acc-data-export-link" href="/api/portal/data-export" download="data-export.json" class="p-btn p-btn-secondary" style="text-decoration:none;width:fit-content">
         &#11167; Download My Data (JSON)
       </a>
+
+      <h3 style="font-size:1rem;margin-top:28px;margin-bottom:8px">API Keys</h3>
+      <p style="font-size:0.85rem;color:#666;margin-bottom:12px">
+        API keys let external systems (e.g. your own apps) read data from your portal account programmatically.
+        Keys are shown <strong>once</strong> at creation — store them securely.
+      </p>
+      <button class="p-btn p-btn-primary" style="margin-bottom:12px;width:fit-content" onclick="Portal.createApiKey()">&#43; New API Key</button>
+      <div id="acc-new-key-banner" style="display:none;background:#1a2a4a;color:#fff;border-radius:6px;padding:10px 14px;font-size:0.85rem;margin-bottom:12px;word-break:break-all">
+        <strong>&#128274; Your new key (copy now — not shown again):</strong><br/>
+        <code id="acc-new-key-value" style="font-size:0.9rem;letter-spacing:0.02em"></code>
+        <button onclick="Portal.copyApiKey()" style="margin-left:8px;padding:2px 8px;cursor:pointer;font-size:0.8rem">Copy</button>
+        <button onclick="document.getElementById('acc-new-key-banner').style.display='none'" style="margin-left:4px;padding:2px 8px;cursor:pointer;font-size:0.8rem">Dismiss</button>
+      </div>
+      <table class="p-table" id="acc-keys-table">
+        <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last Used</th><th>Expires</th><th></th></tr></thead>
+        <tbody id="acc-keys-tbody"><tr><td colspan="6" class="p-empty">Loading...</td></tr></tbody>
+      </table>
     </section>
 
   </div>

@@ -412,10 +412,76 @@ const Portal = (() => {
 
   /* ---- Account / GDPR ---- */
   function loadAccount() {
-    // Update the data-export link to include auth token as query param
-    // (the browser's anchor download won't send Authorization header)
     const link = document.getElementById('acc-data-export-link');
     if (link) link.href = `/api/portal/data-export?token=${encodeURIComponent(token)}`;
+    loadApiKeys();
+  }
+
+  async function loadApiKeys() {
+    const tbody = document.getElementById('acc-keys-tbody');
+    if (!tbody) return;
+    try {
+      const data = await api('GET', '/portal/api-keys');
+      const keys = data.keys || [];
+      if (!keys.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-empty">No API keys yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = keys.map((k) => {
+        const revoked  = !!k.revoked_at;
+        const expired  = k.expires_at && new Date(k.expires_at) < new Date();
+        const status   = revoked ? '<span style="color:#e74c3c">Revoked</span>' : expired ? '<span style="color:#e67e22">Expired</span>' : '<span style="color:#27ae60">Active</span>';
+        const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never';
+        const expires  = k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never';
+        const scopes   = (k.scopes || []).join(', ');
+        const revokeBtn = (!revoked && !expired)
+          ? `<button class="p-btn p-btn-secondary" style="padding:2px 8px;font-size:0.8rem" onclick="Portal.revokeApiKey('${k.id}')">Revoke</button>`
+          : '';
+        return `<tr>
+          <td>${escHtml(k.name)}</td>
+          <td><code>${escHtml(k.key_prefix)}…</code></td>
+          <td style="font-size:0.8rem">${escHtml(scopes)}</td>
+          <td>${lastUsed}</td>
+          <td>${expires} ${status}</td>
+          <td>${revokeBtn}</td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-empty">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function createApiKey() {
+    const name = (prompt('API key name (e.g. "My Integration"):') || '').trim();
+    if (!name) return;
+    const scopeList = ['messages:read', 'messages:write', 'appointments:read', 'appointments:write', 'contacts:read'];
+    const scopeInput = prompt(
+      `Scopes (comma-separated):\n${scopeList.join('\n')}`,
+      'messages:read'
+    );
+    if (scopeInput === null) return;
+    const scopes = scopeInput.split(',').map((s) => s.trim()).filter(Boolean);
+    const daysInput = prompt('Expiry in days (blank = never):', '');
+    const expires_in_days = daysInput ? parseInt(daysInput) : undefined;
+    try {
+      const data = await api('POST', '/portal/api-keys', { name, scopes, expires_in_days });
+      document.getElementById('acc-new-key-value').textContent = data.key || '';
+      document.getElementById('acc-new-key-banner').style.display = 'block';
+      loadApiKeys();
+    } catch (err) { alert(`Error: ${err.message}`); }
+  }
+
+  function copyApiKey() {
+    const val = document.getElementById('acc-new-key-value')?.textContent || '';
+    navigator.clipboard?.writeText(val).catch(() => {});
+  }
+
+  async function revokeApiKey(id) {
+    if (!confirm('Revoke this API key? Any apps using it will stop working.')) return;
+    try {
+      await api('DELETE', `/portal/api-keys/${id}`);
+      loadApiKeys();
+    } catch (err) { alert(`Error: ${err.message}`); }
   }
 
   async function changePassword() {
@@ -444,6 +510,6 @@ const Portal = (() => {
     nav, logout, loadMessages, msgPage, loadCalls, loadBilling, loadAvailability,
     setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
-    loadAccount, changePassword,
+    loadAccount, changePassword, createApiKey, copyApiKey, revokeApiKey,
   };
 })();

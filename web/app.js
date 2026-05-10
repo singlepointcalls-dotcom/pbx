@@ -2411,6 +2411,7 @@ const Admin = (() => {
     if (name === 'files' && editingClientId) loadClientFiles(editingClientId);
     if (name === 'news' && editingClientId) loadClientNewsAdmin(editingClientId);
     if (name === 'portal' && editingClientId) loadPortalUsers(editingClientId);
+    if (name === 'webhooks' && editingClientId) loadWebhooks(editingClientId);
   }
 
   /* ---- Clients ---- */
@@ -2477,7 +2478,7 @@ const Admin = (() => {
 
     // Show extra tabs only when editing
     const tabsVisible = !!clientId;
-    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn'].forEach((id) => {
+    ['tab-contacts-btn', 'tab-depts-btn', 'tab-lists-btn', 'tab-files-btn', 'tab-news-btn', 'tab-portal-btn', 'tab-webhooks-btn'].forEach((id) => {
       const btn = el(id);
       if (btn) btn.style.display = tabsVisible ? '' : 'none';
     });
@@ -3886,6 +3887,74 @@ const Admin = (() => {
     }
   }
 
+  /* ---- Webhooks ---- */
+  async function loadWebhooks(clientId) {
+    const tbody = el('webhooks-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading...</td></tr>';
+    try {
+      const data = await api('GET', `/clients/${clientId}/webhooks`);
+      const hooks = data.webhooks || [];
+      if (!hooks.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No webhooks configured</td></tr>';
+        return;
+      }
+      tbody.innerHTML = hooks.map((h) => {
+        const events = (h.events || []).join(', ') || 'all';
+        const lastTriggered = h.last_triggered_at ? new Date(h.last_triggered_at).toLocaleString() : 'Never';
+        return `<tr>
+          <td style="word-break:break-all;font-size:0.82rem">${escHtml(h.url)}</td>
+          <td style="font-size:0.8rem">${escHtml(events)}</td>
+          <td>${h.is_active ? '<span style="color:#27ae60">Active</span>' : '<span style="color:#e74c3c">Paused</span>'}</td>
+          <td style="font-size:0.82rem">${lastTriggered}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary" onclick="Admin.testWebhook('${h.id}')">Test</button>
+            <button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:4px" onclick="Admin.deleteWebhook('${h.id}')">Delete</button>
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) { toast(`Webhooks error: ${err.message}`, 'danger'); }
+  }
+
+  async function addWebhook() {
+    if (!editingClientId) { toast('Save the client first', 'danger'); return; }
+    const url = (prompt('Webhook endpoint URL (https://...):') || '').trim();
+    if (!url || !url.startsWith('http')) { toast('Invalid URL', 'danger'); return; }
+    const eventsInput = prompt(
+      'Events to deliver (comma-separated, or leave blank for all):\nmessage.created, call.answered, call.ended, appointment.created',
+      ''
+    ) || '';
+    const events = eventsInput.split(',').map((e) => e.trim()).filter(Boolean);
+    const secret = (prompt('Webhook signing secret (optional, leave blank to skip):') || '').trim();
+    try {
+      await api('POST', `/clients/${editingClientId}/webhooks`, { url, events, secret: secret || undefined });
+      toast('Webhook added', 'success');
+      loadWebhooks(editingClientId);
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  async function testWebhook(webhookId) {
+    if (!editingClientId) return;
+    try {
+      const r = await api('POST', `/clients/${editingClientId}/webhooks/${webhookId}/test`);
+      if (r.success) {
+        toast(`Test delivered ✓ (HTTP ${r.status})`, 'success');
+      } else {
+        toast(`Test failed: HTTP ${r.status} — ${r.response_body?.slice(0, 80) || 'No response'}`, 'danger');
+      }
+    } catch (err) { toast(`Test error: ${err.message}`, 'danger'); }
+  }
+
+  async function deleteWebhook(webhookId) {
+    if (!editingClientId) return;
+    if (!confirm('Delete this webhook?')) return;
+    try {
+      await api('DELETE', `/clients/${editingClientId}/webhooks/${webhookId}`);
+      toast('Webhook deleted', 'info');
+      loadWebhooks(editingClientId);
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
   /* ---- Client Logo Upload ---- */
   async function uploadLogo() {
     if (!editingClientId) { toast('Save the client first', 'danger'); return; }
@@ -4098,6 +4167,7 @@ const Admin = (() => {
     loadClientNewsAdmin, openNewsEditor, saveNews, deleteNews,
     previewEmailTemplate,
     openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
+    loadWebhooks, addWebhook, testWebhook, deleteWebhook,
     uploadLogo, removeLogo,
     // Performance
     loadPerformance,
