@@ -60,6 +60,9 @@ router.get('/', async (req, res, next) => {
       params.push(caller_phone);
       query += ` AND m.caller_phone = $${params.length}`;
     }
+    if (req.query.flagged === 'true') {
+      query += ` AND m.is_flagged = true`;
+    }
 
     // Count uses the same filters captured before adding LIMIT/OFFSET
     const filterParams = params.slice();
@@ -352,9 +355,11 @@ router.get('/:id/webhook-log', requireRole('admin', 'supervisor'), async (req, r
 router.get('/:id/replies', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT mr.*, o.full_name AS operator_name
+      `SELECT mr.*, o.full_name AS operator_name,
+              cpu.username AS portal_user_name
        FROM message_replies mr
        LEFT JOIN operators o ON mr.operator_id = o.id
+       LEFT JOIN client_portal_users cpu ON mr.portal_user_id = cpu.id
        WHERE mr.message_id = $1
        ORDER BY mr.created_at ASC`,
       [req.params.id]
@@ -388,6 +393,18 @@ router.post('/:id/replies', async (req, res, next) => {
     });
 
     res.status(201).json({ reply });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/messages/:id/flag — toggle flagged status
+router.patch('/:id/flag', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE messages SET is_flagged = NOT is_flagged WHERE id = $1 RETURNING id, is_flagged`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Message not found' });
+    res.json({ message: result.rows[0] });
   } catch (err) { next(err); }
 });
 

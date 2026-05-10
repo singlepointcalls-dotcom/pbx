@@ -471,6 +471,7 @@
             <option value="me">Assigned to me</option>
             <option value="unassigned">Unassigned</option>
           </select>
+          <button id="msg-filter-flagged-btn" class="btn btn-sm" title="Show flagged only" onclick="App.toggleFlagFilter()" style="padding:3px 8px;font-size:0.82rem">&#127988; Flagged</button>
         </div>
         <div id="messages-list" class="messages-list"></div>
       </section>
@@ -2257,6 +2258,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeMsgDetail()">Close</button>
+      <button class="btn" id="msg-detail-flag-btn" onclick="App.toggleMsgFlag()" title="Flag for follow-up" style="padding:5px 10px">&#127988;</button>
       <button class="btn btn-warning" id="msg-detail-redeliver-btn" onclick="App.redeliverMessage()">&#8635; Redeliver</button>
     </div>
   </div>

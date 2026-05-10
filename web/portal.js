@@ -970,25 +970,49 @@ const Portal = (() => {
       return;
     }
     container.style.display = 'block';
+    await loadMsgReplies(msgId, container);
+  }
+
+  async function loadMsgReplies(msgId, container) {
+    if (!container) container = document.getElementById(`msg-replies-${msgId}`);
+    if (!container) return;
     container.innerHTML = 'Loading...';
     try {
       const data = await api('GET', `/portal/messages/${msgId}/replies`);
       const replies = data.replies || [];
-      if (!replies.length) {
-        container.innerHTML = '<span style="color:var(--p-text-muted,#888)">No replies from our team yet.</span>';
-        return;
-      }
-      container.innerHTML = replies.map((r) => `
-        <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.06)">
-          <div style="font-size:0.75rem;color:var(--p-text-muted,#888);margin-bottom:2px">
-            <strong>${escHtml(r.operator_name || 'Our team')}</strong> &middot; ${new Date(r.created_at).toLocaleString()}
-          </div>
-          <div style="white-space:pre-wrap">${escHtml(r.body)}</div>
-        </div>
-      `).join('');
+      const replyHtml = replies.length
+        ? replies.map((r) => {
+            const isUs = !!r.portal_user_name;
+            return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.06);${isUs ? 'padding-left:12px;border-left:2px solid var(--p-primary,#1a3a5c)' : ''}">
+              <div style="font-size:0.75rem;color:var(--p-text-muted,#888);margin-bottom:2px">
+                <strong>${escHtml(isUs ? r.portal_user_name : (r.operator_name || 'Our team'))}</strong>
+                ${isUs ? '<span style="font-size:0.7rem;color:#888"> (you)</span>' : ''}
+                &middot; ${new Date(r.created_at).toLocaleString()}
+              </div>
+              <div style="white-space:pre-wrap;font-size:0.85rem">${escHtml(r.body)}</div>
+            </div>`;
+          }).join('')
+        : '<p style="color:var(--p-text-muted,#888);font-size:0.82rem;margin:0 0 8px">No replies yet — our team will respond shortly.</p>';
+
+      container.innerHTML = replyHtml +
+        `<div style="display:flex;gap:6px;margin-top:8px">
+          <textarea id="pr-input-${msgId}" rows="2" placeholder="Add a reply..." class="p-input" style="flex:1;resize:vertical;font-size:0.82rem"></textarea>
+          <button class="p-btn p-btn-sm p-btn-primary" style="align-self:flex-end" onclick="Portal.sendPortalReply('${msgId}')">Send</button>
+        </div>`;
     } catch (err) {
       container.innerHTML = `<span style="color:#e74c3c">Error: ${escHtml(err.message)}</span>`;
     }
+  }
+
+  async function sendPortalReply(msgId) {
+    const input = document.getElementById(`pr-input-${msgId}`);
+    const body = input?.value?.trim();
+    if (!body) return;
+    try {
+      await api('POST', `/portal/messages/${msgId}/replies`, { body });
+      const container = document.getElementById(`msg-replies-${msgId}`);
+      await loadMsgReplies(msgId, container);
+    } catch (err) { toast(err.message, 'error'); }
   }
 
   async function loadFiles() {
@@ -1045,7 +1069,7 @@ const Portal = (() => {
     // Files
     loadFiles,
     // Replies
-    toggleMsgReplies,
+    toggleMsgReplies, sendPortalReply,
     // Realtime
     dismissLiveToast,
   };

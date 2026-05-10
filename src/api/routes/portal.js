@@ -266,22 +266,51 @@ router.post('/messages/:id/acknowledge', requirePortalAuth, async (req, res, nex
   } catch (err) { next(err); }
 });
 
-// GET /api/portal/messages/:id/replies — portal user reads operator replies on their message
+// GET /api/portal/messages/:id/replies — portal user reads replies on their message
 router.get('/messages/:id/replies', requirePortalAuth, async (req, res, next) => {
   try {
-    // Verify message belongs to this client
     const msg = await pool.query('SELECT id FROM messages WHERE id = $1 AND client_id = $2', [req.params.id, req.portalUser.client_id]);
     if (!msg.rows.length) return res.status(404).json({ error: 'Message not found' });
 
     const result = await pool.query(
-      `SELECT mr.id, mr.body, mr.created_at, o.full_name AS operator_name
+      `SELECT mr.id, mr.body, mr.created_at,
+              o.full_name AS operator_name,
+              cpu.username AS portal_user_name
        FROM message_replies mr
        LEFT JOIN operators o ON mr.operator_id = o.id
+       LEFT JOIN client_portal_users cpu ON mr.portal_user_id = cpu.id
        WHERE mr.message_id = $1
        ORDER BY mr.created_at ASC`,
       [req.params.id]
     );
     res.json({ replies: result.rows });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/messages/:id/replies — portal user sends a reply in the thread
+router.post('/messages/:id/replies', requirePortalAuth, async (req, res, next) => {
+  try {
+    const { body } = req.body;
+    if (!body?.trim()) return res.status(400).json({ error: 'Reply body is required' });
+
+    const msg = await pool.query(
+      'SELECT id FROM messages WHERE id = $1 AND client_id = $2',
+      [req.params.id, req.portalUser.client_id]
+    );
+    if (!msg.rows.length) return res.status(404).json({ error: 'Message not found' });
+
+    const result = await pool.query(
+      `INSERT INTO message_replies (message_id, portal_user_id, body)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.params.id, req.portalUser.id, body.trim()]
+    );
+    const reply = result.rows[0];
+
+    // Notify operators via broadcast
+    const { broadcast } = require('../../services/realtime');
+    broadcast('message:portal_reply', { message_id: req.params.id, client_id: req.portalUser.client_id });
+
+    res.status(201).json({ reply: { ...reply, portal_user_name: req.portalUser.username } });
   } catch (err) { next(err); }
 });
 
@@ -677,6 +706,46 @@ router.delete('/clients/:clientId/users/:userId', requireAuth, requireRole('admi
     await pool.query('DELETE FROM client_portal_users WHERE id = $1 AND client_id = $2',
       [req.params.userId, req.params.clientId]);
     res.json({ message: 'User deleted' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/portal/clients/:clientId/users/:userId/send-reset — admin triggers password reset email
+router.post('/clients/:clientId/users/:userId/send-reset', requireAuth, requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT cpu.*, c.name AS client_name
+       FROM client_portal_users cpu JOIN clients c ON cpu.client_id = c.id
+       WHERE cpu.id = $1 AND cpu.client_id = $2 AND cpu.is_active = true`,
+      [req.params.userId, req.params.clientId]
+    );
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found or inactive' });
+    if (!user.email) return res.status(400).json({ error: 'User has no email address on file' });
+
+    const rawToken = require('crypto').randomBytes(32).toString('hex');
+    const tokenHash = await bcrypt.hash(rawToken, 10);
+    await pool.query(
+      `INSERT INTO portal_reset_tokens (portal_user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+      [user.id, tokenHash]
+    );
+
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const resetUrl = `${appUrl}/portal.html?reset=${rawToken}&user=${encodeURIComponent(user.username)}`;
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: 'Your portal password has been reset',
+      text: `A password reset was requested for your ${user.client_name} portal account.\n\nReset your password here (valid 24 hours):\n${resetUrl}`,
+      html: `<p>A password reset was requested for your <strong>${user.client_name}</strong> portal account.</p><p><a href="${resetUrl}">Set new password</a> (valid 24 hours)</p>`,
+    });
+    res.json({ message: 'Reset email sent' });
   } catch (err) { next(err); }
 });
 

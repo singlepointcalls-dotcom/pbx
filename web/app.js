@@ -595,6 +595,10 @@ const App = (() => {
       if (typeof AppointmentsPanel !== 'undefined') AppointmentsPanel.load();
     });
     socket.on('messages:bulk_acknowledged', () => loadMessages());
+    socket.on('message:portal_reply', (data) => {
+      toast(`Portal reply on message ${data.message_id.slice(0,8)}…`, 'info', 5000);
+      loadMessages();
+    });
     socket.on('client:availability', (data) => {
       // Update active call panel if it's for the current call's client
       if (activeCall?.client?.id === data.client_id) {
@@ -1398,6 +1402,15 @@ const App = (() => {
   }
 
   /* ---- Messages ---- */
+  let _msgFlagFilter = false;
+
+  function toggleFlagFilter() {
+    _msgFlagFilter = !_msgFlagFilter;
+    const btn = el('msg-filter-flagged-btn');
+    if (btn) btn.style.background = _msgFlagFilter ? 'var(--warning)' : '';
+    loadMessages();
+  }
+
   async function loadMessages() {
     const clientFilter  = el('msg-filter-client')?.value;
     const statusFilter  = el('msg-filter-status')?.value;
@@ -1415,6 +1428,7 @@ const App = (() => {
     if (toFilter)       path += `&to=${toFilter}`;
     if (tagFilter)      path += `&tag=${encodeURIComponent(tagFilter)}`;
     if (assignedFilter) path += `&assigned_to=${encodeURIComponent(assignedFilter)}`;
+    if (_msgFlagFilter) path += `&flagged=true`;
 
     try {
       const data = await api('GET', path);
@@ -1443,6 +1457,7 @@ const App = (() => {
           <span class="message-item-status status-${m.status}">${m.status}</span>
           ${(m.tags || []).map((t) => `<span style="font-size:0.7rem;background:var(--bg-dark);border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--text-muted)">${escHtml(t)}</span>`).join('')}
           ${m.assigned_to_name ? `<span style="font-size:0.7rem;background:#1a3a5c;color:#8ab4f8;border-radius:3px;padding:0 4px">&#128101; ${escHtml(m.assigned_to_name)}</span>` : ''}
+          ${m.is_flagged ? `<span style="font-size:0.85rem" title="Flagged for follow-up">&#127988;</span>` : ''}
         </div>
       </div>
     `).join('');
@@ -1526,14 +1541,15 @@ const App = (() => {
         if (repliesEl) {
           const replies = repliesData.replies || [];
           repliesEl.innerHTML = replies.length
-            ? replies.map((r) => `
-              <div style="background:var(--bg-dark);border-radius:6px;padding:6px 10px;font-size:0.82rem">
-                <div style="font-weight:600;font-size:0.75rem;color:var(--text-muted);margin-bottom:2px">
-                  ${escHtml(r.operator_name || 'Operator')} &middot; ${new Date(r.created_at).toLocaleString('en-GB')}
-                </div>
-                <div style="white-space:pre-wrap">${escHtml(r.body)}</div>
-              </div>
-            `).join('')
+            ? replies.map((r) => {
+                const isPortal = !!r.portal_user_name;
+                return `<div style="background:${isPortal ? 'rgba(26,58,92,0.08)' : 'var(--bg-dark)'};border-radius:6px;padding:6px 10px;font-size:0.82rem${isPortal ? ';border-left:3px solid #3498db' : ''}">
+                  <div style="font-weight:600;font-size:0.75rem;color:var(--text-muted);margin-bottom:2px">
+                    ${isPortal ? `&#128101; ${escHtml(r.portal_user_name)} (client)` : escHtml(r.operator_name || 'Operator')} &middot; ${new Date(r.created_at).toLocaleString('en-GB')}
+                  </div>
+                  <div style="white-space:pre-wrap">${escHtml(r.body)}</div>
+                </div>`;
+              }).join('')
             : '<span style="font-size:0.8rem;color:var(--text-muted)">No replies yet</span>';
         }
         const replyInput = el('msg-detail-reply-input');
@@ -1691,6 +1707,18 @@ const App = (() => {
       closeMsgDetail();
       loadMessages();
     } catch (err) { toast(`Redeliver failed: ${err.message}`, 'danger'); }
+  }
+
+  async function toggleMsgFlag() {
+    if (!_detailMessageId) return;
+    try {
+      const data = await api('PATCH', `/messages/${_detailMessageId}/flag`, {});
+      const flagged = data.message.is_flagged;
+      const btn = el('msg-detail-flag-btn');
+      if (btn) btn.title = flagged ? 'Unflag' : 'Flag for follow-up';
+      toast(flagged ? 'Message flagged for follow-up' : 'Flag removed', 'success');
+      loadMessages();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
   }
 
   /* ---- AI Features ---- */
@@ -2958,7 +2986,7 @@ const App = (() => {
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
     viewScript, clearMessageForm, saveMessageOnly, loadMessages,
-    showMessageDetail, closeMsgDetail, redeliverMessage, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
+    showMessageDetail, closeMsgDetail, redeliverMessage, toggleMsgFlag, toggleFlagFilter, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
     verify2FA, cancel2FA, startDemo,
@@ -4608,6 +4636,7 @@ const Admin = (() => {
           <td><span class="pill ${u.is_active ? 'pill-green' : 'pill-red'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
           <td>
             <button class="btn btn-sm btn-secondary" onclick="Admin.openPortalUserModal('${u.id}')">Edit</button>
+            ${u.email ? `<button class="btn btn-sm btn-secondary" onclick="Admin.sendPortalPasswordReset('${u.id}')" title="Send password reset email">&#9993; Reset</button>` : ''}
             <button class="btn btn-sm btn-danger" onclick="Admin.deletePortalUser('${u.id}')">Del</button>
           </td>
         </tr>
@@ -4664,6 +4693,15 @@ const Admin = (() => {
       await api('DELETE', `/portal/clients/${editingClientId}/users/${userId}`);
       toast('Portal user deleted', 'info');
       loadPortalUsers(editingClientId);
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  async function sendPortalPasswordReset(userId) {
+    try {
+      await api('POST', `/portal/clients/${editingClientId}/users/${userId}/send-reset`, {});
+      toast('Password reset email sent', 'success');
     } catch (err) {
       toast(`Error: ${err.message}`, 'danger');
     }
@@ -5194,7 +5232,7 @@ const Admin = (() => {
     loadClientNewsAdmin, openNewsEditor, saveNews, deleteNews,
     loadClientTimeline,
     previewEmailTemplate,
-    openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser,
+    openPortalUserModal, closePortalUserModal, savePortalUser, deletePortalUser, sendPortalPasswordReset,
     loadWebhooks, addWebhook, testWebhook, deleteWebhook,
     sendTestEmail,
     uploadLogo, removeLogo,

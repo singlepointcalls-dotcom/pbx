@@ -1151,3 +1151,8 @@ CREATE INDEX IF NOT EXISTS idx_message_replies_msg ON message_replies(message_id
 -- v28 — Portal message ratings (client-side CSAT for message interactions)
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_rating         SMALLINT CHECK (portal_rating BETWEEN 1 AND 5);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS portal_rating_comment TEXT;
+
+-- v29 — Two-way portal replies + message flagging
+ALTER TABLE message_replies ADD COLUMN IF NOT EXISTS portal_user_id UUID REFERENCES client_portal_users(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_messages_flagged ON messages(is_flagged) WHERE is_flagged = true;
