@@ -117,15 +117,49 @@ router.get('/:id/messages', async (req, res, next) => {
     if (!boxResult.rows[0]) return res.status(404).json({ error: 'Voicemail box not found' });
 
     const result = await pool.query(
-      `SELECT cl.id, cl.caller_id, cl.started_at, cl.duration_seconds,
-              cl.recording_url, cl.recording_transcript, cl.transcript_summary
+      `SELECT cl.id, cl.caller_id_num, cl.caller_id_name, cl.call_start AS started_at,
+              cl.duration_seconds, cl.recording_url, cl.recording_transcript,
+              cl.transcript_summary, cl.read_at
        FROM call_logs cl
        WHERE cl.client_id = $1 AND cl.disposition = 'voicemail' AND cl.recording_url IS NOT NULL
-       ORDER BY cl.started_at DESC
+       ORDER BY cl.call_start DESC
        LIMIT 100`,
       [boxResult.rows[0].client_id]
     );
     res.json({ messages: result.rows });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/voicemail/:id/messages/:msgId/read — mark a voicemail message as read
+router.patch('/:id/messages/:msgId/read', async (req, res, next) => {
+  try {
+    await pool.query(
+      `UPDATE call_logs SET read_at = COALESCE(read_at, NOW()) WHERE id = $1`,
+      [req.params.msgId]
+    );
+    res.json({ message: 'Marked as read' });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/voicemail/:id/messages/:msgId — delete voicemail message + recording file (GDPR)
+router.delete('/:id/messages/:msgId', requireRole('admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT recording_url FROM call_logs WHERE id = $1', [req.params.msgId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Message not found' });
+
+    if (row.recording_url) {
+      const fs = require('fs');
+      const path = require('path');
+      try { fs.unlinkSync(path.resolve(row.recording_url)); } catch { /* file may be gone */ }
+    }
+    await pool.query(
+      'UPDATE call_logs SET recording_url = NULL, disposition = $1 WHERE id = $2',
+      ['voicemail_deleted', req.params.msgId]
+    );
+    res.json({ message: 'Voicemail message deleted' });
   } catch (err) { next(err); }
 });
 
