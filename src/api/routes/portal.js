@@ -55,12 +55,11 @@ const PORTAL_JWT_SECRET = () => process.env.PORTAL_JWT_SECRET || process.env.JWT
 
 /* ---- Portal auth middleware ---- */
 function requirePortalAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
+  const raw = req.query.token ||
+    (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (!raw) return res.status(401).json({ error: 'Not authenticated' });
   try {
-    const payload = jwt.verify(auth.split(' ')[1], PORTAL_JWT_SECRET(), { algorithms: ['HS256'] });
+    const payload = jwt.verify(raw, PORTAL_JWT_SECRET(), { algorithms: ['HS256'] });
     if (payload.type !== 'portal') return res.status(403).json({ error: 'Forbidden' });
     req.portalUser = payload;
     next();
@@ -550,6 +549,30 @@ router.get('/appointments/ical', requirePortalAuth, async (req, res, next) => {
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="appointments.ics"');
     res.send(ics);
+  } catch (err) { next(err); }
+});
+
+// GET /api/portal/data-export — GDPR Subject Access Request: download all data for this client
+router.get('/data-export', requirePortalAuth, async (req, res, next) => {
+  try {
+    const clientId = req.portalUser.client_id;
+    const [client, contacts, messages, calls, appointments] = await Promise.all([
+      pool.query('SELECT id,name,account_number,timezone,is_active,created_at FROM clients WHERE id=$1', [clientId]),
+      pool.query('SELECT id,name,email,phone,mobile,role,priority,created_at FROM contacts WHERE client_id=$1', [clientId]),
+      pool.query('SELECT id,caller_name,caller_phone,caller_company,subject,body,urgency,status,created_at FROM messages WHERE client_id=$1 ORDER BY created_at DESC LIMIT 1000', [clientId]),
+      pool.query('SELECT id,caller_id_num,caller_id_name,did,call_start,call_end,duration_seconds,disposition FROM call_logs WHERE client_id=$1 ORDER BY call_start DESC LIMIT 1000', [clientId]),
+      pool.query('SELECT id,caller_name,caller_phone,caller_email,appointment_at,service_type,status,notes FROM appointments WHERE client_id=$1 ORDER BY appointment_at DESC LIMIT 500', [clientId]),
+    ]);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="data-export.json"');
+    res.json({
+      exported_at: new Date().toISOString(),
+      client: client.rows[0] || null,
+      contacts: contacts.rows,
+      messages: messages.rows,
+      call_logs: calls.rows,
+      appointments: appointments.rows,
+    });
   } catch (err) { next(err); }
 });
 

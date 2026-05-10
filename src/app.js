@@ -169,8 +169,33 @@ app.use('/api/shifts',          shiftsRoutes);
 app.use('/api/voicemail',       voicemailRoutes);
 app.use('/api/ivr',             ivrRoutes);
 
-// Health check
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+// Health check — includes DB connectivity and basic counts for monitoring
+app.get('/api/health', async (_req, res) => {
+  const start = Date.now();
+  try {
+    const pool = require('./config/database');
+    const [opRow, clientRow] = await Promise.all([
+      pool.query('SELECT COUNT(*) FROM operators WHERE is_active = true'),
+      pool.query('SELECT COUNT(*) FROM clients WHERE is_active = true'),
+    ]);
+    res.json({
+      status: 'ok',
+      ts: new Date().toISOString(),
+      db_latency_ms: Date.now() - start,
+      active_operators: parseInt(opRow.rows[0].count),
+      active_clients: parseInt(clientRow.rows[0].count),
+      uptime_seconds: Math.floor(process.uptime()),
+      node_version: process.version,
+    });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: err.message, ts: new Date().toISOString() });
+  }
+});
+
+// Wallboard (full-screen display)
+app.get('/wallboard', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'web', 'wallboard.html'));
+});
 
 // Client portal
 app.get('/portal', (_req, res) => {

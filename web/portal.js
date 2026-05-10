@@ -116,6 +116,7 @@ const Portal = (() => {
     else if (section === 'calls') loadCalls();
     else if (section === 'billing') loadBilling();
     else if (section === 'availability') loadAvailability();
+    else if (section === 'account') loadAccount();
   }
 
   /* ---- Mobile nav toggle ---- */
@@ -409,11 +410,40 @@ const Portal = (() => {
     return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
   }
 
+  /* ---- Account / GDPR ---- */
+  function loadAccount() {
+    // Update the data-export link to include auth token as query param
+    // (the browser's anchor download won't send Authorization header)
+    const link = document.getElementById('acc-data-export-link');
+    if (link) link.href = `/api/portal/data-export?token=${encodeURIComponent(token)}`;
+  }
+
+  async function changePassword() {
+    const current = document.getElementById('acc-current-pw')?.value;
+    const newPw   = document.getElementById('acc-new-pw')?.value;
+    const confirm = document.getElementById('acc-confirm-pw')?.value;
+    const msg     = document.getElementById('acc-pw-msg');
+    if (!current || !newPw || !confirm) { if (msg) msg.textContent = 'All fields required.'; return; }
+    if (newPw !== confirm) { if (msg) msg.textContent = 'Passwords do not match.'; return; }
+    if (msg) msg.textContent = '';
+    try {
+      await api('POST', '/portal/me/password', { current_password: current, new_password: newPw });
+      if (msg) { msg.style.color = 'var(--success, green)'; msg.textContent = 'Password updated.'; }
+      ['acc-current-pw','acc-new-pw','acc-confirm-pw'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+    } catch (err) {
+      if (msg) { msg.style.color = 'var(--danger, red)'; msg.textContent = err.message; }
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', init);
 
   return {
     nav, logout, loadMessages, msgPage, loadCalls, loadBilling, loadAvailability,
     setAvailability, saveAvailNote, downloadReport,
     toggleMobileNav, enablePush, dismissPushBanner,
+    loadAccount, changePassword,
   };
 })();

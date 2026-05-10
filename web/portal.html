@@ -42,6 +42,7 @@
       <button class="p-nav-btn" onclick="Portal.nav('calls')">&#128222; Call History</button>
       <button class="p-nav-btn" onclick="Portal.nav('billing')">&#128182; Billing</button>
       <button class="p-nav-btn" onclick="Portal.nav('availability')">&#9200; Availability</button>
+      <button class="p-nav-btn" onclick="Portal.nav('account')">&#128100; Account</button>
     </nav>
     <div class="p-topbar-right">
       <span id="p-username-display" class="p-username"></span>
@@ -162,6 +163,28 @@
         <input type="text" id="p-avail-note" placeholder="e.g. Back at 3pm, call mobile for emergencies" />
         <button class="p-btn p-btn-primary" style="margin-top:10px" onclick="Portal.saveAvailNote()">Save Note</button>
       </div>
+    </section>
+
+    <!-- Account / GDPR section -->
+    <section id="p-account" class="p-section">
+      <h2 class="p-section-title">&#128100; Account &amp; Privacy</h2>
+
+      <h3 style="font-size:1rem;margin-bottom:8px">Change Password</h3>
+      <div style="max-width:400px;display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
+        <input type="password" id="acc-current-pw"  placeholder="Current password"  class="p-input" />
+        <input type="password" id="acc-new-pw"      placeholder="New password (min 12 chars)" class="p-input" />
+        <input type="password" id="acc-confirm-pw"  placeholder="Confirm new password" class="p-input" />
+        <button class="p-btn p-btn-primary" onclick="Portal.changePassword()" style="width:fit-content">Update Password</button>
+        <div id="acc-pw-msg" style="font-size:0.85rem"></div>
+      </div>
+
+      <h3 style="font-size:1rem;margin-bottom:8px">Your Data (GDPR)</h3>
+      <p style="font-size:0.85rem;color:#666;margin-bottom:12px">
+        Download a copy of all data held about your account including messages, call history, contacts, and appointments.
+      </p>
+      <a id="acc-data-export-link" href="/api/portal/data-export" download="data-export.json" class="p-btn p-btn-secondary" style="text-decoration:none;width:fit-content">
+        &#11167; Download My Data (JSON)
+      </a>
     </section>
 
   </div>
