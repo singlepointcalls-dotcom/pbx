@@ -3406,6 +3406,43 @@ const Admin = (() => {
     } catch { /* ignore */ }
   }
 
+  async function loadCallLog() {
+    const tbody = el('calllog-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:12px;color:#666">Loading...</td></tr>';
+    const clientId   = el('calllog-client-filter')?.value.trim();
+    const disposition = el('calllog-disposition')?.value;
+    let qs = '?limit=100';
+    if (clientId)   qs += `&client_id=${encodeURIComponent(clientId)}`;
+    if (disposition) qs += `&disposition=${encodeURIComponent(disposition)}`;
+    try {
+      const data = await api('GET', `/calls${qs}`);
+      const rows = data?.calls || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No calls found</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map((r) => `
+        <tr>
+          <td style="white-space:nowrap">${r.call_start ? new Date(r.call_start).toLocaleString('en-GB') : '—'}</td>
+          <td>${escHtml(r.client_name || '')}</td>
+          <td>${escHtml((r.caller_id_name ? r.caller_id_name + ' ' : '') + (r.caller_id_num || ''))}</td>
+          <td>${escHtml(r.did || '')}</td>
+          <td>${r.duration_seconds != null ? r.duration_seconds + 's' : '—'}</td>
+          <td>${escHtml(r.disposition || '')}</td>
+          <td>${escHtml(r.operator_name || '—')}</td>
+          <td>${r.recording_url
+            ? `<audio controls preload="none" style="height:28px;max-width:180px">
+                 <source src="/api/calls/${r.id}/recording">
+               </audio>`
+            : '—'}</td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+  }
+
   async function loadBillingForClient() {
     const clientId = el('billing-client-select').value;
     billingClientId = clientId || null;
@@ -3984,7 +4021,7 @@ const Admin = (() => {
     addIgnore, removeIgnore,
     setAvailability,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
-    loadReports,
+    loadReports, loadCallLog,
     loadBillingForClient, saveBillingPlan, generateBillingReport, regenerateReport,
     loadSettings, saveSettings, openFreePBX,
     loadClientFiles, uploadFile, deleteFile,
