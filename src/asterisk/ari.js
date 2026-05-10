@@ -14,6 +14,7 @@
 const ari = require('ari-client');
 const pool = require('../config/database');
 const { broadcast } = require('../services/realtime');
+const { transcribeCall } = require('../services/transcription');
 
 let ariClient = null;
 
@@ -138,6 +139,16 @@ async function handleStasisEnd(event, channel) {
          WHERE id = $2`,
         [durationSec, callData.callLogId]
       );
+      // Auto-transcribe if a recording was captured
+      const rec = await pool.query(
+        'SELECT recording_url FROM call_logs WHERE id = $1', [callData.callLogId]
+      );
+      const recordingUrl = rec.rows[0]?.recording_url;
+      if (recordingUrl) {
+        transcribeCall(callData.callLogId, recordingUrl).catch(err =>
+          console.warn('[ARI] Auto-transcription failed:', err.message)
+        );
+      }
     } catch (err) {
       console.error('[ARI] Failed to update call log:', err.message);
     }

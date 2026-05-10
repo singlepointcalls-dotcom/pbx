@@ -296,7 +296,7 @@ const Portal = (() => {
   }
 
   function downloadReport(reportId) {
-    alert('PDF export coming soon. Please contact your account manager for a full invoice.');
+    window.open(`/api/billing/portal/reports/${encodeURIComponent(reportId)}/invoice?token=${encodeURIComponent(token)}`, '_blank', 'noopener');
   }
 
   /* ---- Availability ---- */
