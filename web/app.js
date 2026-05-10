@@ -1413,6 +1413,9 @@ const App = (() => {
 
   /* ---- Messages ---- */
   let _msgFlagFilter = false;
+  const MSG_PAGE_SIZE = 30;
+  let _msgOffset = 0;
+  let _msgHasMore = false;
 
   function toggleFlagFilter() {
     _msgFlagFilter = !_msgFlagFilter;
@@ -1421,7 +1424,7 @@ const App = (() => {
     loadMessages();
   }
 
-  async function loadMessages() {
+  function _buildMsgPath(offset = 0) {
     const clientFilter  = el('msg-filter-client')?.value;
     const statusFilter  = el('msg-filter-status')?.value;
     const urgencyFilter = el('msg-filter-urgency')?.value;
@@ -1430,7 +1433,7 @@ const App = (() => {
     const tagFilter      = el('msg-filter-tag')?.value.trim();
     const assignedFilter = el('msg-filter-assigned')?.value;
 
-    let path = '/messages?limit=30';
+    let path = `/messages?limit=${MSG_PAGE_SIZE + 1}&offset=${offset}`;
     if (clientFilter)   path += `&client_id=${clientFilter}`;
     if (statusFilter)   path += `&status=${statusFilter}`;
     if (urgencyFilter)  path += `&urgency=${urgencyFilter}`;
@@ -1440,24 +1443,40 @@ const App = (() => {
     if (assignedFilter) path += `&assigned_to=${encodeURIComponent(assignedFilter)}`;
     if (_msgFlagFilter) path += `&flagged=true`;
     if (_showArchived)  path += `&archived=true`;
+    return path;
+  }
 
+  async function loadMessages() {
+    _msgOffset = 0;
     try {
-      const data = await api('GET', path);
+      const data = await api('GET', _buildMsgPath(0));
       if (!data) return;
-      renderMessages(data.messages);
+      const messages = data.messages || [];
+      _msgHasMore = messages.length > MSG_PAGE_SIZE;
+      renderMessages(_msgHasMore ? messages.slice(0, MSG_PAGE_SIZE) : messages, false);
     } catch (err) {
       console.error('loadMessages error:', err.message);
     }
   }
 
-  function renderMessages(messages) {
-    const container = el('messages-list');
-    if (!messages.length) {
-      container.innerHTML = '<p class="empty-state">No messages</p>';
-      return;
+  async function loadMoreMessages() {
+    _msgOffset += MSG_PAGE_SIZE;
+    try {
+      const data = await api('GET', _buildMsgPath(_msgOffset));
+      if (!data) return;
+      const messages = data.messages || [];
+      _msgHasMore = messages.length > MSG_PAGE_SIZE;
+      renderMessages(_msgHasMore ? messages.slice(0, MSG_PAGE_SIZE) : messages, true);
+    } catch (err) {
+      console.error('loadMoreMessages error:', err.message);
     }
+  }
 
-    container.innerHTML = messages.map((m) => `
+  function renderMessages(messages, append = false) {
+    const container = el('messages-list');
+    const loadMoreBtn = el('msg-load-more-btn');
+
+    const html = messages.map((m) => `
       <div class="message-item${!m.read_at ? ' message-unread' : ''}" data-msg-id="${m.id}" onclick="App.showMessageDetail('${m.id}')">
         <div class="message-item-client">${escHtml(m.client_name || '—')}${!m.read_at ? ' <span style="display:inline-block;width:7px;height:7px;background:#3b82f6;border-radius:50%;margin-left:4px;vertical-align:middle" title="Unread"></span>' : ''}</div>
         <div class="message-item-caller">${escHtml(m.caller_name || m.caller_phone || 'Unknown')}</div>
@@ -1472,6 +1491,25 @@ const App = (() => {
         </div>
       </div>
     `).join('');
+
+    if (!messages.length && !append) {
+      container.innerHTML = '<p class="empty-state">No messages</p>';
+    } else if (append) {
+      // Remove existing load-more button before appending
+      container.querySelector('.msg-load-more-row')?.remove();
+      container.insertAdjacentHTML('beforeend', html);
+    } else {
+      container.innerHTML = html;
+    }
+
+    // Load More button
+    container.querySelector('.msg-load-more-row')?.remove();
+    if (_msgHasMore) {
+      container.insertAdjacentHTML('beforeend',
+        `<div class="msg-load-more-row" style="text-align:center;padding:10px">
+           <button id="msg-load-more-btn" class="btn btn-secondary btn-sm" onclick="App.loadMoreMessages()">Load more</button>
+         </div>`);
+    }
   }
 
   let _detailMessageId = null;
@@ -3078,7 +3116,7 @@ const App = (() => {
   /* ---- Public interface ---- */
   return {
     logout, pickupCall, hangup, toggleHold, showTransfer, transfer,
-    viewScript, clearMessageForm, saveMessageOnly, loadMessages,
+    viewScript, clearMessageForm, saveMessageOnly, loadMessages, loadMoreMessages,
     showMessageDetail, closeMsgDetail, redeliverMessage, toggleMsgFlag, toggleFlagFilter, toggleMsgArchive, toggleArchivedView, saveMsgTags, saveMsgNotes, saveMsgAssign, sendMsgReply,
     aiSummarise, aiTranslate, aiSuggestReply,
     switchView, onClientChange, onCallTypeChange,
@@ -4435,7 +4473,7 @@ const Admin = (() => {
       const data = await api('GET', `/calls${qs}`);
       const rows = data?.calls || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No calls found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No calls found</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map((r) => `
@@ -4458,11 +4496,27 @@ const Admin = (() => {
           <td>${r.caller_id_num && r.disposition !== 'answered'
             ? `<button class="btn btn-sm btn-secondary" title="Call back" onclick="App.originateToContact('${escHtml(r.caller_id_num)}','${r.client_id || ''}')">&#128222; Call Back</button>`
             : ''}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary" title="${r.disposition_notes ? escHtml(r.disposition_notes.slice(0, 40)) : 'Add notes'}"
+              onclick="Admin.editCallNotes('${r.id}',${JSON.stringify(r.disposition_notes || '')})">
+              ${r.disposition_notes ? '&#128221;' : '+ Notes'}
+            </button>
+          </td>
         </tr>
       `).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="10" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
     }
+  }
+
+  async function editCallNotes(callId, existingNotes) {
+    const notes = prompt('Call Notes:', existingNotes || '');
+    if (notes === null) return; // cancelled
+    try {
+      await api('PATCH', `/calls/${callId}/disposition`, { disposition_notes: notes.trim() || null });
+      toast('Notes saved', 'success');
+      loadCallLog();
+    } catch (err) { toast(`Save failed: ${err.message}`, 'danger'); }
   }
 
   async function loadBillingForClient() {
@@ -5472,7 +5526,7 @@ const Admin = (() => {
     addIgnore, removeIgnore,
     setAvailability,
     openOperatorModal, closeOperatorModal, saveOperator, toggleOperator,
-    loadReports, loadCallLog, loadSlaCompliance,
+    loadReports, loadCallLog, loadSlaCompliance, editCallNotes,
     loadBillingForClient, saveBillingPlan, generateBillingReport, regenerateReport,
     loadSettings, saveSettings, openFreePBX,
     loadClientFiles, uploadFile, deleteFile,
