@@ -82,6 +82,38 @@ router.put('/:id', requireRole('admin'), async (req, res, next) => {
   }
 });
 
+// GET /api/operators/me — get own profile
+router.get('/me', async (req, res, next) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, username, full_name, display_name, email, role, sip_extension,
+              notify_new_message, notify_missed_call, notify_sla_breach, notify_escalation,
+              totp_enabled, preferred_language, skills, is_active, created_at
+         FROM operators WHERE id = $1`,
+      [req.operator.id]
+    );
+    if (!r.rows[0]) return res.status(404).json({ error: 'Operator not found' });
+    res.json({ operator: r.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/operators/me — update own profile (non-admin fields only)
+router.patch('/me', async (req, res, next) => {
+  try {
+    const { display_name, sip_extension, preferred_language } = req.body;
+    const r = await pool.query(
+      `UPDATE operators SET
+         display_name       = COALESCE($1, display_name),
+         sip_extension      = COALESCE($2, sip_extension),
+         preferred_language = COALESCE($3, preferred_language)
+       WHERE id = $4
+       RETURNING id, username, full_name, display_name, email, role, sip_extension, preferred_language`,
+      [display_name || null, sip_extension || null, preferred_language || null, req.operator.id]
+    );
+    res.json({ operator: r.rows[0] });
+  } catch (err) { next(err); }
+});
+
 // PUT /api/operators/me/password — change own password
 router.put('/me/password', async (req, res, next) => {
   try {

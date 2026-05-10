@@ -2271,6 +2271,15 @@
     <div class="modal-body">
       <div id="profile-info" style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px"></div>
 
+      <h4 class="section-label" style="margin-bottom:8px">Profile Settings</h4>
+      <div class="form-row">
+        <div class="field"><label>Display Name</label><input type="text" id="pf-display-name" placeholder="How you appear to others" /></div>
+        <div class="field"><label>SIP Extension</label><input type="text" id="pf-sip-extension" placeholder="e.g. 101" /></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="App.saveProfileSettings()">Save Profile</button>
+
+      <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)" />
+
       <h4 class="section-label" style="margin-bottom:8px">Change Password</h4>
       <div class="field"><label>Current Password</label><input type="password" id="pf-current-pw" autocomplete="current-password" /></div>
       <div class="field"><label>New Password</label><input type="password" id="pf-new-pw" autocomplete="new-password" oninput="App.showPwStrength(this.value)" /></div>

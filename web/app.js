@@ -366,17 +366,34 @@ const App = (() => {
           <button class="btn btn-sm btn-secondary" onclick="App.setup2FA()">Enable 2FA</button>`;
       }
     }
-    // Load notification preferences from server
+    // Load full profile from server (notification prefs + SIP extension + display name)
     try {
-      const data = await api('GET', '/auth/me');
+      const data = await api('GET', '/operators/me');
       const op = data.operator || {};
       const setCheck = (id, val) => { const e = el(id); if (e) e.checked = !!val; };
       setCheck('pf-notify-message',   op.notify_new_message);
       setCheck('pf-notify-missed',    op.notify_missed_call);
       setCheck('pf-notify-sla',       op.notify_sla_breach);
       setCheck('pf-notify-escalation', op.notify_escalation);
+      if (el('pf-display-name')) el('pf-display-name').value = op.display_name || '';
+      if (el('pf-sip-extension')) el('pf-sip-extension').value = op.sip_extension || '';
     } catch { /* ignore — toggles just stay unchecked */ }
     el('profile-modal').style.display = 'flex';
+  }
+
+  async function saveProfileSettings() {
+    const display_name  = el('pf-display-name')?.value?.trim() || undefined;
+    const sip_extension = el('pf-sip-extension')?.value?.trim() || undefined;
+    try {
+      const data = await api('PATCH', '/operators/me', { display_name, sip_extension });
+      if (currentOperator && data.operator) {
+        currentOperator.display_name  = data.operator.display_name;
+        currentOperator.sip_extension = data.operator.sip_extension;
+      }
+      toast('Profile updated', 'success');
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
   }
 
   async function saveNotificationPrefs() {
@@ -3191,7 +3208,7 @@ const App = (() => {
     // Follow-ups
     loadFollowUps, completeFollowUp, loadMyWorkload, filterAssignedToMe,
     // Notification preferences
-    saveNotificationPrefs,
+    saveNotificationPrefs, saveProfileSettings,
     // Time-off requests
     requestTimeOff,
     // Supervisor monitoring
