@@ -2,12 +2,14 @@
 
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const pool = require('../../config/database');
 const { requireAuth } = require('../middleware/auth');
 const audit = require('../../services/audit');
+const nodemailer = require('nodemailer');
 
 /* ---- Simple in-memory rate limiter for auth endpoints ---- */
 const loginAttempts = new Map();
@@ -293,6 +295,91 @@ router.delete('/2fa', requireAuth, async (req, res, next) => {
 
     await pool.query('UPDATE operators SET totp_secret = NULL, totp_enabled = false WHERE id = $1', [req.operator.id]);
     res.json({ message: '2FA disabled' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/auth/forgot-password — request operator password reset email
+router.post('/forgot-password', rateLimitAuth, async (req, res, next) => {
+  try {
+    const { username } = req.body;
+    // Always return the same response to prevent username enumeration
+    const ok = () => res.json({ message: 'If that username exists with an email on file, a reset link has been sent.' });
+
+    if (!username) return ok();
+
+    const result = await pool.query(
+      'SELECT id, email, full_name FROM operators WHERE username = $1 AND is_active = true',
+      [username]
+    );
+    const op = result.rows[0];
+    if (!op || !op.email) return ok();
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      'INSERT INTO operator_reset_tokens (operator_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [op.id, tokenHash, expiresAt]
+    );
+
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const resetUrl = `${appUrl}/index.html?reset=${rawToken}&user=${encodeURIComponent(username)}`;
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: false,
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: op.email,
+        subject: 'Password reset — SinglePoint Calls',
+        text: `Hi ${op.full_name || username},\n\nClick the link below to reset your password (valid 24 hours):\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
+        html: `<p>Hi ${op.full_name || username},</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in 24 hours.</p>`,
+      });
+    } catch (mailErr) {
+      console.error('[Auth] Password reset email failed:', mailErr.message);
+    }
+
+    ok();
+  } catch (err) { next(err); }
+});
+
+// POST /api/auth/reset-password — validate token and set new password
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { username, token, new_password } = req.body;
+    if (!username || !token || !new_password) {
+      return res.status(400).json({ error: 'username, token, and new_password are required' });
+    }
+
+    const pwErr = validatePassword(new_password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+
+    const opResult = await pool.query(
+      'SELECT id FROM operators WHERE username = $1 AND is_active = true', [username]
+    );
+    if (!opResult.rows[0]) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    const operatorId = opResult.rows[0].id;
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokResult = await pool.query(
+      `SELECT id FROM operator_reset_tokens
+       WHERE operator_id = $1 AND token_hash = $2
+         AND expires_at > NOW() AND used_at IS NULL`,
+      [operatorId, tokenHash]
+    );
+    if (!tokResult.rows[0]) return res.status(400).json({ error: 'Invalid or expired reset token' });
+
+    const passwordHash = await bcrypt.hash(new_password, 12);
+    await Promise.all([
+      pool.query('UPDATE operators SET password_hash = $1 WHERE id = $2', [passwordHash, operatorId]),
+      pool.query('UPDATE operator_reset_tokens SET used_at = NOW() WHERE id = $1', [tokResult.rows[0].id]),
+    ]);
+
+    res.json({ message: 'Password has been reset. You can now log in.' });
   } catch (err) { next(err); }
 });
 

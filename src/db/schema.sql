@@ -1002,3 +1002,17 @@ CREATE TABLE IF NOT EXISTS webhook_delivery_log (
 CREATE INDEX IF NOT EXISTS idx_wdl_message ON webhook_delivery_log(message_id);
 
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_abandon_threshold INT NOT NULL DEFAULT 3;
+
+-- ============================================================
+-- v17 — Operator self-service password reset
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS operator_reset_tokens (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id   UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    token_hash    VARCHAR(255) NOT NULL UNIQUE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    used_at       TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_op_reset_token_op ON operator_reset_tokens(operator_id);

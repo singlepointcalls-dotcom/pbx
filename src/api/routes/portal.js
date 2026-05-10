@@ -53,8 +53,38 @@ function rateLimitPortal(req, res, next) {
 // Set PORTAL_JWT_SECRET in .env; falls back to JWT_SECRET if not configured.
 const PORTAL_JWT_SECRET = () => process.env.PORTAL_JWT_SECRET || process.env.JWT_SECRET;
 
-/* ---- Portal auth middleware ---- */
-function requirePortalAuth(req, res, next) {
+/* ---- Portal auth middleware — accepts JWT or X-Api-Key ---- */
+async function requirePortalAuth(req, res, next) {
+  // 1. API key path: X-Api-Key header
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey && apiKey.length >= 8) {
+    try {
+      const prefix = apiKey.slice(0, 8);
+      const rows = await pool.query(
+        `SELECT pak.id, pak.key_hash, pak.scopes, pak.expires_at, pak.revoked_at,
+                cpu.id AS user_id, cpu.client_id, cpu.username
+         FROM portal_api_keys pak
+         JOIN client_portal_users cpu ON pak.portal_user_id = cpu.id
+         WHERE pak.key_prefix = $1`,
+        [prefix]
+      );
+      for (const row of rows.rows) {
+        if (row.revoked_at) continue;
+        if (row.expires_at && new Date(row.expires_at) < new Date()) continue;
+        const match = await bcrypt.compare(apiKey, row.key_hash);
+        if (!match) continue;
+        // Valid key — update last_used_at async, no await
+        pool.query('UPDATE portal_api_keys SET last_used_at = NOW() WHERE id = $1', [row.id]).catch(() => {});
+        req.portalUser = { id: row.user_id, client_id: row.client_id, username: row.username, type: 'portal', scopes: row.scopes };
+        return next();
+      }
+      return res.status(401).json({ error: 'Invalid or revoked API key' });
+    } catch (err) {
+      return next(err);
+    }
+  }
+
+  // 2. JWT path: Authorization header or ?token= query param
   const raw = req.query.token ||
     (req.headers.authorization || '').replace(/^Bearer /, '');
   if (!raw) return res.status(401).json({ error: 'Not authenticated' });

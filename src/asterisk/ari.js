@@ -21,6 +21,29 @@ let ariClient = null;
 // Active calls: channelId -> { channel, callLogId, clientId, ... }
 const activeCalls = new Map();
 
+// Exponential backoff reconnect: 5s → 10s → 20s → 40s → 60s cap
+const ARI_RECONNECT_DELAYS = [5000, 10000, 20000, 40000, 60000];
+let _reconnectAttempt = 0;
+let _reconnectTimer = null;
+
+function _scheduleReconnect() {
+  if (_reconnectTimer) return;
+  const delay = ARI_RECONNECT_DELAYS[Math.min(_reconnectAttempt, ARI_RECONNECT_DELAYS.length - 1)];
+  _reconnectAttempt++;
+  console.log(`[ARI] Reconnecting in ${delay / 1000}s (attempt ${_reconnectAttempt})...`);
+  _reconnectTimer = setTimeout(async () => {
+    _reconnectTimer = null;
+    try {
+      await connectARI();
+      _reconnectAttempt = 0;
+      console.log('[ARI] Reconnected successfully.');
+    } catch (err) {
+      console.warn('[ARI] Reconnect failed:', err.message);
+      _scheduleReconnect();
+    }
+  }, delay);
+}
+
 async function connectARI() {
   const host = process.env.ARI_HOST || 'localhost';
   const port = process.env.ARI_PORT || '8088';
@@ -39,8 +62,12 @@ async function connectARI() {
   ariClient.start(appName);
   console.log(`ARI connected. Listening for Stasis app: ${appName}`);
 
-  ariClient.on('WebsocketReconnecting', () => console.log('ARI WebSocket reconnecting...'));
-  ariClient.on('WebsocketMaxRetries', () => console.error('ARI WebSocket max retries reached'));
+  ariClient.on('WebsocketReconnecting', () => console.log('[ARI] WebSocket reconnecting...'));
+  ariClient.on('WebsocketMaxRetries', () => {
+    console.error('[ARI] WebSocket max retries reached — scheduling reconnect');
+    ariClient = null;
+    _scheduleReconnect();
+  });
 
   return ariClient;
 }
