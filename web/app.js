@@ -290,6 +290,7 @@ const App = (() => {
     Tasks.load();
     loadNoticeboard();
     loadFollowUps();
+    loadMyWorkload();
 
     // Restore dark mode preference
     if (localStorage.getItem('as_darkmode') === '1') {
@@ -2476,6 +2477,39 @@ const App = (() => {
   }
 
   /* ---- Follow-up Calls ---- */
+  async function loadMyWorkload() {
+    const setText = (id, val) => { const e = el(id); if (e) e.textContent = val; };
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const [assignedData, todayMsgsData] = await Promise.all([
+        api('GET', '/messages?assigned_to=me&limit=1').catch(() => null),
+        api('GET', `/messages?from=${today}&to=${today}&limit=1`).catch(() => null),
+      ]);
+      setText('wl-assigned', assignedData?.total ?? '—');
+      setText('wl-today-msgs', todayMsgsData?.total ?? '—');
+    } catch {
+      setText('wl-assigned', '—');
+      setText('wl-today-msgs', '—');
+    }
+    // Today's calls — use the operator's calls
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const data = await api('GET', `/calls?from=${today}&limit=500`).catch(() => null);
+      const calls = data?.calls || [];
+      setText('wl-today-calls', calls.length > 0 ? calls.length : '0');
+    } catch {
+      setText('wl-today-calls', '—');
+    }
+  }
+
+  function filterAssignedToMe() {
+    const sel = el('msg-filter-assigned');
+    if (sel) { sel.value = 'me'; loadMessages(); }
+    // Switch to console view and scroll to messages
+    const msgPanel = el('messages-list');
+    if (msgPanel) msgPanel.scrollIntoView({ behavior: 'smooth' });
+  }
+
   async function loadFollowUps() {
     const container = el('followups-list');
     if (!container) return;
@@ -2920,7 +2954,7 @@ const App = (() => {
     // Global search
     globalSearch, closeSearch, _handleSearchResult,
     // Follow-ups
-    loadFollowUps, completeFollowUp,
+    loadFollowUps, completeFollowUp, loadMyWorkload, filterAssignedToMe,
     // Notification preferences
     saveNotificationPrefs,
     // Time-off requests
@@ -4139,7 +4173,7 @@ const Admin = (() => {
   async function loadCallLog() {
     const tbody = el('calllog-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;color:#666">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="padding:12px;color:#666">Loading...</td></tr>';
     const clientId    = el('calllog-client-filter')?.value.trim();
     const disposition = el('calllog-disposition')?.value;
     const from        = el('calllog-from')?.value;
@@ -4155,7 +4189,7 @@ const Admin = (() => {
       const data = await api('GET', `/calls${qs}`);
       const rows = data?.calls || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No calls found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No calls found</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map((r) => `
@@ -4172,13 +4206,16 @@ const Admin = (() => {
                  <source src="/api/calls/${r.id}/recording">
                </audio>`
             : '—'}</td>
+          <td>${r.disposition === 'answered'
+            ? `<button class="btn btn-sm btn-secondary" title="Score this call" onclick="App.openQA('${r.id}')">&#127942; QA</button>`
+            : ''}</td>
           <td>${r.caller_id_num && r.disposition !== 'answered'
             ? `<button class="btn btn-sm btn-secondary" title="Call back" onclick="App.originateToContact('${escHtml(r.caller_id_num)}','${r.client_id || ''}')">&#128222; Call Back</button>`
             : ''}</td>
         </tr>
       `).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="empty-state">Error: ${escHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -6467,7 +6504,23 @@ const DncPanel = (() => {
     } catch (err) { resultEl.textContent = `Error: ${err.message}`; }
   }
 
-  return { load, add, remove, check };
+  async function bulkImport() {
+    const text = prompt('Paste phone numbers (one per line, optionally "number,reason"):');
+    if (!text?.trim()) return;
+    const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    const entries = lines.map((l) => {
+      const [phone, ...rest] = l.split(',');
+      return { phone: phone.trim(), reason: rest.join(',').trim() || undefined };
+    }).filter((e) => e.phone);
+    if (!entries.length) { toast('No valid numbers found', 'warning'); return; }
+    try {
+      const data = await api('POST', '/dnc', entries);
+      toast(`${data.count} number(s) added to DNC list`, 'success');
+      load();
+    } catch (err) { toast(`Error: ${err.message}`, 'danger'); }
+  }
+
+  return { load, add, remove, check, bulkImport };
 })();
 
 /* ============================================================

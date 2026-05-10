@@ -205,6 +205,31 @@
         <div id="tasks-list" class="tasks-list"></div>
       </section>
 
+      <!-- My Workload widget -->
+      <section class="panel" id="my-workload-panel" style="padding:8px 12px">
+        <div class="panel-header" style="margin-bottom:6px">
+          <h2 style="font-size:0.88rem">&#128101; My Workload</h2>
+          <button class="btn btn-sm" onclick="App.loadMyWorkload()" title="Refresh">&#8635;</button>
+        </div>
+        <div id="my-workload-stats" style="display:flex;gap:10px;flex-wrap:wrap">
+          <div style="text-align:center;flex:1;min-width:60px">
+            <div id="wl-assigned" style="font-size:1.4rem;font-weight:700;color:var(--primary)">—</div>
+            <div style="font-size:0.7rem;color:var(--text-muted)">Assigned</div>
+          </div>
+          <div style="text-align:center;flex:1;min-width:60px">
+            <div id="wl-today-calls" style="font-size:1.4rem;font-weight:700;color:#27ae60">—</div>
+            <div style="font-size:0.7rem;color:var(--text-muted)">Calls Today</div>
+          </div>
+          <div style="text-align:center;flex:1;min-width:60px">
+            <div id="wl-today-msgs" style="font-size:1.4rem;font-weight:700;color:#e67e22">—</div>
+            <div style="font-size:0.7rem;color:var(--text-muted)">Msgs Today</div>
+          </div>
+        </div>
+        <div style="margin-top:6px">
+          <button class="btn btn-sm btn-secondary" style="font-size:0.78rem;width:100%" onclick="App.filterAssignedToMe()">Show My Messages</button>
+        </div>
+      </section>
+
       <section class="panel" id="followups-panel">
         <div class="panel-header">
           <h2>&#128205; Follow-ups</h2>
@@ -656,8 +681,8 @@
         <a id="calllog-csv-btn" href="/api/calls?format=csv" download="call-log.csv" class="btn btn-sm btn-secondary">&#11015; CSV</a>
       </div>
       <table class="admin-table">
-        <thead><tr><th>Time</th><th>Client</th><th>Caller</th><th>DID</th><th>Duration</th><th>Disposition</th><th>Operator</th><th>Recording</th><th></th></tr></thead>
-        <tbody id="calllog-tbody"><tr><td colspan="9" class="empty-state">Click Refresh to load</td></tr></tbody>
+        <thead><tr><th>Time</th><th>Client</th><th>Caller</th><th>DID</th><th>Duration</th><th>Disposition</th><th>Operator</th><th>Recording</th><th>QA</th><th></th></tr></thead>
+        <tbody id="calllog-tbody"><tr><td colspan="10" class="empty-state">Click Refresh to load</td></tr></tbody>
       </table>
     </div>
 
@@ -1138,6 +1163,7 @@
           <input type="text" id="dnc-check-input" placeholder="Check number..." style="font-size:0.85rem;padding:5px 8px" />
           <button class="btn btn-secondary btn-sm" onclick="DncPanel.check()">Check</button>
           <button class="btn btn-primary btn-sm" onclick="DncPanel.add()">+ Add Number</button>
+          <button class="btn btn-secondary btn-sm" onclick="DncPanel.bulkImport()" title="Paste multiple numbers">&#128229; Bulk Import</button>
         </div>
       </div>
       <div id="dnc-check-result" style="padding:6px 0;font-size:0.85rem;min-height:22px"></div>
