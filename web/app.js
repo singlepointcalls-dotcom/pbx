@@ -247,6 +247,7 @@ const App = (() => {
     loadMessages();
     Tasks.load();
     loadNoticeboard();
+    loadFollowUps();
 
     // Restore dark mode preference
     if (localStorage.getItem('as_darkmode') === '1') {
@@ -1252,7 +1253,7 @@ const App = (() => {
     }
 
     container.innerHTML = messages.map((m) => `
-      <div class="message-item" onclick="App.showMessageDetail('${m.id}')">
+      <div class="message-item" data-msg-id="${m.id}" onclick="App.showMessageDetail('${m.id}')">
         <div class="message-item-client">${escHtml(m.client_name || '—')}</div>
         <div class="message-item-caller">${escHtml(m.caller_name || m.caller_phone || 'Unknown')}</div>
         <div class="message-item-preview">${escHtml(m.body)}</div>
@@ -1958,6 +1959,66 @@ const App = (() => {
     msgBody.focus();
   }
 
+  /* ---- Follow-up Calls ---- */
+  async function loadFollowUps() {
+    const container = el('followups-list');
+    if (!container) return;
+    container.innerHTML = '<p class="empty-state">Loading...</p>';
+    try {
+      const data = await api('GET', '/calls/follow-ups/pending');
+      const calls = data.calls || [];
+      if (!calls.length) {
+        container.innerHTML = '<p class="empty-state">No pending follow-ups</p>';
+        return;
+      }
+      container.innerHTML = calls.map((c) => {
+        const due = c.follow_up_at
+          ? new Date(c.follow_up_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })
+          : 'No date';
+        const overdue = c.follow_up_at && new Date(c.follow_up_at) < new Date();
+        return `<div class="task-item" style="${overdue ? 'border-left:3px solid var(--danger)' : ''}">
+          <div style="font-size:0.8rem;font-weight:600">${escHtml(c.client_name || '—')}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(c.caller_id_name || c.caller_id_num || 'Unknown')}</div>
+          ${c.disposition_notes ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">${escHtml(c.disposition_notes)}</div>` : ''}
+          <div style="font-size:0.72rem;color:${overdue ? 'var(--danger)' : 'var(--text-muted)'};margin-top:4px">Due: ${due}</div>
+          <button class="btn btn-sm btn-secondary" style="margin-top:4px;font-size:0.72rem"
+            onclick="App.completeFollowUp('${c.id}')">Mark Done</button>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="empty-state">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function completeFollowUp(callId) {
+    try {
+      await api('PATCH', `/calls/${callId}/disposition`, { disposition: 'follow_up_completed', follow_up_required: false });
+      toast('Follow-up marked complete', 'success');
+      loadFollowUps();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
+  /* ---- Bulk Message Acknowledgment ---- */
+  async function bulkAcknowledge() {
+    const clientId = el('msg-filter-client')?.value || null;
+    try {
+      const body = clientId ? { client_id: clientId } : {};
+      if (!clientId) {
+        // No client filter — acknowledge by IDs of currently visible messages
+        const rows = document.querySelectorAll('#messages-list [data-msg-id]');
+        if (!rows.length) return toast('No messages to acknowledge', 'warning');
+        body.ids = Array.from(rows).map((r) => r.dataset.msgId);
+      }
+      const data = await api('POST', '/messages/bulk/acknowledge', body);
+      toast(`${data.updated} message${data.updated !== 1 ? 's' : ''} acknowledged`, 'success');
+      loadMessages();
+    } catch (err) {
+      toast(`Error: ${err.message}`, 'danger');
+    }
+  }
+
   /* ---- Team Chat ---- */
   let chatOpen = false;
   let chatUnread = 0;
@@ -2325,6 +2386,10 @@ const App = (() => {
     mobileSwitchPanel, toggleMobileMenu, closeMobileMenu, closeSidebars, mobileAutoSwitchOnCall,
     // Push notifications
     enablePushNotifications, dismissPushPrompt, togglePushNotifications,
+    // Follow-ups
+    loadFollowUps, completeFollowUp,
+    // Bulk actions
+    bulkAcknowledge,
     // Caller ID hint
     onCallerPhoneChanged, confirmCallerPhone,
     _api: api,
@@ -4309,6 +4374,17 @@ const Analytics = (() => {
     });
     try {
       const qs = `?granularity=${period}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
+      const baseUrl = '/api';
+      const token = localStorage.getItem('as_token') || '';
+      // Update CSV download links (auth via URL param fallback not available — links open API directly)
+      const csvQs = qs + '&format=csv';
+      const setHref = (id, path) => { const a = el(id); if (a) a.href = baseUrl + path; };
+      setHref('analytics-calls-csv',     `/analytics/calls${csvQs}`);
+      setHref('analytics-msgs-csv',      `/analytics/messages${csvQs}`);
+      setHref('analytics-sla-csv',       `/analytics/sla${csvQs}`);
+      setHref('analytics-operators-csv', `/analytics/operators?${from ? `from=${from}&` : ''}${to ? `to=${to}&` : ''}format=csv`);
+      setHref('analytics-clients-csv',   `/analytics/clients?${from ? `from=${from}&` : ''}${to ? `to=${to}&` : ''}format=csv`);
+
       const [calls, msgs, sla, ops, clients] = await Promise.all([
         api('GET', `/analytics/calls${qs}`),
         api('GET', `/analytics/messages${qs}`),

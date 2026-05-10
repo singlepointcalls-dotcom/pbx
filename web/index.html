@@ -199,6 +199,16 @@
         <div id="tasks-list" class="tasks-list"></div>
       </section>
 
+      <section class="panel" id="followups-panel">
+        <div class="panel-header">
+          <h2>&#128205; Follow-ups</h2>
+          <button class="btn btn-sm btn-secondary" onclick="App.loadFollowUps()">&#8635;</button>
+        </div>
+        <div id="followups-list" class="tasks-list">
+          <p class="empty-state">No pending follow-ups</p>
+        </div>
+      </section>
+
       <section class="panel" id="noticeboard-panel">
         <div class="panel-header">
           <h2>&#128227; Noticeboard</h2>
@@ -393,7 +403,10 @@
       <section class="panel">
         <div class="panel-header">
           <h2>Recent Messages</h2>
-          <button class="btn btn-sm" onclick="App.loadMessages()">&#8635;</button>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm btn-secondary" title="Acknowledge all shown" onclick="App.bulkAcknowledge()">&#10003;&#10003;</button>
+            <button class="btn btn-sm" onclick="App.loadMessages()">&#8635;</button>
+          </div>
         </div>
         <div id="messages-filter">
           <select id="msg-filter-client" onchange="App.loadMessages()">
@@ -749,11 +762,41 @@
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
-        <div><h4 style="margin-bottom:8px;font-size:0.9rem">Calls</h4><div id="analytics-calls-wrap" class="analytics-table-wrap"></div></div>
-        <div><h4 style="margin-bottom:8px;font-size:0.9rem">Messages</h4><div id="analytics-msgs-wrap" class="analytics-table-wrap"></div></div>
-        <div><h4 style="margin-bottom:8px;font-size:0.9rem">SLA</h4><div id="analytics-sla-wrap" class="analytics-table-wrap"></div></div>
-        <div><h4 style="margin-bottom:8px;font-size:0.9rem">Operators</h4><div id="analytics-operators-wrap" class="analytics-table-wrap"></div></div>
-        <div style="grid-column:1/-1"><h4 style="margin-bottom:8px;font-size:0.9rem">Clients</h4><div id="analytics-clients-wrap" class="analytics-table-wrap"></div></div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">Calls</h4>
+            <a id="analytics-calls-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-calls-wrap" class="analytics-table-wrap"></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">Messages</h4>
+            <a id="analytics-msgs-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-msgs-wrap" class="analytics-table-wrap"></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">SLA</h4>
+            <a id="analytics-sla-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-sla-wrap" class="analytics-table-wrap"></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">Operators</h4>
+            <a id="analytics-operators-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-operators-wrap" class="analytics-table-wrap"></div>
+        </div>
+        <div style="grid-column:1/-1">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="font-size:0.9rem;margin:0">Clients</h4>
+            <a id="analytics-clients-csv" class="btn btn-sm btn-secondary" style="font-size:0.72rem" href="#" download>&#11015; CSV</a>
+          </div>
+          <div id="analytics-clients-wrap" class="analytics-table-wrap"></div>
+        </div>
       </div>
     </div>
 

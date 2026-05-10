@@ -12,6 +12,22 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 router.use(requireAuth);
 router.use(requireRole('admin', 'supervisor'));
 
+function toCsv(rows) {
+  if (!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  return [headers.join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\r\n');
+}
+
+function sendCsvOrJson(res, rows, filename, jsonKey) {
+  if (res.req.query.format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(rows.length ? toCsv(rows) : '');
+  }
+  res.json({ [jsonKey]: rows });
+}
+
 function parseRange(req) {
   const from = req.query.from || new Date(Date.now() - 7 * 86400 * 1000).toISOString();
   const to   = req.query.to   || new Date().toISOString();
@@ -44,6 +60,11 @@ router.get('/calls', async (req, res, next) => {
        ORDER BY bucket ASC`,
       [...params, granularity]
     );
+    if (res.req.query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="analytics-calls.csv"');
+      return res.send(toCsv(result.rows));
+    }
     res.json({ series: result.rows, granularity });
   } catch (err) { next(err); }
 });
@@ -70,6 +91,11 @@ router.get('/messages', async (req, res, next) => {
        ORDER BY bucket ASC`,
       [...params, granularity]
     );
+    if (res.req.query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="analytics-messages.csv"');
+      return res.send(toCsv(result.rows));
+    }
     res.json({ series: result.rows, granularity });
   } catch (err) { next(err); }
 });
@@ -99,7 +125,7 @@ router.get('/delivery', async (req, res, next) => {
        ORDER BY total DESC`,
       params
     );
-    res.json({ channels: result.rows });
+    sendCsvOrJson(res, result.rows, 'analytics-delivery.csv', 'channels');
   } catch (err) { next(err); }
 });
 
@@ -126,6 +152,11 @@ router.get('/sla', async (req, res, next) => {
        ORDER BY bucket ASC`,
       [...params, granularity]
     );
+    if (res.req.query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="analytics-sla.csv"');
+      return res.send(toCsv(result.rows));
+    }
     res.json({ series: result.rows, granularity });
   } catch (err) { next(err); }
 });
@@ -151,7 +182,7 @@ router.get('/clients', async (req, res, next) => {
        LIMIT 50`,
       [from, to]
     );
-    res.json({ clients: result.rows });
+    sendCsvOrJson(res, result.rows, 'analytics-clients.csv', 'clients');
   } catch (err) { next(err); }
 });
 
@@ -176,7 +207,7 @@ router.get('/operators', async (req, res, next) => {
        ORDER BY calls_taken DESC, messages_logged DESC`,
       [from, to]
     );
-    res.json({ operators: result.rows });
+    sendCsvOrJson(res, result.rows, 'analytics-operators.csv', 'operators');
   } catch (err) { next(err); }
 });
 

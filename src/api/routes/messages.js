@@ -226,6 +226,39 @@ router.patch('/:id/read', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/messages/bulk/acknowledge — mark a list of message IDs as acknowledged
+router.post('/bulk/acknowledge', async (req, res, next) => {
+  try {
+    const { ids, client_id } = req.body;
+    if (!ids && !client_id) return res.status(400).json({ error: 'ids array or client_id required' });
+
+    let updated;
+    if (ids && Array.isArray(ids) && ids.length) {
+      const result = await pool.query(
+        `UPDATE messages SET status = 'acknowledged', updated_at = NOW()
+         WHERE id = ANY($1::uuid[]) AND status != 'acknowledged'
+         RETURNING id`,
+        [ids]
+      );
+      updated = result.rowCount;
+    } else if (client_id) {
+      // Acknowledge all unacknowledged messages for a client
+      const result = await pool.query(
+        `UPDATE messages SET status = 'acknowledged', updated_at = NOW()
+         WHERE client_id = $1 AND status NOT IN ('acknowledged', 'resolved')
+         RETURNING id`,
+        [client_id]
+      );
+      updated = result.rowCount;
+    } else {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+
+    broadcast('messages:bulk_acknowledged', { count: updated, by: req.operator.id });
+    res.json({ updated });
+  } catch (err) { next(err); }
+});
+
 // GET /api/messages/:id/webhook-log — webhook delivery attempt history (admin/supervisor)
 router.get('/:id/webhook-log', requireRole('admin', 'supervisor'), async (req, res, next) => {
   try {
