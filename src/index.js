@@ -17,6 +17,16 @@ const pushService                    = require('./services/push');
 
 const PORT = parseInt(process.env.PORT || '3000');
 
+// Warn about missing critical env vars (non-fatal — lets the app still start for diagnostics)
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠  WARNING: JWT_SECRET is not set. Operator authentication will fail.');
+  console.warn('   Set JWT_SECRET in your .env file or environment (Replit Secrets).');
+}
+if (!process.env.DATABASE_URL && !process.env.DB_HOST) {
+  console.warn('⚠  WARNING: No database configured (DATABASE_URL or DB_HOST not set).');
+  console.warn('   API requests will fail until a PostgreSQL database is connected.');
+}
+
 const server = http.createServer(app);
 
 // Initialize Socket.io
@@ -26,6 +36,17 @@ initSocketIO(server);
 server.listen(PORT, () => {
   console.log(`SinglePoint Calls answering service running on port ${PORT}`);
   console.log(`Operator console: http://localhost:${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌  Port ${PORT} is already in use.`);
+    console.error(`   Kill the existing process: kill $(lsof -ti :${PORT})`);
+    console.error('   Or set a different PORT in your environment.\n');
+    process.exit(1);
+  } else {
+    throw err;
+  }
 });
 
 // Connect to Asterisk ARI (non-fatal if Asterisk is not yet available)

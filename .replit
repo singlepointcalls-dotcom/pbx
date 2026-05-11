@@ -4,6 +4,27 @@ entrypoint = "src/index.js"
 [nix]
 channel = "stable-24_05"
 
+[env]
+PORT = "3000"
+NODE_ENV = "production"
+
 [deployment]
 run = ["npm", "start"]
 deploymentTarget = "cloudrun"
+
+# ── Setup instructions ────────────────────────────────────────────────────────
+# Before first run, set the following in Replit Secrets (padlock icon):
+#
+#   JWT_SECRET          — long random string (32+ chars)
+#   PORTAL_JWT_SECRET   — separate long random string (or same as JWT_SECRET)
+#   DATABASE_URL        — PostgreSQL connection string (from Replit Database tab
+#                         or external DB, e.g. Supabase / Neon / Railway)
+#
+# Optional (features degrade gracefully without these):
+#   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS — email delivery
+#   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER — SMS
+#   ARI_HOST / ARI_PORT / ARI_USER / ARI_PASSWORD — Asterisk integration
+#
+# After setting secrets, run the DB migration once from the Shell tab:
+#   npm run migrate
+# ─────────────────────────────────────────────────────────────────────────────
