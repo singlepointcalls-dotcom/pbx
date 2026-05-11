@@ -478,9 +478,29 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #c4c9de; }
 
 /* ============================================================
+   TOPBAR SECTIONS
+   ============================================================ */
+.topbar-left  { flex-shrink: 0; display: flex; align-items: center; }
+.topbar-center {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px;
+  overflow: hidden;
+}
+.topbar-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============================================================
    TOPBAR NAV
    ============================================================ */
-.topbar-nav  { display: flex; gap: 4px; margin-right: 16px; }
+.topbar-nav  { display: flex; gap: 4px; flex-shrink: 0; }
 .nav-tab {
   background: none;
   border: none;
@@ -490,10 +510,55 @@ body {
   padding: 5px 14px;
   border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 .nav-tab:hover  { background: rgba(255,255,255,0.1); color: #ffffff; }
 .nav-tab.active { background: #CFFF5E; color: #101E33; }
+
+/* ── Topbar overflow "⋯" menu ─────────────────────────────── */
+.topbar-more-wrap { position: relative; display: none; }
+.topbar-more-wrap.visible { display: block; }
+.topbar-more-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.topbar-more-btn:hover { background: rgba(255,255,255,0.12); }
+.topbar-overflow-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  z-index: 700;
+  padding: 4px 0;
+}
+.topbar-overflow-menu.open { display: block; }
+.topbar-overflow-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.topbar-overflow-menu button:hover { background: var(--bg); }
 
 /* ============================================================
    ADMIN VIEW
@@ -1902,9 +1967,13 @@ kbd {
     display: inline-flex;
   }
 
-  /* Compact topbar buttons */
+  /* Compact topbar: hide text label, secondary buttons go to overflow */
   .operator-name { display: none; }
   .topbar-left .logo span:not(.logo-icon) { display: none; }
+  /* Show overflow menu button; secondary single-icon buttons still visible */
+  .topbar-more-wrap { display: block; }
+  /* Hide buttons that moved into overflow menu at this breakpoint */
+  #dark-mode-btn, #shortcuts-btn, #audio-btn, #demo-btn, #portal-link-btn { display: none; }
 }
 
 /* ============================================================
@@ -1922,20 +1991,12 @@ kbd {
     z-index: 500;
   }
 
-  /* Hide most topbar-right items on mobile — keep only critical ones */
-  .topbar-right {
-    gap: 4px;
-  }
-  .topbar-right .btn-sm:not(#mobile-more-btn):not(#break-status-btn):not(.btn-logout) {
-    display: none;
-  }
-  .topbar-right #chat-btn,
-  .topbar-right #demo-btn,
-  .topbar-right #dark-mode-btn,
-  .topbar-right #portal-link-btn { display: none; }
-
-  .mobile-menu-btn { display: inline-flex; }
+  /* Mobile: keep only status + sign-out + hamburger in topbar-right */
+  .topbar-right .btn-sm:not(#break-status-btn):not(.btn-logout) { display: none; }
+  .topbar-center { display: none; }
   .topbar-nav { display: none; }
+  .topbar-more-wrap { display: none; }
+  .mobile-menu-btn { display: inline-flex; }
 
   /* Mobile overflow menu */
   .mobile-nav-drawer {

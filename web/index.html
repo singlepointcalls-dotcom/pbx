@@ -86,23 +86,33 @@
         SinglePoint Calls
       </span>
     </div>
-    <div class="topbar-center" style="display:flex;align-items:center;gap:8px;flex:1;max-width:480px">
-      <span id="status-badge" class="status-badge ready">READY</span>
-      <div style="position:relative;flex:1;max-width:260px">
-        <input type="search" id="global-search-input" placeholder="&#128269; Search messages, contacts, calls…"
-          style="width:100%;background:var(--bg-dark);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:5px 10px;font-size:0.8rem;outline:none"
+    <div class="topbar-center">
+      <!-- Primary nav tabs -->
+      <nav class="topbar-nav" id="topbar-nav">
+        <button class="nav-tab active" onclick="App.switchView('console')">&#128196; Console</button>
+        <button class="nav-tab" id="wallboard-tab" onclick="App.switchView('wallboard')" style="display:none">&#128202; Wallboard</button>
+        <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">&#9881;&#65039; Admin</button>
+      </nav>
+      <!-- Global search -->
+      <div style="position:relative;flex:1;max-width:260px;min-width:80px">
+        <input type="search" id="global-search-input" placeholder="&#128269; Search…"
+          style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:var(--radius);padding:5px 10px;font-size:0.8rem;outline:none"
           oninput="App.globalSearch(this.value)" onkeydown="if(event.key==='Escape')App.closeSearch()" autocomplete="off" />
         <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:999;max-height:400px;overflow-y:auto"></div>
       </div>
     </div>
+
     <div class="topbar-right">
-      <nav class="topbar-nav" id="topbar-nav">
-        <button class="nav-tab active" onclick="App.switchView('console')">Console</button>
-        <button class="nav-tab" id="wallboard-tab" onclick="App.switchView('wallboard')" style="display:none">&#128202; Wallboard</button>
-        <button class="nav-tab" id="admin-tab" onclick="App.switchView('admin')" style="display:none">Admin</button>
-      </nav>
-      <button class="btn btn-sm btn-secondary" onclick="App.openClientBrowser()" title="Browse client screen">&#128193; Client</button>
-      <button class="btn btn-sm btn-secondary" onclick="App.openOutbound()" title="Make outbound call">&#128222;</button>
+      <!-- Status badge -->
+      <span id="status-badge" class="status-badge ready" style="margin-right:4px">READY</span>
+
+      <!-- Quick-action buttons -->
+      <button class="btn btn-sm btn-secondary" onclick="App.openClientBrowser()" title="Browse clients">&#128193;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.openOutbound()" title="Outbound call">&#128222;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.toggleChat()" title="Team chat" id="chat-btn">
+        &#128172; <span id="chat-unread-badge" class="badge hidden">0</span>
+      </button>
+
       <!-- Break/status dropdown -->
       <div class="break-dropdown-wrap" id="break-dropdown-wrap">
         <button class="btn btn-sm btn-status" id="break-status-btn" onclick="App.toggleBreakMenu()" title="Set your status">
@@ -119,21 +129,28 @@
           <button onclick="App.setOperatorStatus('admin')">&#128196; Admin Work</button>
           <div class="break-menu-divider"></div>
           <button onclick="App.showMyTime()">&#9200; My Time Today</button>
+          <div class="break-menu-divider"></div>
+          <button onclick="App.endShift()" style="color:#ef4444;font-weight:700">&#128683; End Shift &amp; Log Off</button>
         </div>
       </div>
-      <!-- Team chat button -->
-      <button class="btn btn-sm btn-secondary" onclick="App.toggleChat()" title="Team chat" id="chat-btn">
-        &#128172; Chat <span id="chat-unread-badge" class="badge hidden">0</span>
-      </button>
-      <button class="btn btn-sm btn-secondary" onclick="App.openAudioSettings()" title="Audio device settings">&#127911;</button>
-      <button class="btn btn-sm btn-secondary" onclick="App.toggleDarkMode()" title="Toggle dark mode" id="dark-mode-btn">&#127769;</button>
-      <button class="btn btn-sm btn-secondary" onclick="App.showShortcuts()" title="Keyboard shortcuts">&#9875;</button>
-      <button class="btn btn-sm btn-secondary" id="demo-btn" onclick="App.startDemo()" style="display:none" title="Simulate an incoming call">&#9654; Demo</button>
-      <button class="btn btn-sm btn-secondary" id="portal-link-btn" onclick="window.open('/portal','_blank')" style="display:none" title="Open Client Portal">&#127760; Portal</button>
+
       <span id="operator-name" class="operator-name"></span>
-      <button class="btn btn-sm btn-secondary" onclick="App.showMyProfile()">&#128100;</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.showMyProfile()" title="My profile">&#128100;</button>
       <button class="btn btn-sm btn-logout" onclick="App.logout()">Sign Out</button>
-      <!-- Hamburger menu — visible on mobile only -->
+
+      <!-- Overflow "⋯" menu — secondary items hidden at narrower widths -->
+      <div class="topbar-more-wrap" id="topbar-more-wrap">
+        <button class="topbar-more-btn" onclick="App.toggleTopbarMore()" title="More options">&#8943;</button>
+        <div class="topbar-overflow-menu" id="topbar-overflow-menu">
+          <button onclick="App.openAudioSettings();App.closeTopbarMore()" id="audio-btn">&#127911; Audio Settings</button>
+          <button onclick="App.toggleDarkMode();App.closeTopbarMore()" id="dark-mode-btn">&#127769; Dark Mode</button>
+          <button onclick="App.showShortcuts();App.closeTopbarMore()" id="shortcuts-btn">&#9875; Shortcuts</button>
+          <button onclick="App.startDemo();App.closeTopbarMore()" id="demo-btn" style="display:none">&#9654; Demo Call</button>
+          <button onclick="window.open('/portal','_blank');App.closeTopbarMore()" id="portal-link-btn" style="display:none">&#127760; Client Portal</button>
+        </div>
+      </div>
+
+      <!-- Hamburger — mobile only -->
       <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="App.toggleMobileMenu()" aria-label="Menu">&#9776;</button>
     </div>
 

@@ -3151,6 +3151,24 @@ const App = (() => {
     if (drawer) drawer.classList.remove('open');
   }
 
+  function toggleTopbarMore() {
+    const menu = el('topbar-overflow-menu');
+    if (menu) menu.classList.toggle('open');
+  }
+
+  function closeTopbarMore() {
+    const menu = el('topbar-overflow-menu');
+    if (menu) menu.classList.remove('open');
+  }
+
+  async function endShift() {
+    if (!confirm('End your shift and sign out?\n\nYour status will be set to Offline and you will be logged out.')) return;
+    try {
+      await api('/api/operators/me/status', { method: 'PUT', body: { status: 'offline' } });
+    } catch (_) { /* non-fatal */ }
+    logout();
+  }
+
   function closeSidebars() {
     const overlay = el('sidebar-overlay');
     const rs      = document.querySelector('.right-sidebar');
@@ -3158,13 +3176,20 @@ const App = (() => {
     if (overlay) overlay.classList.remove('active');
   }
 
-  // Close mobile menu on outside click
+  // Close dropdowns on outside click
   document.addEventListener('click', (e) => {
     const drawer = el('mobile-nav-drawer');
     const btn    = el('mobile-menu-btn');
     if (drawer && drawer.classList.contains('open') &&
         !drawer.contains(e.target) && e.target !== btn) {
       drawer.classList.remove('open');
+    }
+    // Close topbar overflow menu
+    const moreMenu = el('topbar-overflow-menu');
+    const moreBtn  = el('topbar-more-wrap');
+    if (moreMenu && moreMenu.classList.contains('open') &&
+        moreBtn && !moreBtn.contains(e.target)) {
+      moreMenu.classList.remove('open');
     }
     // Close search results when clicking outside
     const searchWrap = el('global-search-input')?.parentElement;
@@ -3306,8 +3331,9 @@ const App = (() => {
     loadWallboard,
     // QA
     openQA, closeQA, submitQA,
-    // Mobile nav
+    // Mobile nav + topbar overflow
     mobileSwitchPanel, toggleMobileMenu, closeMobileMenu, closeSidebars, mobileAutoSwitchOnCall,
+    toggleTopbarMore, closeTopbarMore, endShift,
     // Push notifications
     enablePushNotifications, dismissPushPrompt, togglePushNotifications,
     // Global search
