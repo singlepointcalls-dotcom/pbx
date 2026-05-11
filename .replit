@@ -5,8 +5,11 @@ entrypoint = "src/index.js"
 channel = "stable-24_05"
 
 [env]
-PORT = "3000"
 NODE_ENV = "production"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
 
 [deployment]
 run = ["npm", "start"]
@@ -21,9 +24,9 @@ deploymentTarget = "cloudrun"
 #                         or external DB, e.g. Supabase / Neon / Railway)
 #
 # Optional (features degrade gracefully without these):
-#   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS — email delivery
+#   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS  — email delivery
 #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER — SMS
-#   ARI_HOST / ARI_PORT / ARI_USER / ARI_PASSWORD — Asterisk integration
+#   ARI_HOST / ARI_PORT / ARI_USER / ARI_PASSWORD  — Asterisk integration
 #
 # After setting secrets, run the DB migration once from the Shell tab:
 #   npm run migrate

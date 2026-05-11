@@ -32,8 +32,8 @@ const server = http.createServer(app);
 // Initialize Socket.io
 initSocketIO(server);
 
-// Start HTTP server
-server.listen(PORT, () => {
+// Start HTTP server — bind to 0.0.0.0 so Replit/Docker proxies can reach it
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`SinglePoint Calls answering service running on port ${PORT}`);
   console.log(`Operator console: http://localhost:${PORT}`);
 });
